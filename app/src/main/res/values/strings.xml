@@ -1,3 +1,28 @@
 <resources>
-    <string name="app_name">VoiceAssistant</string>
+    <string name="app_name">语音助手</string>
+
+    <!-- 状态栏文案 -->
+    <string name="status_idle">点麦克风说话，或直接输入文字</string>
+    <string name="status_listening">正在聆听…</string>
+    <string name="status_recognizing">正在识别…</string>
+    <string name="status_thinking">正在思考…</string>
+    <string name="status_speaking">正在回答…</string>
+    <string name="status_muted">已关闭语音播报</string>
+    <string name="status_continuous_on">连续对话已开启，回答完会自动听你说话</string>
+    <string name="status_continuous_off">连续对话已关闭，需要点麦克风才会听</string>
+
+    <!-- 输入区 -->
+    <string name="hint_input">输入文字，或点左侧麦克风</string>
+    <string name="desc_mic">语音输入</string>
+    <string name="desc_send">发送</string>
+    <string name="desc_mute">语音播报开关</string>
+    <string name="desc_continuous_on">连续对话：已开启</string>
+    <string name="desc_continuous_off">连续对话：已关闭</string>
+    <string name="desc_clear">清空对话</string>
+
+    <!-- 提示信息 -->
+    <string name="welcome">你好，我是语音助手。点左下角的麦克风说话，或者直接在输入框里打字。</string>
+    <string name="error_no_permission">没有麦克风权限，先用文字输入吧</string>
+    <string name="error_no_recognizer">这台设备没有可用的语音识别服务，请用文字输入</string>
+    <string name="error_empty_input">先说点什么吧</string>
 </resources>

@@ -2,4 +2,20 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- 主题色 -->
+    <color name="brand_primary">#2F6FED</color>
+    <color name="brand_primary_dark">#1E4FBF</color>
+
+    <!-- 背景与文字 -->
+    <color name="bg_app">#F5F6F8</color>
+    <color name="surface">#FFFFFFFF</color>
+    <color name="text_primary">#1B1F24</color>
+    <color name="text_secondary">#6B7280</color>
+
+    <!-- 气泡与输入框 -->
+    <color name="bubble_user">#2F6FED</color>
+    <color name="bubble_bot">#FFFFFF</color>
+    <color name="bubble_bot_stroke">#E5E8EC</color>
+    <color name="input_bg">#F1F3F5</color>
 </resources>
