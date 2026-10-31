@@ -259,4 +259,29 @@ class CloudBrainTest {
             )
         }
     }
+
+    // -------------------------------------------------------- temperature 限制重试
+
+    @Test
+    fun `方舟的 temperature 报错能识别为需要重试`() {
+        // 真实报错（截自火山方舟 kimi-k3-1-pro）：
+        // 请求失败：`temperature` only 1 is allowed for this model Request id: ...
+        assertTrue(CloudBrain.needsTemperatureRetry("请求失败：`temperature` only 1 is allowed for this model Request i..."))
+        assertTrue(CloudBrain.needsTemperatureRetry("请求失败：Temperature must be 1"))
+        assertFalse(CloudBrain.needsTemperatureRetry("Key 不对或没权限：invalid api key"))
+        assertFalse(CloudBrain.needsTemperatureRetry("请求超过 20 秒没回来（可能网络不通）"))
+    }
+
+    @Test
+    fun `重试请求体用 temperature 1 并放宽输出上限`() {
+        val body = CloudBrain.buildBody(
+            "kimi-k3-1-pro-261024",
+            listOf(CloudBrain.ChatTurn.user("你好")),
+            maxTokens = 1024,
+            temperature = 1.0
+        )
+        assertTrue(body.contains("\"temperature\":1.0"))
+        assertTrue(body.contains("\"max_tokens\":1024"))
+        assertFalse(body.contains("\"temperature\":0.7"))
+    }
 }

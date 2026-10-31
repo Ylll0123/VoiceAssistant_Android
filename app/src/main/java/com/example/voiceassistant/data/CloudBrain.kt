@@ -126,6 +126,10 @@ object CloudBrain {
     private const val UA = "VoiceAssistant/2.8 (Android; OpenAI-compatible)"
     private const val DEFAULT_TIMEOUT_MS = 20000
     private const val DEFAULT_MAX_TOKENS = 320
+    private const val DEFAULT_TEMPERATURE = 0.7
+
+    /** temperature 被模型拒绝后的重试输出上限：思考型模型会先花 token 推理，320 往往不够 */
+    private const val RETRY_MAX_TOKENS = 1024
 
     // ------------------------------------------------------------------ 请求
 
@@ -261,8 +265,29 @@ object CloudBrain {
             addAll(history.takeLast(MAX_HISTORY_TURNS))
             add(ChatTurn.user(input))
         }
-        val body = buildBody(config.model, messages, config.maxTokens)
 
+        val first = attempt(config, url, messages, config.maxTokens, DEFAULT_TEMPERATURE)
+        if (first is CloudResult.Ok) return first
+
+        // 有的模型（如方舟上的思考型 kimi-k3 / doubao-seed）硬性规定 temperature 只能为 1，
+        // 返回 400 并在错误里点名 temperature——这种情况自动用 temperature=1 重试一次，
+        // 同时把输出上限放宽（思考模型会先把 token 花在推理上）
+        val reason = (first as CloudResult.Fail).reason
+        if (needsTemperatureRetry(reason)) {
+            return attempt(config, url, messages, maxOf(config.maxTokens, RETRY_MAX_TOKENS), 1.0)
+        }
+        return first
+    }
+
+    /** 发一次请求并解析结果（不含重试逻辑） */
+    private fun attempt(
+        config: CloudConfig,
+        url: String,
+        messages: List<ChatTurn>,
+        maxTokens: Int,
+        temperature: Double
+    ): CloudResult {
+        val body = buildBody(config.model, messages, maxTokens, temperature)
         return runCatching {
             val response = httpPost(url, config.apiKey, body, config.timeoutMs)
             val content = parseContent(response.first)
@@ -277,6 +302,15 @@ object CloudBrain {
             CloudResult.Fail(describeException(e, config.timeoutMs))
         }
     }
+
+    /**
+     * 错误信息是否在说「temperature 不让自定义」。
+     *
+     * 常见原文：`temperature` only 1 is allowed for this model /
+     * temperature must be 1 / invalid temperature（不同网关措辞不一，统一按关键词判）。
+     */
+    fun needsTemperatureRetry(reason: String): Boolean =
+        reason.contains("temperature", ignoreCase = true)
 
     /** 只问一句「在吗」，用于设置页的连通性测试 */
     fun ping(config: CloudConfig): CloudResult =
