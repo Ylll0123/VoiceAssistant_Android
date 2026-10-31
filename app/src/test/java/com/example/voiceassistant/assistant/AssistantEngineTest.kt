@@ -57,7 +57,8 @@ class AssistantEngineTest {
 
     @Test
     fun `问天气时说明尚未接入`() {
-        assertTrue(engine.reply("明天天气怎么样").contains("还没接入"))
+        val weather = engine.reply("明天天气怎么样")
+        assertTrue("实际：$weather", weather.contains("还没接入"))
     }
 
     @Test

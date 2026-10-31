@@ -9,9 +9,9 @@ import com.example.voiceassistant.R
 import com.example.voiceassistant.data.ChatMessage
 
 /** 对话气泡列表：用户消息靠右（蓝底），助手消息靠左（白底） */
-class ChatAdapter(
-    private val items: MutableList<ChatMessage> = mutableListOf()
-) : RecyclerView.Adapter<ChatAdapter.MessageViewHolder>() {
+class ChatAdapter : RecyclerView.Adapter<ChatAdapter.MessageViewHolder>() {
+
+    private val items = mutableListOf<ChatMessage>()
 
     override fun getItemCount(): Int = items.size
 
@@ -32,16 +32,14 @@ class ChatAdapter(
         holder.bind(items[position])
     }
 
-    /** 追加一条消息并滚动到底部 */
-    fun add(message: ChatMessage) {
-        items.add(message)
-        notifyItemInserted(items.size - 1)
-    }
-
-    fun clear() {
-        val size = items.size
+    /**
+     * 用完整列表刷新。
+     * 消息条数不多，全量刷新足够；好处是 Fragment 重建后也能一步恢复画面。
+     */
+    fun submit(messages: List<ChatMessage>) {
         items.clear()
-        if (size > 0) notifyItemRangeRemoved(0, size)
+        items.addAll(messages)
+        notifyDataSetChanged()
     }
 
     class MessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {

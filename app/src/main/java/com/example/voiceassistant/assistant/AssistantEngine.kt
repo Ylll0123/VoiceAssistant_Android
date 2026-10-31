@@ -1,51 +1,58 @@
 package com.example.voiceassistant.assistant
 
-import java.util.Locale
-
 /**
  * 本地对话引擎（规则引擎）。
  *
- * 工作方式：输入一句话 → 按顺序询问每条规则 → 第一条命中的规则给出回复。
- * 列表顺序即优先级：越靠前越优先，所以算术在最前、打招呼在最后。
+ * 一次请求的处理流程：
+ * 1. 归一化输入（[FuzzyMatcher.normalize]：去标点空格、剥离客套前缀）
+ * 2. 按顺序询问每条规则，第一条命中的采用其回复
+ * 3. 命中后把意图和槽位写回 [context]，供下一轮的多轮追问使用
  *
- * 后续扩展点：
- * - 多轮上下文：在 [reply] 外层维护一个会话状态对象，把「上一轮意图 + 已填槽位」
- *   传给规则，规则就能处理「那后天呢」这类省略句；
- * - 模糊匹配：把 [IntentRule] 里的 contains 判断换成拼音 / 编辑距离匹配，
- *   本类和 UI 都不用改。
+ * 规则列表的顺序即优先级，具体顺序见 [AssistantRules.all]。
  */
-class AssistantEngine {
+class AssistantEngine(
+    private val dialogContext: DialogContext = DialogContext(),
+    private val rules: List<IntentRule> = AssistantRules.all()
+) {
 
-    /** 规则注册表：新增能力只需在这里加一条 */
-    private val rules: List<IntentRule> = listOf(
-        AssistantRules.Arithmetic,
-        AssistantRules.Time,
-        AssistantRules.Date,
-        AssistantRules.Joke,
-        AssistantRules.Identity,
-        AssistantRules.Help,
-        AssistantRules.Weather,
-        AssistantRules.Thanks,
-        AssistantRules.Farewell,
-        AssistantRules.Greeting,
-    )
+    /** 当前会话的上下文（上一轮意图 + 槽位），设置页里会用它做调试展示 */
+    fun context(): DialogContext = dialogContext
 
-    /** 生成一条回复 */
-    fun reply(rawInput: String): String {
-        val input = rawInput.trim()
-        if (input.isEmpty()) return LISTENING
+    /** 只关心回复文本时的简化入口 */
+    fun reply(rawInput: String): String = respond(rawInput).text
 
-        val compact = input.lowercase(Locale.getDefault()).replace(" ", "")
+    /** 完整的响应：回复文本 + 命中的意图 */
+    fun respond(rawInput: String): AssistantResponse {
+        val raw = rawInput.trim()
+        if (raw.isEmpty()) return AssistantResponse(LISTENING, INTENT_EMPTY)
+
+        val normalized = FuzzyMatcher.normalize(raw)
+        if (normalized.isEmpty()) return AssistantResponse(LISTENING, INTENT_EMPTY)
+
+        val request = AssistantRequest(raw, normalized, dialogContext)
         for (rule in rules) {
-            rule.reply(input, compact)?.let { return it }
+            val reply = rule.reply(request) ?: continue
+            dialogContext.remember(reply.intent, reply.slots)
+            return AssistantResponse(reply.text, reply.intent)
         }
-        return FALLBACK
+        return AssistantResponse(FALLBACK, INTENT_FALLBACK)
     }
+
+    fun resetContext() = dialogContext.clear()
 
     companion object {
         const val LISTENING = "我在听，你说吧。"
 
         const val FALLBACK =
-            "这句话我还答不上来。你可以试试问我：现在几点、今天几号、帮我算 12*8，或者让我讲个笑话。"
+            "这句我还答不上来。可以试试：现在几点、今天几号、帮我算 12*8、讲个笑话，或者去「技能」页看看所有能做的事。"
+
+        const val INTENT_EMPTY = "empty"
+        const val INTENT_FALLBACK = "fallback"
     }
 }
+
+/** 一次完整响应 */
+data class AssistantResponse(
+    val text: String,
+    val intent: String
+)

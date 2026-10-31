@@ -65,6 +65,10 @@ class SpeechController(context: Context) {
     var isSpeaking: Boolean = false
         private set
 
+    /** 播报语速，1.0 为正常；设置页可以调 */
+    var speechRate: Float = 1.0f
+        private set
+
     private val appContext: Context = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
@@ -84,6 +88,7 @@ class SpeechController(context: Context) {
                     tts?.setLanguage(Locale.getDefault())
                     ttsReady = true
                 }
+                tts?.setSpeechRate(speechRate)
                 pendingSpeak?.let {
                     speak(it)
                     pendingSpeak = null
@@ -262,6 +267,15 @@ class SpeechController(context: Context) {
         }
         tts?.stop()
         isSpeaking = false
+    }
+
+    /**
+     * 调整播报语速（0.5~2.0，1.0 为正常）。
+     * TTS 引擎初始化是异步的，未就绪时先记下来，就绪后自动应用。
+     */
+    fun setSpeechRate(rate: Float) {
+        speechRate = rate.coerceIn(0.5f, 2.0f)
+        tts?.setSpeechRate(speechRate)
     }
 
     /** Activity 销毁时释放资源 */

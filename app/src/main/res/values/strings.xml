@@ -1,6 +1,11 @@
 <resources>
     <string name="app_name">语音助手</string>
 
+    <!-- 底部导航 -->
+    <string name="tab_chat">对话</string>
+    <string name="tab_skills">技能</string>
+    <string name="tab_settings">设置</string>
+
     <!-- 状态栏文案 -->
     <string name="status_idle">点麦克风说话，或直接输入文字</string>
     <string name="status_listening">正在聆听…</string>
@@ -10,6 +15,7 @@
     <string name="status_muted">已关闭语音播报</string>
     <string name="status_continuous_on">连续对话已开启，回答完会自动听你说话</string>
     <string name="status_continuous_off">连续对话已关闭，需要点麦克风才会听</string>
+    <string name="status_skill_sent">已从技能页发送：%1$s</string>
 
     <!-- 输入区 -->
     <string name="hint_input">输入文字，或点左侧麦克风</string>
@@ -21,8 +27,33 @@
     <string name="desc_clear">清空对话</string>
 
     <!-- 提示信息 -->
-    <string name="welcome">你好，我是语音助手。点左下角的麦克风说话，或者直接在输入框里打字。</string>
+    <string name="welcome">你好，我是语音助手。点左下角的麦克风说话，或者直接在输入框里打字。\n试试问我：现在几点、今天几号、帮我算 12*8，或者「我们玩猜数字」。</string>
     <string name="error_no_permission">没有麦克风权限，先用文字输入吧</string>
     <string name="error_no_recognizer">这台设备没有可用的语音识别服务，请用文字输入</string>
     <string name="error_empty_input">先说点什么吧</string>
+
+    <!-- 技能页 -->
+    <string name="skills_title">技能中心</string>
+    <string name="skills_subtitle">点下面的示例说法，会直接跳到对话页执行。所有能力都在本机完成，不联网。</string>
+
+    <!-- 设置页 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_subtitle">语音行为、多轮上下文状态都在这里</string>
+    <string name="settings_group_voice">语音</string>
+    <string name="settings_continuous">连续对话</string>
+    <string name="settings_continuous_desc">回答播完后自动重新打开麦克风</string>
+    <string name="settings_speak">语音播报</string>
+    <string name="settings_speak_desc">关闭后只显示文字，不出声</string>
+    <string name="settings_rate_default">播报语速：1.0x</string>
+    <string name="settings_rate_value">播报语速：%1$sx</string>
+    <string name="settings_group_context">对话状态</string>
+    <string name="settings_group_device">设备与版本</string>
+    <string name="settings_last_intent">上一轮意图：%1$s</string>
+    <string name="settings_context_idle">上下文：空闲（还没有对话）</string>
+    <string name="settings_context_alive">上下文：%1$s，剩余 %2$d 秒</string>
+    <string name="settings_context_slots">槽位：%1$s</string>
+    <string name="settings_message_count">当前对话消息数：%1$d</string>
+    <string name="settings_recognizer_ok">语音识别服务：可用</string>
+    <string name="settings_recognizer_missing">语音识别服务：不可用（只能文字输入）</string>
+    <string name="settings_version">版本：%1$s（%2$d 条规则 / %3$d 个技能）</string>
 </resources>

@@ -18,4 +18,7 @@
     <color name="bubble_bot">#FFFFFF</color>
     <color name="bubble_bot_stroke">#E5E8EC</color>
     <color name="input_bg">#F1F3F5</color>
+
+    <!-- 技能页标签 -->
+    <color name="chip_bg">#EAF1FE</color>
 </resources>
