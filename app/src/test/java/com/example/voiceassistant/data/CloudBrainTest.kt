@@ -21,7 +21,7 @@ class CloudBrainTest {
         mode: CloudBrain.CloudMode = CloudBrain.CloudMode.LOCAL_FIRST,
         url: String = "https://api.deepseek.com/v1",
         key: String = "sk-test-123456",
-        model: String = "deepseek-chat"
+        model: String = "deepseek-flash"
     ) = CloudBrain.CloudConfig(enabled = true, mode = mode, baseUrl = url, apiKey = key, model = model)
 
     // ------------------------------------------------------------ 地址与请求体
@@ -46,7 +46,7 @@ class CloudBrainTest {
     @Test
     fun `请求体带人设和历史`() {
         val body = CloudBrain.buildBody(
-            "deepseek-chat",
+            "deepseek-flash",
             listOf(
                 CloudBrain.ChatTurn.system("你是助手"),
                 CloudBrain.ChatTurn.user("你好"),
@@ -55,7 +55,7 @@ class CloudBrainTest {
             ),
             maxTokens = 200
         )
-        assertTrue(body.contains("\"model\":\"deepseek-chat\""))
+        assertTrue(body.contains("\"model\":\"deepseek-flash\""))
         assertTrue(body.contains("\"role\":\"system\""))
         assertTrue(body.contains("\"role\":\"assistant\""))
         assertTrue(body.contains("我不高兴"))
@@ -85,7 +85,7 @@ class CloudBrainTest {
 
     @Test
     fun `解析标准 OpenAI 响应`() {
-        val raw = "{\"id\":\"1\",\"model\":\"deepseek-chat\"," +
+        val raw = "{\"id\":\"1\",\"model\":\"deepseek-flash\"," +
             "\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"我在，你说。\"}}]}"
         assertEquals("我在，你说。", CloudBrain.parseContent(raw))
     }
@@ -225,5 +225,29 @@ class CloudBrainTest {
         val deepseek = CloudBrain.PROVIDERS.first { it.label == "DeepSeek" }
         assertTrue(deepseek.baseUrl.startsWith("https://"))
         assertTrue(deepseek.model.isNotBlank())
+    }
+
+    @Test
+    fun `预设模型名不能用已停用的旧名`() {
+        // deepseek-chat / deepseek-reasoner 已在 2026-07-24 停用，请求会被拒
+        val dead = setOf("deepseek-chat", "deepseek-reasoner")
+        CloudBrain.PROVIDERS.forEach { p ->
+            org.junit.Assert.assertFalse(
+                "「${p.label}」还在用已停用的模型名 ${p.model}",
+                p.model in dead
+            )
+        }
+    }
+
+    @Test
+    fun `预设地址拼出来不带重复的 v1`() {
+        CloudBrain.PROVIDERS.filter { it.baseUrl.isNotBlank() }.forEach { p ->
+            val url = CloudBrain.chatUrl(p.baseUrl)
+            assertTrue("「${p.label}」地址拼错了：$url", url.endsWith("/chat/completions"))
+            org.junit.Assert.assertEquals(
+                "「${p.label}」里出现两段 /chat/completions",
+                url.indexOf("/chat/completions"), url.lastIndexOf("/chat/completions")
+            )
+        }
     }
 }

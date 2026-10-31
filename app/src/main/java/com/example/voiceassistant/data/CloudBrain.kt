@@ -93,15 +93,18 @@ object CloudBrain {
 
     val PROVIDERS: List<Provider> = listOf(
         Provider("自定义（自己填）", "", "", "填任意 OpenAI 兼容接口"),
-        Provider("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat", "platform.deepseek.com 申请 Key"),
+        Provider("火山方舟（豆包）", "https://ark.cn-beijing.volces.com/api/v3",
+            "doubao-seed-2-1-pro-260915", "console.volcengine.com/ark 申请；模型名可填模型 ID 或接入点 ep-xxx"),
+        Provider("DeepSeek", "https://api.deepseek.com", "deepseek-flash",
+            "platform.deepseek.com 申请 Key；旧名 deepseek-chat 已于 2026-07 停用"),
         Provider("通义千问（兼容模式）", "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "qwen-plus", "阿里云百炼控制台申请"),
         Provider("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash",
-            "open.bigmodel.cn 申请 Key"),
+            "open.bigmodel.cn 申请 Key；免费档模型名以控制台为准"),
         Provider("Kimi（Moonshot）", "https://api.moonshot.cn/v1", "moonshot-v1-8k",
             "platform.moonshot.cn 申请"),
         Provider("硅基流动", "https://api.siliconflow.cn/v1", "Qwen/Qwen2.5-7B-Instruct",
-            "siliconflow.cn，有免费额度"),
+            "siliconflow.cn，有免费额度；模型名从模型广场复制"),
         Provider("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini", "platform.openai.com（需自备网络）")
     )
 

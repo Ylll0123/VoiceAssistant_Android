@@ -161,11 +161,11 @@
     <string name="settings_cloud_hint">支持所有 OpenAI 兼容接口（DeepSeek、通义千问、智谱、Kimi、硅基流动等）。Key 只存在本机。</string>
     <string name="settings_cloud_provider_label">服务商</string>
     <string name="settings_cloud_base_label">接口地址 Base URL</string>
-    <string name="settings_cloud_base_hint">例如 https://api.deepseek.com/v1</string>
+    <string name="settings_cloud_base_hint">例如 https://api.deepseek.com</string>
     <string name="settings_cloud_key_label">API Key</string>
-    <string name="settings_cloud_key_hint">sk- 开头的一串字符</string>
+    <string name="settings_cloud_key_hint">一串字符即可（火山方舟的 Key 不带 sk- 前缀，属正常）</string>
     <string name="settings_cloud_model_label">模型名</string>
-    <string name="settings_cloud_model_hint">例如 deepseek-chat</string>
+    <string name="settings_cloud_model_hint">例如 deepseek-flash</string>
     <string name="settings_cloud_prompt_label">人设（可选）</string>
     <string name="settings_cloud_prompt_hint">留空用默认：简洁口语、四句以内、不用 Markdown</string>
     <string name="settings_cloud_testing">正在测试连接…</string>

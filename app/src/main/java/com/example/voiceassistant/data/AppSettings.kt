@@ -85,7 +85,7 @@ class AppSettings(context: Context) {
         get() = prefs.getInt(KEY_CLOUD_MODE, 0)
         set(value) = prefs.edit().putInt(KEY_CLOUD_MODE, value.coerceIn(0, 2)).apply()
 
-    /** 接口地址（Base URL），例如 https://api.deepseek.com/v1 */
+    /** 接口地址（Base URL），例如 https://api.deepseek.com */
     var cloudEndpoint: String
         get() = prefs.getString(KEY_CLOUD_URL, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_CLOUD_URL, value.trim()).apply()
@@ -95,7 +95,7 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_CLOUD_KEY, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_CLOUD_KEY, value.trim()).apply()
 
-    /** 模型名，例如 deepseek-chat / qwen-plus */
+    /** 模型名，例如 deepseek-flash / qwen-plus */
     var cloudModel: String
         get() = prefs.getString(KEY_CLOUD_MODEL, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_CLOUD_MODEL, value.trim()).apply()
