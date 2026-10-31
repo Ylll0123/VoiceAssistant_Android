@@ -129,4 +129,45 @@
     <string name="action_ok">确定</string>
     <string name="action_cancel">取消</string>
     <string name="action_delete">删除</string>
+    <string name="action_save">保存</string>
+    <string name="action_unset">未设置</string>
+
+    <!-- 状态栏：云端大模型 -->
+    <string name="status_cloud_thinking">交给 AI 想一想…</string>
+    <string name="status_cloud_fail">AI 没接上（%1$s），已用本地回答</string>
+
+    <!-- 设置页：AI 大脑 -->
+    <string name="settings_group_cloud">AI 大脑（云端大模型）</string>
+    <string name="settings_cloud">启用云端大模型</string>
+    <string name="settings_cloud_desc">填了自己的接口之后，本地答不好的问题会交给它；失败自动退回本地答案</string>
+    <string name="settings_cloud_state_ready">已接入：%1$s · %2$s</string>
+    <string name="settings_cloud_state_off">未启用：现在是纯离线助手，所有回答都在本机算</string>
+    <string name="settings_cloud_state_missing">还差配置：%1$s</string>
+    <string name="settings_cloud_missing_url">接口地址</string>
+    <string name="settings_cloud_missing_key">API Key</string>
+    <string name="settings_cloud_missing_model">模型名</string>
+    <string name="settings_cloud_mode">工作方式</string>
+    <string name="settings_cloud_mode_off">不用</string>
+    <string name="settings_cloud_mode_local">本地优先</string>
+    <string name="settings_cloud_mode_cloud">AI 优先</string>
+    <string name="settings_cloud_mode_desc">本地优先＝只有本地明显答不好才问 AI（省额度）；AI 优先＝除了本机功能都让 AI 答</string>
+    <string name="settings_cloud_provider">服务商：%1$s</string>
+    <string name="settings_cloud_endpoint">接口：%1$s</string>
+    <string name="settings_cloud_model">模型：%1$s</string>
+    <string name="settings_cloud_key">Key：%1$s</string>
+    <string name="settings_cloud_test">测试连接</string>
+    <string name="settings_cloud_edit">填写配置</string>
+    <string name="settings_cloud_title">AI 接口配置</string>
+    <string name="settings_cloud_hint">支持所有 OpenAI 兼容接口（DeepSeek、通义千问、智谱、Kimi、硅基流动等）。Key 只存在本机。</string>
+    <string name="settings_cloud_provider_label">服务商</string>
+    <string name="settings_cloud_base_label">接口地址 Base URL</string>
+    <string name="settings_cloud_base_hint">例如 https://api.deepseek.com/v1</string>
+    <string name="settings_cloud_key_label">API Key</string>
+    <string name="settings_cloud_key_hint">sk- 开头的一串字符</string>
+    <string name="settings_cloud_model_label">模型名</string>
+    <string name="settings_cloud_model_hint">例如 deepseek-chat</string>
+    <string name="settings_cloud_prompt_label">人设（可选）</string>
+    <string name="settings_cloud_prompt_hint">留空用默认：简洁口语、四句以内、不用 Markdown</string>
+    <string name="settings_cloud_testing">正在测试连接…</string>
+    <string name="settings_cloud_saved">已保存：%1$s</string>
 </resources>

@@ -167,10 +167,21 @@ object ReplyCrafter {
         val seed = (context?.turns ?: 0) * 31 + mode.ordinal * 7
         val recent: (String) -> Boolean = { context?.wasSaidRecently(it) ?: false }
 
-        val body = pick(poolOf(mode), seed, recent).replace("{t}", DialogLogic.stripToTopic(trimmed))
+        val body = pick(answersFor(trimmed, mode), seed, recent)
+            .replace("{t}", DialogLogic.stripToTopic(trimmed))
         if (!withStyle) return body
 
         return decorate(body, mode, seed, recent)
+    }
+
+    /**
+     * 情绪类回答要分方向：**低落**（「不高兴」「提不起劲」）和一般情绪宣泄
+     * 用的模板不一样。判断依据交给 [Polarity.moodOf]（含否定式表达识别）。
+     */
+    private fun answersFor(raw: String, mode: Mode): List<String> {
+        if (mode != Mode.EMOTION) return poolOf(mode)
+        val text = FuzzyMatcher.normalize(raw)
+        return if (Polarity.moodOf(text) < 0) ThoughtBank.DOWN else ThoughtBank.EMOTION
     }
 
     /**

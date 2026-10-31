@@ -74,6 +74,13 @@ class ReplyStyleTest {
         val body = SmallTalk.pickReply(topic.replies, DialogContext())!!
         val text = SmallTalk.assemble(topic, body, DialogContext(), switched = true)
 
-        assertEquals("关掉追问后不该再追加，实际：$text", body, text)
+        // 情绪话题在标准模式下会补一句展开（那是正文的一部分，不是反问），
+        // 所以这里断言的是「反问句一个都没出现」，而不是「一个字都不能多」
+        topic.followUps.forEach { followUp ->
+            org.junit.Assert.assertFalse(
+                "关掉追问后不该再追加反问「$followUp」，实际：$text",
+                text.contains(followUp)
+            )
+        }
     }
 }

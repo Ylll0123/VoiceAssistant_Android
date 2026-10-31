@@ -57,6 +57,32 @@ class ChatSession(
     fun lastAssistantIndex(): Int = items.indexOfLast { !it.isUser }
 
     /**
+     * 最近若干轮对话，给云端大模型当上下文（保证回答接得上前面的话）。
+     *
+     * 取法是「用户一句 + 助手一句」成对往后扫，只保留完整的对；
+     * 末尾落单的用户句（还没回答的那句）不算一轮。
+     *
+     * @param maxTurns 最多几轮（一轮 = 用户 + 助手各一句）
+     */
+    fun recentTurns(maxTurns: Int): List<CloudBrain.ChatTurn> {
+        if (maxTurns <= 0) return emptyList()
+        val turns = mutableListOf<CloudBrain.ChatTurn>()
+        var index = items.lastIndex
+        while (index >= 1 && turns.size < maxTurns * 2) {
+            val assistant = items[index]
+            val user = items.getOrNull(index - 1)
+            if (assistant.isUser || user == null || !user.isUser) {
+                index -= 1
+                continue
+            }
+            turns += CloudBrain.ChatTurn.assistant(assistant.text)
+            turns += CloudBrain.ChatTurn.user(user.text)
+            index -= 2
+        }
+        return turns.asReversed()
+    }
+
+    /**
      * 替换一条助手消息的内容。
      *
      * 联网查询是异步的：本地先给一句（常年气候数据 / "我上网查一下"），

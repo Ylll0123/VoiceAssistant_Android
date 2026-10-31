@@ -25,6 +25,19 @@ object SmallTalk {
     const val MIN_SCORE = 0.78
 
     /**
+     * 话题 id → 只能「正面地说」才能用。
+     *
+     * 「不高兴」里也含「高兴」，但它是典型的负面表达；
+     * 这里列出来的话题，只有在语气肯定时才允许命中。
+     */
+    private val POSITIVE_ONLY_TOPICS = setOf("happy")
+
+    /** 情绪类话题：回答时值得多说一句（见 [assemble]） */
+    private val MOOD_TOPICS = setOf(
+        "tired", "sleepy", "sad", "anxious", "angry", "happy", "bored", "lonely", "comfort"
+    )
+
+    /**
      * 关键词直接命中（而不是靠句子相似蹭上来）的分数。
      * 到这个分数才允许闲聊去接一个**明确提问**的句子。
      */
@@ -68,9 +81,21 @@ object SmallTalk {
     fun assemble(topic: ChatTopic, body: String, context: DialogContext, switched: Boolean): String {
         var text = body
 
-        if (AssistantConfig.replyStyle == AssistantConfig.ReplyStyle.DETAILED) {
+        // 情绪类话题在标准风格下也补一句展开：
+        // 「抱一下。想说就说。」单独一句话太薄，接不住倾诉；
+        // 加一句「情绪本身不是问题，一直压着才是」才像真的在接话。
+        val wantsMore = AssistantConfig.replyStyle == AssistantConfig.ReplyStyle.DETAILED ||
+            (AssistantConfig.replyStyle == AssistantConfig.ReplyStyle.STANDARD && topic.id in MOOD_TOPICS)
+        if (wantsMore) {
             val extra = pickReply(topic.more, context)
             if (extra != null && extra != body) text = "$text $extra"
+        }
+
+        // 详细模式再补一句能照做的建议（「今晚别再安排新任务了」这类），
+        // 保证「详细」一定比「标准」多一点东西，风格开关才有意义
+        if (AssistantConfig.replyStyle == AssistantConfig.ReplyStyle.DETAILED) {
+            val advice = pickReply(topic.advice, context)
+            if (advice != null && !text.contains(advice)) text = "$text $advice"
         }
 
         val followUp = if (wantFollowUp(switched, context) && topic.followUps.isNotEmpty()) {
@@ -118,6 +143,11 @@ object SmallTalk {
         // 所以**明确在提问**且话题匹配不够强（不是关键词直接命中）时，
         // 让给后面的常识知识库和思维模式去处理。
         if (asksSomething(normalized)) return null
+
+        // 否定预防：情绪倾向明确为负时，不能落到「开心」这类正面话题上。
+        // 「我不高兴」命中了「高兴」关键词，以前会答「那挺好，值得高兴一下」——
+        // 典型的答非所问。这里让它落到知识库 / 思维模式去共情。
+        if (topic.id in POSITIVE_ONLY_TOPICS && Polarity.moodOf(normalized) < 0) return null
 
         val body = pickReply(topic.replies, context) ?: return null
         val switched = topic.id != context.activeTopic()
@@ -205,6 +235,8 @@ object SmallTalk {
             if (normalizedKeyword.length < 2) continue
             val index = text.indexOf(normalizedKeyword)
             if (index >= 0) {
+                // 被否定的关键词不算命中：「不高兴」不等于「高兴」
+                if (Polarity.isNegatedAt(text, index, normalizedKeyword.length)) continue
                 val lengthBonus = (normalizedKeyword.length - 2) * 0.01
                 val positionBonus = 0.02 * index.toDouble() / text.length
                 val score = 0.90 + lengthBonus + positionBonus

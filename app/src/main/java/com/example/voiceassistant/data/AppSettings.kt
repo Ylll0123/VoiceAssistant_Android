@@ -70,6 +70,61 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_ONLINE, true)
         set(value) = prefs.edit().putBoolean(KEY_ONLINE, value).apply()
 
+    // ---------------------------------------------------------------- 云端大模型
+
+    /** 是否启用云端大模型（AI 大脑） */
+    var cloudEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CLOUD, false)
+        set(value) = prefs.edit().putBoolean(KEY_CLOUD, value).apply()
+
+    /**
+     * 工作方式：0 不用云端 / 1 本地优先 / 2 AI 优先。
+     * 存的是 [CloudBrain.CloudMode.code]，读出来时用 [CloudBrain.CloudMode.of] 还原。
+     */
+    var cloudMode: Int
+        get() = prefs.getInt(KEY_CLOUD_MODE, 0)
+        set(value) = prefs.edit().putInt(KEY_CLOUD_MODE, value.coerceIn(0, 2)).apply()
+
+    /** 接口地址（Base URL），例如 https://api.deepseek.com/v1 */
+    var cloudEndpoint: String
+        get() = prefs.getString(KEY_CLOUD_URL, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_CLOUD_URL, value.trim()).apply()
+
+    /** API Key。本地保存，只在本机使用，不上传给除所选服务商以外的任何地方 */
+    var cloudKey: String
+        get() = prefs.getString(KEY_CLOUD_KEY, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_CLOUD_KEY, value.trim()).apply()
+
+    /** 模型名，例如 deepseek-chat / qwen-plus */
+    var cloudModel: String
+        get() = prefs.getString(KEY_CLOUD_MODEL, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_CLOUD_MODEL, value.trim()).apply()
+
+    /** 人设（system prompt）：留空表示用 [CloudBrain.DEFAULT_SYSTEM_PROMPT] */
+    var cloudPrompt: String
+        get() = prefs.getString(KEY_CLOUD_PROMPT, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_CLOUD_PROMPT, value).apply()
+
+    /** 读成一份完整配置对象，交给 [CloudBrain] 使用 */
+    fun cloudConfig(): CloudBrain.CloudConfig = CloudBrain.CloudConfig(
+        enabled = cloudEnabled,
+        mode = CloudBrain.CloudMode.of(cloudMode),
+        baseUrl = cloudEndpoint,
+        apiKey = cloudKey,
+        model = cloudModel,
+        systemPrompt = cloudPrompt.ifBlank { CloudBrain.DEFAULT_SYSTEM_PROMPT }
+    )
+
+    /** 保存一份完整配置对象（设置页点保存时调用） */
+    fun saveCloud(config: CloudBrain.CloudConfig) {
+        cloudEnabled = config.enabled
+        cloudMode = config.mode.code
+        cloudEndpoint = config.baseUrl
+        cloudKey = config.apiKey
+        cloudModel = config.model
+        cloudPrompt = config.systemPrompt
+    }
+
     /** 答不上来的话先收进这里，用户在记忆页一键教会 */
     var pendingQuestions: List<String>
         get() {
@@ -112,6 +167,12 @@ class AppSettings(context: Context) {
         private const val KEY_LOCAL_MODEL = "local_model"
         private const val KEY_ONLINE = "online_search"
         private const val KEY_PENDING = "pending_questions"
+        private const val KEY_CLOUD = "cloud_enabled"
+        private const val KEY_CLOUD_MODE = "cloud_mode"
+        private const val KEY_CLOUD_URL = "cloud_endpoint"
+        private const val KEY_CLOUD_KEY = "cloud_key"
+        private const val KEY_CLOUD_MODEL = "cloud_model"
+        private const val KEY_CLOUD_PROMPT = "cloud_prompt"
 
         private const val SEP = "␟"
         private const val MAX_PENDING = 40

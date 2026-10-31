@@ -31,6 +31,7 @@ import com.example.voiceassistant.assistant.ThoughtBank
 import com.example.voiceassistant.assistant.OnlineQuery
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatSession
+import com.example.voiceassistant.data.CloudBrain
 import com.example.voiceassistant.data.WebSearch
 import com.example.voiceassistant.memory.MemorySeed
 import com.example.voiceassistant.memory.SqliteMemoryRepository
@@ -118,6 +119,16 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         private set
 
     var onlineSearchEnabled: Boolean = true
+        private set
+
+    /**
+     * 云端大模型（AI 大脑）配置。
+     *
+     * 默认全部关闭：没填 Key 就是一个纯粹的离线助手，行为与之前完全一致。
+     * 用户在设置页填了接口和 Key 之后，本地答不好的问题会交给它，
+     * 失败（超时 / Key 错 / 没网）时自动用本地答案兜底。
+     */
+    var cloudConfig: CloudBrain.CloudConfig = CloudBrain.CloudConfig()
         private set
 
     private lateinit var ivTabChat: ImageView
@@ -311,6 +322,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         autoLearn = settings.autoLearn
         localModelEnabled = settings.localModel
         onlineSearchEnabled = settings.onlineSearch
+        cloudConfig = settings.cloudConfig()
         syncAssistantConfig()
     }
 
@@ -423,6 +435,26 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         syncAssistantConfig()
     }
 
+    /** 设置页保存云端配置：立刻写盘并生效 */
+    fun setCloudConfig(config: CloudBrain.CloudConfig) {
+        cloudConfig = config
+        settings.saveCloud(config)
+    }
+
+    /** 设置页「测试连接」：在子线程打一次最小请求，结果回调到主线程 */
+    fun testCloud(config: CloudBrain.CloudConfig, onResult: (String) -> Unit) {
+        netExecutor.execute {
+            val result = runCatching { CloudBrain.ping(config) }
+                .getOrElse { CloudBrain.CloudResult.Fail("请求失败：${it.message.orEmpty()}") }
+            val text = when (result) {
+                is CloudBrain.CloudResult.Ok ->
+                    "连上了。模型 ${result.model} 回复：${result.text}"
+                is CloudBrain.CloudResult.Fail -> "没连上：${result.reason}"
+            }
+            mainHandler.post { if (!isFinishing && !isDestroyed) onResult(text) }
+        }
+    }
+
     /** 恢复默认设置（不动记忆库），并立刻生效 */
     fun resetSettings() {
         settings.reset()
@@ -461,6 +493,8 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         val cleaned = candidates.map { it.trim() }.filter { it.isNotEmpty() }
         if (cleaned.isEmpty()) return
 
+        // 云端大模型要带上下文，所以先在本轮写进会话之前把历史取好
+        val history = session.recentTurns(CloudBrain.MAX_HISTORY_TURNS)
         val response = session.send(cleaned)
 
         val heard = response.heard
@@ -479,6 +513,12 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         }
         if (plan != null) {
             searchOnline(plan, session.lastAssistantIndex(), response.text)
+            return
+        }
+
+        // 本地答得不够好（或用户选了「AI 优先」）时，交给云端大模型
+        if (CloudBrain.shouldAsk(response.intent, response.text, cloudConfig)) {
+            askCloud(session.lastAssistantIndex(), response.text, cleaned.first(), history)
             return
         }
 
@@ -544,6 +584,80 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
                 }
             }
         }
+    }
+
+    /**
+     * 异步问云端大模型。
+     *
+     * 本地那条回答先留在屏幕上，子线程拿到结果后回主线程**替换同一条气泡**再播报，
+     * 所以用户看到的是「先有一句 → 这条被更好的回答刷新了」。
+     * 失败（没网 / Key 错 / 超时）保留本地答案，只在状态栏说明原因——
+     * 这是设计底线：**配了云端也不能让离线可用性变差**。
+     *
+     * @param history 本轮之前的历史，用来保证模型接得上上下文
+     */
+    private fun askCloud(
+        messageIndex: Int,
+        localAnswer: String,
+        input: String,
+        history: List<CloudBrain.ChatTurn>
+    ) {
+        chatUi?.showStatus(getString(R.string.status_cloud_thinking), highlight = true)
+
+        netExecutor.execute {
+            val result: CloudBrain.CloudResult = runCatching {
+                CloudBrain.call(cloudConfig, history, input, extraSystemForCloud())
+            }.getOrElse { CloudBrain.CloudResult.Fail("请求失败：${it.message.orEmpty()}") }
+
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                when (result) {
+                    is CloudBrain.CloudResult.Ok -> {
+                        session.replaceAssistant(messageIndex, result.text, AssistantEngine.INTENT_CLOUD)
+                        // 云端的好答案也喂给本地小模型：聊得越多，本地兜底越接近这个水平
+                        localModel.observePair(input, result.text)
+                        chatUi?.showStatus(getString(R.string.status_idle))
+                        if (speakEnabled) {
+                            chatUi?.showStatus(getString(R.string.status_speaking))
+                            speech.speak(result.text)
+                        } else {
+                            maybeRestartListening(400)
+                        }
+                    }
+                    is CloudBrain.CloudResult.Fail -> {
+                        session.replaceAssistant(messageIndex, localAnswer, null)
+                        chatUi?.showStatus(getString(R.string.status_cloud_fail, result.reason))
+                        if (speakEnabled) speech.speak(localAnswer) else maybeRestartListening(400)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 附加到 system 提示里的上下文：当前时间 + 用户教过的说法。
+     *
+     * 时间让模型答得出「今天」「明天」指的是哪一天；
+     * 教过的说法保证云端不会和用户亲手教的内容唱反调。
+     */
+    private fun extraSystemForCloud(): String {
+        val now = java.time.LocalDateTime.now()
+        val sb = StringBuilder()
+        sb.append("现在是 ${now.year} 年 ${now.monthValue} 月 ${now.dayOfMonth} 日，")
+            .append("${now.hour} 点 ${String.format("%02d", now.minute)} 分左右。")
+
+        val taught = session.engine.memoryRepository()?.entries()
+            ?.filter { it.isTaught }
+            ?.take(5)
+            .orEmpty()
+        if (taught.isNotEmpty()) {
+            sb.append("\n用户亲手教过你这些说法，回答时必须照做：")
+            for (entry in taught) {
+                val answer = entry.answer.split('|', '｜').first().trim()
+                sb.append("\n· 用户说「${entry.question}」时，要回答「$answer」")
+            }
+        }
+        return sb.toString()
     }
 
     /** 顶栏「技能」按钮：即使底部导航被系统栏遮住，也能进技能页 */

@@ -1,9 +1,12 @@
 package com.example.voiceassistant.ui
 
 import android.os.Bundle
+import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
@@ -16,6 +19,7 @@ import com.example.voiceassistant.assistant.Dictionary
 import com.example.voiceassistant.assistant.KnowledgeBase
 import com.example.voiceassistant.assistant.ReplyCrafter
 import com.example.voiceassistant.assistant.SkillCatalog
+import com.example.voiceassistant.data.CloudBrain
 import com.example.voiceassistant.memory.MemoryRepository
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
@@ -48,6 +52,15 @@ class SettingsFragment : Fragment() {
     private lateinit var tvRecognizerStatus: TextView
     private lateinit var tvVersion: TextView
 
+    // AI 大脑（云端大模型）
+    private lateinit var switchCloud: SwitchMaterial
+    private lateinit var tvCloudState: TextView
+    private lateinit var toggleCloudMode: MaterialButtonToggleGroup
+    private lateinit var tvCloudProvider: TextView
+    private lateinit var tvCloudEndpoint: TextView
+    private lateinit var tvCloudModel: TextView
+    private lateinit var tvCloudKey: TextView
+
     private val host: MainActivity
         get() = requireActivity() as MainActivity
 
@@ -78,9 +91,18 @@ class SettingsFragment : Fragment() {
         tvRecognizerStatus = view.findViewById(R.id.tvRecognizerStatus)
         tvVersion = view.findViewById(R.id.tvVersion)
 
+        switchCloud = view.findViewById(R.id.switchCloud)
+        tvCloudState = view.findViewById(R.id.tvCloudState)
+        toggleCloudMode = view.findViewById(R.id.toggleCloudMode)
+        tvCloudProvider = view.findViewById(R.id.tvCloudProvider)
+        tvCloudEndpoint = view.findViewById(R.id.tvCloudEndpoint)
+        tvCloudModel = view.findViewById(R.id.tvCloudModel)
+        tvCloudKey = view.findViewById(R.id.tvCloudKey)
+
         bindVoice()
         bindStyle()
         bindLearning()
+        bindCloud()
 
         view.findViewById<MaterialButton>(R.id.btnClearChat).setOnClickListener {
             host.clearChat()
@@ -226,6 +248,209 @@ class SettingsFragment : Fragment() {
         }
     }
 
+    // ------------------------------------------------------------------ AI 大脑
+
+    /**
+     * 云端大模型配置。
+     *
+     * 默认整块是关的：没填 Key 就完全不联网，App 依旧是纯离线助手。
+     * 用户填好之后有两种用法（见 [CloudBrain.CloudMode]），
+     * 任何一种失败都会自动退回本地答案，不会让界面卡住。
+     */
+    private fun bindCloud() {
+        switchCloud.isChecked = host.cloudConfig.enabled
+        switchCloud.setOnCheckedChangeListener { _, checked ->
+            applyCloud(host.cloudConfig.copy(enabled = checked))
+        }
+
+        // 先设值再挂监听，避免初始化时反手把配置改掉
+        toggleCloudMode.check(cloudModeButtonId(host.cloudConfig.mode))
+        toggleCloudMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked) return@addOnButtonCheckedListener
+            val mode = when (checkedId) {
+                R.id.btnCloudLocal -> CloudBrain.CloudMode.LOCAL_FIRST
+                R.id.btnCloudCloud -> CloudBrain.CloudMode.CLOUD_FIRST
+                else -> CloudBrain.CloudMode.OFF
+            }
+            if (host.cloudConfig.mode != mode) applyCloud(host.cloudConfig.copy(mode = mode))
+        }
+
+        requireView().findViewById<MaterialButton>(R.id.btnCloudProvider)
+            .setOnClickListener { showProviderPicker() }
+        requireView().findViewById<MaterialButton>(R.id.btnCloudEdit)
+            .setOnClickListener { showCloudEditor() }
+        requireView().findViewById<MaterialButton>(R.id.btnCloudTest)
+            .setOnClickListener { runCloudTest() }
+
+        updateCloudState()
+    }
+
+    private fun cloudModeButtonId(mode: CloudBrain.CloudMode): Int = when (mode) {
+        CloudBrain.CloudMode.LOCAL_FIRST -> R.id.btnCloudLocal
+        CloudBrain.CloudMode.CLOUD_FIRST -> R.id.btnCloudCloud
+        else -> R.id.btnCloudOff
+    }
+
+    /** 改完立刻写盘并刷新展示 */
+    private fun applyCloud(config: CloudBrain.CloudConfig) {
+        host.setCloudConfig(config)
+        updateCloudState()
+    }
+
+    private fun updateCloudState() {
+        val cfg = host.cloudConfig
+        val unset = getString(R.string.action_unset)
+
+        tvCloudProvider.text = getString(R.string.settings_cloud_provider, providerLabel(cfg))
+        tvCloudEndpoint.text = getString(R.string.settings_cloud_endpoint, cfg.baseUrl.ifBlank { unset })
+        tvCloudModel.text = getString(R.string.settings_cloud_model, cfg.model.ifBlank { unset })
+        tvCloudKey.text = getString(
+            R.string.settings_cloud_key,
+            if (cfg.apiKey.isBlank()) unset else cfg.maskedKey()
+        )
+
+        tvCloudState.text = when {
+            !cfg.enabled -> getString(R.string.settings_cloud_state_off)
+            !cfg.isReady() -> getString(
+                R.string.settings_cloud_state_missing,
+                missingFields(cfg).joinToString("、")
+            )
+            else -> getString(R.string.settings_cloud_state_ready, providerLabel(cfg), cfg.model)
+        }
+    }
+
+    private fun missingFields(cfg: CloudBrain.CloudConfig): List<String> {
+        val missing = mutableListOf<String>()
+        if (cfg.baseUrl.isBlank()) missing += getString(R.string.settings_cloud_missing_url)
+        if (cfg.apiKey.isBlank()) missing += getString(R.string.settings_cloud_missing_key)
+        if (cfg.model.isBlank()) missing += getString(R.string.settings_cloud_missing_model)
+        return missing
+    }
+
+    /** 按 Base URL 反查服务商名（自己填的地址显示「自定义」） */
+    private fun providerLabel(cfg: CloudBrain.CloudConfig): String {
+        val base = cfg.baseUrl.trim().trimEnd('/')
+        val hit = CloudBrain.PROVIDERS.firstOrNull { it.baseUrl.isNotEmpty() && it.baseUrl.trimEnd('/') == base }
+        return hit?.label ?: CloudBrain.PROVIDERS.first().label
+    }
+
+    /** 选服务商：只帮忙填地址和模型名，Key 永远要用户自己粘 */
+    private fun showProviderPicker() {
+        val labels = CloudBrain.PROVIDERS.map { it.label }.toTypedArray()
+        val current = providerLabel(host.cloudConfig)
+        val currentIndex = CloudBrain.PROVIDERS.indexOfFirst { it.label == current }.coerceAtLeast(0)
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_cloud_provider_label)
+            .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
+                val picked = CloudBrain.PROVIDERS[which]
+                if (picked.baseUrl.isEmpty()) {
+                    dialog.dismiss()
+                    showCloudEditor()
+                } else {
+                    applyCloud(
+                        host.cloudConfig.copy(
+                            baseUrl = picked.baseUrl,
+                            model = picked.model,
+                            enabled = true,
+                            mode = if (host.cloudConfig.mode == CloudBrain.CloudMode.OFF) {
+                                CloudBrain.CloudMode.LOCAL_FIRST
+                            } else {
+                                host.cloudConfig.mode
+                            }
+                        )
+                    )
+                    dialog.dismiss()
+                    toast(
+                        getString(R.string.settings_cloud_saved, picked.label) +
+                            "（${getString(R.string.settings_cloud_key_label)}还差一步）"
+                    )
+                }
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    /**
+     * 填写接口四项配置。
+     *
+     * 用代码搭界面而不是另写一份 XML：只有四个输入框，
+     * 而且这样不用管主题里有没有对应 style，任何 Material 版本都能编译过。
+     */
+    private fun showCloudEditor() {
+        val cfg = host.cloudConfig
+        val context = requireContext()
+        val pad = (20 * resources.displayMetrics.density).toInt()
+
+        fun field(value: String, hint: String, singleLine: Boolean = true): EditText =
+            EditText(context).apply {
+                setText(value)
+                this.hint = hint
+                setSingleLine(singleLine)
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                textSize = 14f
+            }
+
+        val inputBase = field(cfg.baseUrl, getString(R.string.settings_cloud_base_hint))
+        val inputKey = field(cfg.apiKey, getString(R.string.settings_cloud_key_hint))
+        val inputModel = field(cfg.model, getString(R.string.settings_cloud_model_hint))
+        val inputPrompt = field(
+            if (cfg.systemPrompt == CloudBrain.DEFAULT_SYSTEM_PROMPT) "" else cfg.systemPrompt,
+            getString(R.string.settings_cloud_prompt_hint),
+            singleLine = false
+        )
+
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(inputBase)
+            addView(inputKey)
+            addView(inputModel)
+            addView(inputPrompt)
+        }
+
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.settings_cloud_title)
+            .setMessage(R.string.settings_cloud_hint)
+            .setView(container)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.action_save) { _, _ ->
+                val next = CloudBrain.CloudConfig(
+                    enabled = true,
+                    mode = if (cfg.mode == CloudBrain.CloudMode.OFF) {
+                        CloudBrain.CloudMode.LOCAL_FIRST
+                    } else {
+                        cfg.mode
+                    },
+                    baseUrl = inputBase.text.toString(),
+                    apiKey = inputKey.text.toString(),
+                    model = inputModel.text.toString(),
+                    systemPrompt = inputPrompt.text.toString().trim()
+                        .ifBlank { CloudBrain.DEFAULT_SYSTEM_PROMPT }
+                )
+                applyCloud(next)
+                switchCloud.isChecked = next.enabled
+                toast(getString(R.string.settings_cloud_saved, next.model.ifBlank { next.baseUrl }))
+            }
+            .show()
+    }
+
+    /** 打一次最小请求，验证地址和 Key 对不对 */
+    private fun runCloudTest() {
+        val cfg = host.cloudConfig
+        if (!cfg.isReady()) {
+            toast(
+                getString(
+                    R.string.settings_cloud_state_missing,
+                    missingFields(cfg).joinToString("、")
+                )
+            )
+            return
+        }
+        toast(getString(R.string.settings_cloud_testing))
+        host.testCloud(cfg) { result -> toast(result) }
+    }
+
     // ------------------------------------------------------------------ 状态
 
     private fun refreshStatus() {
@@ -315,6 +540,7 @@ class SettingsFragment : Fragment() {
                 bindVoice()
                 bindStyle()
                 bindLearning()
+                bindCloud()
                 refreshStatus()
                 toast(getString(R.string.settings_reset_done))
             }
@@ -336,8 +562,13 @@ class SettingsFragment : Fragment() {
         switchFollowUp.isChecked = host.proactiveFollowUp
         switchAutoLearn.isChecked = host.autoLearn
         switchLocalModel.isChecked = host.localModelEnabled
+        switchOnline.isChecked = host.onlineSearchEnabled
+        switchCloud.isChecked = host.cloudConfig.enabled
+        toggleCloudMode.check(cloudModeButtonId(host.cloudConfig.mode))
         updateEngineLabel()
         updateModelState()
+        updateOnlineState()
+        updateCloudState()
         refreshStatus()
     }
 

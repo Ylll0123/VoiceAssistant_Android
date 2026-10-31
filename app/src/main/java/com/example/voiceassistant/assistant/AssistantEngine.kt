@@ -463,6 +463,9 @@ class AssistantEngine(
         /** 回答来自「思维模式」：按提问类型给对应的思考路径（ReplyCrafter） */
         const val INTENT_THOUGHT = "thought"
 
+        /** 回答来自云端大模型（用户在设置页配置的 AI 接口） */
+        const val INTENT_CLOUD = "cloud"
+
         /** 回答来自联网查询（实时天气 / 百科搜索） */
         const val INTENT_WEB = "web"
 
