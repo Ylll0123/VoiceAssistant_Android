@@ -18,16 +18,6 @@ class AppSettings(context: Context) {
 
     // ---------------------------------------------------------------- 语音
 
-    /** 播报语速，0.5~2.0，1.0 为正常 */
-    var speechRate: Float
-        get() = prefs.getFloat(KEY_RATE, DEFAULT_RATE)
-        set(value) = prefs.edit().putFloat(KEY_RATE, value.coerceIn(MIN_RATE, MAX_RATE)).apply()
-
-    /** 播报音调，0.7~1.6，1.0 为正常 */
-    var speechPitch: Float
-        get() = prefs.getFloat(KEY_PITCH, DEFAULT_PITCH)
-        set(value) = prefs.edit().putFloat(KEY_PITCH, value.coerceIn(MIN_PITCH, MAX_PITCH)).apply()
-
     /** 是否出声播报 */
     var speakEnabled: Boolean
         get() = prefs.getBoolean(KEY_SPEAK, true)
@@ -67,6 +57,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_LEARN, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_LEARN, value).apply()
 
+    /** 是否启用内置本地小模型（n-gram 生成兜底，完全离线） */
+    var localModel: Boolean
+        get() = prefs.getBoolean(KEY_LOCAL_MODEL, true)
+        set(value) = prefs.edit().putBoolean(KEY_LOCAL_MODEL, value).apply()
+
     /** 答不上来的话先收进这里，用户在记忆页一键教会 */
     var pendingQuestions: List<String>
         get() {
@@ -91,32 +86,6 @@ class AppSettings(context: Context) {
         pendingQuestions = pendingQuestions.filter { it != question }
     }
 
-    // ---------------------------------------------------------------- 云端增强（可选）
-
-    /** 是否启用云端大模型兜底（默认关闭，关闭时完全离线） */
-    var cloudEnabled: Boolean
-        get() = prefs.getBoolean(KEY_CLOUD, false)
-        set(value) = prefs.edit().putBoolean(KEY_CLOUD, value).apply()
-
-    /** OpenAI 兼容接口地址，例如 https://api.deepseek.com/v1/chat/completions */
-    var cloudEndpoint: String
-        get() = prefs.getString(KEY_CLOUD_ENDPOINT, DEFAULT_ENDPOINT).orEmpty()
-        set(value) = prefs.edit().putString(KEY_CLOUD_ENDPOINT, value.trim()).apply()
-
-    /** 模型名，例如 deepseek-chat */
-    var cloudModel: String
-        get() = prefs.getString(KEY_CLOUD_MODEL, DEFAULT_MODEL).orEmpty()
-        set(value) = prefs.edit().putString(KEY_CLOUD_MODEL, value.trim()).apply()
-
-    /** API Key：只存在本机，不上传、不打印到日志 */
-    var cloudApiKey: String
-        get() = prefs.getString(KEY_CLOUD_KEY, "").orEmpty()
-        set(value) = prefs.edit().putString(KEY_CLOUD_KEY, value.trim()).apply()
-
-    /** 云端请求是否真的可用（开关 + 有 Key + 有地址 + 有模型） */
-    fun isCloudUsable(): Boolean =
-        cloudEnabled && cloudApiKey.length >= 8 && cloudEndpoint.isNotBlank() && cloudModel.isNotBlank()
-
     // ----------------------------------------------------------------
 
     /** 恢复出厂设置：只清设置，不动记忆库（记忆是用户资产） */
@@ -125,33 +94,17 @@ class AppSettings(context: Context) {
     }
 
     companion object {
-        const val MIN_RATE = 0.5f
-        const val MAX_RATE = 2.0f
-        const val DEFAULT_RATE = 1.0f
-
-        const val MIN_PITCH = 0.7f
-        const val MAX_PITCH = 1.6f
-        const val DEFAULT_PITCH = 1.0f
-
         private const val PREFS_NAME = "voice_assistant_settings"
-        private const val KEY_RATE = "speech_rate"
-        private const val KEY_PITCH = "speech_pitch"
         private const val KEY_SPEAK = "speak_enabled"
         private const val KEY_CONTINUOUS = "continuous"
         private const val KEY_TTS_ENGINE = "tts_engine"
         private const val KEY_STYLE = "reply_style"
         private const val KEY_FOLLOW_UP = "proactive_follow_up"
         private const val KEY_AUTO_LEARN = "auto_learn"
+        private const val KEY_LOCAL_MODEL = "local_model"
         private const val KEY_PENDING = "pending_questions"
-        private const val KEY_CLOUD = "cloud_enabled"
-        private const val KEY_CLOUD_ENDPOINT = "cloud_endpoint"
-        private const val KEY_CLOUD_MODEL = "cloud_model"
-        private const val KEY_CLOUD_KEY = "cloud_key"
 
         private const val SEP = "␟"
         private const val MAX_PENDING = 40
-
-        const val DEFAULT_ENDPOINT = "https://api.deepseek.com/v1/chat/completions"
-        const val DEFAULT_MODEL = "deepseek-chat"
     }
 }

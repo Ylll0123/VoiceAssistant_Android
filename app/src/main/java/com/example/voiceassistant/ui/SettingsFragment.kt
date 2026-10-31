@@ -1,13 +1,9 @@
 package com.example.voiceassistant.ui
 
 import android.os.Bundle
-import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
@@ -21,19 +17,9 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
-import java.util.Locale
 
 /**
- * 设置页：语音行为、说话方式、自学习，以及多轮上下文的实时状态。
- *
- * ## 关于「语速调了没反应」
- * 原来是只在学习者改动时调用一次 `TextToSpeech.setSpeechRate`，
- * 而部分手机自带的 TTS 引擎会把参数缓存下来、进而在内部重置，
- * 结果滑块滑了、声音没变。现在改成：
- * 1. **每次开口前都重新写一遍**语速和音调（见 SpeechController.applyVoiceParams）；
- * 2. 滑块改成 **0.1 一档**（0.5x~2.0x），一格就是明显的一档；
- * 3. 加了**试听**按钮，当场就能确认；
- * 4. 实在不行还可以**换一个语音引擎**（有些 OEM 引擎根本不实现变速）。
+ * 设置页：语音行为、说话方式、自学习与本地小模型，以及多轮上下文的实时状态。
  *
  * 「对话状态」那张卡片是给答辩用的可视化：能直接看到上一轮意图、
  * 上下文剩余秒数、当前话题和槽位，证明多轮上下文是真实存在的状态机。
@@ -44,16 +30,12 @@ class SettingsFragment : Fragment() {
     private lateinit var switchSpeak: SwitchMaterial
     private lateinit var switchFollowUp: SwitchMaterial
     private lateinit var switchAutoLearn: SwitchMaterial
-    private lateinit var switchCloud: SwitchMaterial
-    private lateinit var seekRate: SeekBar
-    private lateinit var seekPitch: SeekBar
-    private lateinit var tvRateValue: TextView
-    private lateinit var tvPitchValue: TextView
+    private lateinit var switchLocalModel: SwitchMaterial
     private lateinit var tvEngine: TextView
     private lateinit var toggleStyle: MaterialButtonToggleGroup
     private lateinit var tvLearnStat: TextView
     private lateinit var tvPendingStat: TextView
-    private lateinit var tvCloudState: TextView
+    private lateinit var tvModelState: TextView
     private lateinit var tvLastIntent: TextView
     private lateinit var tvContext: TextView
     private lateinit var tvMessageCount: TextView
@@ -76,16 +58,12 @@ class SettingsFragment : Fragment() {
         switchSpeak = view.findViewById(R.id.switchSpeak)
         switchFollowUp = view.findViewById(R.id.switchFollowUp)
         switchAutoLearn = view.findViewById(R.id.switchAutoLearn)
-        switchCloud = view.findViewById(R.id.switchCloud)
-        seekRate = view.findViewById(R.id.seekRate)
-        seekPitch = view.findViewById(R.id.seekPitch)
-        tvRateValue = view.findViewById(R.id.tvRateValue)
-        tvPitchValue = view.findViewById(R.id.tvPitchValue)
+        switchLocalModel = view.findViewById(R.id.switchLocalModel)
         tvEngine = view.findViewById(R.id.tvEngine)
         toggleStyle = view.findViewById(R.id.toggleStyle)
         tvLearnStat = view.findViewById(R.id.tvLearnStat)
         tvPendingStat = view.findViewById(R.id.tvPendingStat)
-        tvCloudState = view.findViewById(R.id.tvCloudState)
+        tvModelState = view.findViewById(R.id.tvModelState)
         tvLastIntent = view.findViewById(R.id.tvLastIntent)
         tvContext = view.findViewById(R.id.tvContext)
         tvMessageCount = view.findViewById(R.id.tvMessageCount)
@@ -120,81 +98,11 @@ class SettingsFragment : Fragment() {
             if (host.speakEnabled != checked) host.setSpeakEnabled(checked)
         }
 
-        // 0.5x ~ 2.0x，每 0.1 一档：一档就是听得出来的差别
-        seekRate.max = RATE_STEPS
-        seekRate.progress = rateToProgress(host.speechRate)
-        updateRateLabel(host.speechRate)
-        seekRate.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                val rate = progressToRate(progress)
-                updateRateLabel(rate)
-                host.setSpeechRate(rate)
-            }
-
-            override fun onStartTrackingTouch(bar: SeekBar?) = Unit
-            override fun onStopTrackingTouch(bar: SeekBar?) = Unit
-        })
-
-        // 0.7x ~ 1.6x，每 0.1 一档
-        seekPitch.max = PITCH_STEPS
-        seekPitch.progress = pitchToProgress(host.speechPitch)
-        updatePitchLabel(host.speechPitch)
-        seekPitch.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                val pitch = progressToPitch(progress)
-                updatePitchLabel(pitch)
-                host.setSpeechPitch(pitch)
-            }
-
-            override fun onStartTrackingTouch(bar: SeekBar?) = Unit
-            override fun onStopTrackingTouch(bar: SeekBar?) = Unit
-        })
-
-        requireView().findViewById<MaterialButton>(R.id.btnPreview).setOnClickListener {
-            // 试听要绕过「语音播报」开关：不然关着的时候点了没声音，像是坏了
-            host.speech.preview(getString(R.string.settings_preview_text))
-        }
-
         updateEngineLabel()
         requireView().findViewById<MaterialButton>(R.id.btnEngine).setOnClickListener {
             showEnginePicker()
         }
     }
-
-    private fun updateRateLabel(rate: Float) {
-        tvRateValue.text = getString(
-            R.string.settings_rate_value,
-            String.format(Locale.US, "%.1f", rate),
-            rateWord(rate)
-        )
-    }
-
-    private fun updatePitchLabel(pitch: Float) {
-        tvPitchValue.text = getString(
-            R.string.settings_pitch_value,
-            String.format(Locale.US, "%.1f", pitch)
-        )
-    }
-
-    private fun rateWord(rate: Float): String = when {
-        rate <= 0.7f -> getString(R.string.settings_rate_very_slow)
-        rate <= 0.9f -> getString(R.string.settings_rate_slow)
-        rate < 1.2f -> getString(R.string.settings_rate_normal)
-        rate < 1.6f -> getString(R.string.settings_rate_fast)
-        else -> getString(R.string.settings_rate_very_fast)
-    }
-
-    private fun rateToProgress(rate: Float): Int =
-        ((rate - MIN_RATE) / RATE_STEP).toInt().coerceIn(0, RATE_STEPS)
-
-    private fun progressToRate(progress: Int): Float = MIN_RATE + progress * RATE_STEP
-
-    private fun pitchToProgress(pitch: Float): Int =
-        ((pitch - MIN_PITCH) / PITCH_STEP).toInt().coerceIn(0, PITCH_STEPS)
-
-    private fun progressToPitch(progress: Int): Float = MIN_PITCH + progress * PITCH_STEP
 
     private fun updateEngineLabel() {
         val current = host.speech.currentEngine()
@@ -230,7 +138,7 @@ class SettingsFragment : Fragment() {
                 updateEngineLabel()
                 dialog.dismiss()
                 // 换完引擎立刻念一句，用户马上知道换成功了
-                host.speech.preview(getString(R.string.settings_preview_text))
+                host.speech.preview(getString(R.string.settings_engine_preview))
             }
             .setNegativeButton(R.string.action_cancel, null)
             .show()
@@ -263,7 +171,7 @@ class SettingsFragment : Fragment() {
         else -> R.id.btnStyleStandard
     }
 
-    // ------------------------------------------------------------------ 自学习与智能
+    // ------------------------------------------------------------------ 自学习与本地模型
 
     private fun bindLearning() {
         switchAutoLearn.isChecked = host.autoLearn
@@ -275,77 +183,24 @@ class SettingsFragment : Fragment() {
             host.selectTab(MainActivity.Tab.MEMORY)
         }
 
-        val settings = host.appSettings()
-        switchCloud.isChecked = settings.cloudEnabled
-        switchCloud.setOnCheckedChangeListener { _, checked ->
-            settings.cloudEnabled = checked
-            updateCloudState()
-            // 刚打开就把配置弹出来，否则用户开了却不知道去哪填
-            if (checked && !settings.isCloudUsable()) showCloudDialog()
+        switchLocalModel.isChecked = host.localModelEnabled
+        switchLocalModel.setOnCheckedChangeListener { _, checked ->
+            if (host.localModelEnabled != checked) host.setLocalModelEnabled(checked)
         }
-
-        requireView().findViewById<MaterialButton>(R.id.btnCloudConfig).setOnClickListener {
-            showCloudDialog()
-        }
-        updateCloudState()
+        updateModelState()
     }
 
-    private fun updateCloudState() {
-        val settings = host.appSettings()
-        tvCloudState.text = when {
-            !settings.cloudEnabled -> getString(R.string.settings_cloud_state_off)
-            settings.isCloudUsable() ->
-                getString(R.string.settings_cloud_state_ready, settings.cloudModel)
-            else -> getString(R.string.settings_cloud_state_need_key)
+    private fun updateModelState() {
+        val model = host.session.engine.localModel()
+        if (model == null || !host.localModelEnabled) {
+            tvModelState.text = getString(R.string.settings_model_state_off)
+        } else {
+            tvModelState.text = getString(
+                R.string.settings_model_state,
+                model.sentenceCount(),
+                model.nodeCount()
+            )
         }
-    }
-
-    private fun showCloudDialog() {
-        val context = requireContext()
-        val settings = host.appSettings()
-
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(4), dp(20), 0)
-        }
-        val etEndpoint = EditText(context).apply {
-            setText(settings.cloudEndpoint)
-            hint = getString(R.string.settings_cloud_endpoint_hint)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setSingleLine(true)
-        }
-        val etModel = EditText(context).apply {
-            setText(settings.cloudModel)
-            hint = getString(R.string.settings_cloud_model_hint)
-            inputType = InputType.TYPE_CLASS_TEXT
-            setSingleLine(true)
-        }
-        val etKey = EditText(context).apply {
-            setText(settings.cloudApiKey)
-            hint = getString(R.string.settings_cloud_key_hint)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSingleLine(true)
-        }
-        val note = TextView(context).apply {
-            text = getString(R.string.settings_cloud_note)
-            textSize = 12f
-        }
-        container.addView(etEndpoint)
-        container.addView(etModel)
-        container.addView(etKey)
-        container.addView(note)
-
-        MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.settings_cloud_dialog_title)
-            .setView(container)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.action_ok) { _, _ ->
-                settings.cloudEndpoint = etEndpoint.text.toString().trim()
-                settings.cloudModel = etModel.text.toString().trim()
-                settings.cloudApiKey = etKey.text.toString().trim()
-                updateCloudState()
-            }
-            .show()
     }
 
     // ------------------------------------------------------------------ 状态
@@ -450,25 +305,13 @@ class SettingsFragment : Fragment() {
         switchSpeak.isChecked = host.speakEnabled
         switchFollowUp.isChecked = host.proactiveFollowUp
         switchAutoLearn.isChecked = host.autoLearn
+        switchLocalModel.isChecked = host.localModelEnabled
         updateEngineLabel()
-        updateCloudState()
+        updateModelState()
         refreshStatus()
     }
 
     private fun toast(text: String) {
         Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
-
-    private companion object {
-        const val MIN_RATE = 0.5f
-        const val RATE_STEP = 0.1f
-        const val RATE_STEPS = 15
-
-        const val MIN_PITCH = 0.7f
-        const val PITCH_STEP = 0.1f
-        const val PITCH_STEPS = 9
     }
 }

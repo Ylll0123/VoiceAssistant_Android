@@ -22,15 +22,18 @@ import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import com.example.voiceassistant.assistant.AssistantConfig
 import com.example.voiceassistant.assistant.AssistantEngine
-import com.example.voiceassistant.assistant.CloudLlm
+import com.example.voiceassistant.assistant.DialogCorpus
+import com.example.voiceassistant.assistant.NgramModel
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatSession
+import com.example.voiceassistant.memory.MemorySeed
 import com.example.voiceassistant.memory.SqliteMemoryRepository
 import com.example.voiceassistant.speech.SpeechController
 import com.example.voiceassistant.ui.ChatFragment
 import com.example.voiceassistant.ui.MemoryFragment
 import com.example.voiceassistant.ui.SettingsFragment
 import com.example.voiceassistant.ui.SkillsFragment
+import java.io.File
 
 /**
  * 应用外壳：底部导航 + 三个页面 + 全局语音控制。
@@ -53,9 +56,23 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     /** 设置持久化：改完立刻写盘，下次打开还是上次的样子 */
     private lateinit var settings: AppSettings
 
-    /** 会话状态（消息 + 引擎 + 本地记忆库），整个应用共享一份 */
+    /**
+     * 内置本地小模型（字符级 n-gram，纯 Kotlin）。
+     *
+     * 启动时先读上次的训练进度（filesDir/ngram_model.txt）；
+     * 第一次没有存档，就用内置语料打底训练并存档。
+     * 之后每轮对话都会增量学习，退到后台时把新学的写盘。
+     */
+    private lateinit var localModel: NgramModel
+
+    /** 会话状态（消息 + 引擎 + 本地记忆库 + 小模型），整个应用共享一份 */
     val session: ChatSession by lazy {
-        ChatSession(AssistantEngine(memory = SqliteMemoryRepository(applicationContext)))
+        ChatSession(
+            AssistantEngine(
+                memory = SqliteMemoryRepository(applicationContext),
+                model = localModel
+            )
+        )
     }
 
     lateinit var speech: SpeechController
@@ -65,12 +82,6 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         private set
 
     var continuousMode: Boolean = true
-        private set
-
-    var speechRate: Float = 1.0f
-        private set
-
-    var speechPitch: Float = 1.0f
         private set
 
     var ttsEngine: String = ""
@@ -83,6 +94,9 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         private set
 
     var autoLearn: Boolean = true
+        private set
+
+    var localModelEnabled: Boolean = true
         private set
 
     private lateinit var ivTabChat: ImageView
@@ -132,9 +146,12 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         applyInsets()
         setupTabs()
 
-        session.ensureWelcome(getString(R.string.welcome))
-
         settings = AppSettings(this)
+
+        // 小模型要先于会话创建（会话的引擎里要引用它）
+        localModel = createLocalModel()
+
+        session.ensureWelcome(getString(R.string.welcome))
 
         speech = SpeechController(this)
         speech.listener = this
@@ -164,18 +181,28 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
     private fun applyInsets() {
         val root: LinearLayout = findViewById(R.id.root)
+        val bottomNav: LinearLayout = findViewById(R.id.bottomNav)
 
-        // 统一交给根布局处理：顶部让出状态栏，底部让出导航栏。
-        // 早先是把底部 inset 加到导航栏内部 padding 上，在部分手机上
-        // 导航栏会被系统栏挤出去（技能 / 设置两个入口看不见），
-        // 现在改成根布局留白，底部导航一定落在可用区域内。
+        // 统一交给根布局处理：顶部让出状态栏，底部让出「导航栏或键盘」中更高的那个。
+        //
+        // 键盘相关的历史坑：
+        // - 早先把 ime inset 加在输入栏自己的 padding 上，而系统在部分机型上
+        //   又会同时把窗口 resize 一部分，两边叠加 → 输入栏和键盘之间空出一条；
+        // - 现在只在这里（根布局）处理一次：bottom = max(导航栏, 键盘)，
+        //   输入栏保持普通 padding，不再额外补偿。
+        // - 键盘弹起时隐藏底部导航（微信的做法）：导航藏到键盘后面没有意义，
+        //   省出的空间全部给消息列表，最后一条消息正好贴在输入栏上方。
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val imeVisible = ime.bottom > bars.bottom
+
+            bottomNav.visibility = if (imeVisible) View.GONE else View.VISIBLE
             view.updatePadding(
                 left = bars.left,
                 top = bars.top,
                 right = bars.right,
-                bottom = bars.bottom
+                bottom = maxOf(bars.bottom, ime.bottom)
             )
             insets
         }
@@ -254,11 +281,6 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         continuousMode = settings.continuousMode
         speech.speakEnabled = speakEnabled
 
-        speechRate = settings.speechRate
-        speechPitch = settings.speechPitch
-        speech.setSpeechRate(speechRate)
-        speech.setSpeechPitch(speechPitch)
-
         // 指定引擎必须在首次播报前切好，否则这一次还是用旧引擎的声音
         ttsEngine = settings.ttsEngine
         if (ttsEngine.isNotEmpty()) speech.useEngine(ttsEngine)
@@ -266,10 +288,11 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         replyStyle = settings.replyStyle
         proactiveFollowUp = settings.proactiveFollowUp
         autoLearn = settings.autoLearn
+        localModelEnabled = settings.localModel
         syncAssistantConfig()
     }
 
-    /** 把三个对话行为开关同步给纯逻辑层（规则 / 语料 / 引擎都读它） */
+    /** 把对话行为开关同步给纯逻辑层（规则 / 语料 / 引擎都读它） */
     private fun syncAssistantConfig() {
         AssistantConfig.replyStyle = when (replyStyle) {
             0 -> AssistantConfig.ReplyStyle.CONCISE
@@ -278,6 +301,35 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         }
         AssistantConfig.proactiveFollowUp = proactiveFollowUp
         AssistantConfig.autoLearn = autoLearn
+        AssistantConfig.localModel = localModelEnabled
+    }
+
+    /**
+     * 加载本地小模型：有存档读存档，没有就用内置语料打底并存档。
+     * 打底语料 = 闲聊话题的全部应答 + 预置常识的答案。
+     */
+    private fun createLocalModel(): NgramModel {
+        val file = File(filesDir, MODEL_FILE)
+        val model = NgramModel()
+        val loaded = runCatching {
+            if (file.exists()) model.loadInto(file.readText()) else false
+        }.getOrDefault(false)
+        if (!loaded) {
+            model.observeAll(
+                DialogCorpus.topics.flatMap { it.replies + it.more + it.advice + it.followUps + it.samples }
+            )
+            model.observeAll(MemorySeed.pairs.map { it.second })
+            saveLocalModel()
+        }
+        return model
+    }
+
+    /** 把小模型当前的训练进度写盘（退后台 / 退出时调用） */
+    private fun saveLocalModel() {
+        runCatching {
+            File(filesDir, MODEL_FILE).writeText(localModel.serialize())
+            localModel.markSaved()
+        }
     }
 
     fun setSpeakEnabled(enabled: Boolean) {
@@ -296,19 +348,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         }
     }
 
-    fun setSpeechRate(rate: Float) {
-        speechRate = rate
-        settings.speechRate = rate
-        speech.setSpeechRate(rate)
-    }
-
-    fun setSpeechPitch(pitch: Float) {
-        speechPitch = pitch
-        settings.speechPitch = pitch
-        speech.setSpeechPitch(pitch)
-    }
-
-    /** 切换语音合成引擎；有些手机自带引擎不支持变速，换一个语速才生效 */
+    /** 切换语音合成引擎 */
     fun setTtsEngine(packageName: String) {
         ttsEngine = packageName
         settings.ttsEngine = packageName
@@ -330,6 +370,12 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     fun setAutoLearn(enabled: Boolean) {
         autoLearn = enabled
         settings.autoLearn = enabled
+        syncAssistantConfig()
+    }
+
+    fun setLocalModelEnabled(enabled: Boolean) {
+        localModelEnabled = enabled
+        settings.localModel = enabled
         syncAssistantConfig()
     }
 
@@ -381,12 +427,6 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
             }, 2500)
         }
 
-        // 本地实在答不上来、且用户开了云端增强，才去联网问一次
-        if (response.intent == AssistantEngine.INTENT_FALLBACK && settings.isCloudUsable()) {
-            askCloud(cleaned.first())
-            return
-        }
-
         if (speakEnabled) {
             if (heard == null || heard == cleaned.first()) {
                 chatUi?.showStatus(getString(R.string.status_speaking))
@@ -396,54 +436,6 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
             if (heard == null || heard == cleaned.first()) {
                 chatUi?.showStatus(getString(R.string.status_idle))
             }
-            maybeRestartListening(400)
-        }
-    }
-
-    /**
-     * 云端兜底：本地答不上来时联网问一次大模型。
-     *
-     * 全程异步：先把界面上那条兜底提示换成「让我想想」，
-     * 拿到结果再替换成真正的回答，网络再慢也不会卡住对话。
-     * 失败（无网 / Key 错 / 超时）就换回本地提示，用户感知不到这一层。
-     */
-    private fun askCloud(question: String) {
-        chatUi?.showStatus(getString(R.string.status_cloud), highlight = true)
-        session.updateLastAssistant(
-            getString(R.string.cloud_thinking),
-            AssistantEngine.INTENT_CLOUD_PENDING
-        )
-
-        val history = session.recentPairs(3)
-        val endpoint = settings.cloudEndpoint
-        val apiKey = settings.cloudApiKey
-        val model = settings.cloudModel
-
-        Thread {
-            val answer = CloudLlm.ask(endpoint, apiKey, model, question, history)
-            mainHandler.post {
-                val text = answer?.takeIf { it.isNotBlank() }
-                if (text == null) {
-                    session.updateLastAssistant(
-                        AssistantEngine.FALLBACK,
-                        AssistantEngine.INTENT_FALLBACK
-                    )
-                    finishTurn(AssistantEngine.FALLBACK)
-                } else {
-                    session.updateLastAssistant(text, AssistantEngine.INTENT_CLOUD)
-                    finishTurn(text)
-                }
-            }
-        }.start()
-    }
-
-    /** 一轮结束：决定是直接出声，还是（关了播报时）立刻续听 */
-    private fun finishTurn(text: String) {
-        if (speakEnabled) {
-            chatUi?.showStatus(getString(R.string.status_speaking))
-            speech.speak(text)
-        } else {
-            chatUi?.showStatus(getString(R.string.status_idle))
             maybeRestartListening(400)
         }
     }
@@ -574,6 +566,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         speech.cancelListening()
         speech.stopSpeaking()
         chatUi?.setMicActive(false)
+        if (::localModel.isInitialized) saveLocalModel()
         super.onPause()
     }
 
@@ -587,5 +580,8 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
     private companion object {
         const val KEY_TAB = "current_tab"
+
+        /** 本地小模型训练进度的存档文件名 */
+        const val MODEL_FILE = "ngram_model.txt"
     }
 }

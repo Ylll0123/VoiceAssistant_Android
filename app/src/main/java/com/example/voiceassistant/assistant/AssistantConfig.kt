@@ -35,9 +35,16 @@ object AssistantConfig {
      */
     var autoLearn: Boolean = true
 
+    /**
+     * 本地小模型：答不上来时用内置的 n-gram 语言模型生成回复，
+     * 并在对话中持续学习。关闭后答不上来就直接提示「你可以教我」。
+     */
+    var localModel: Boolean = true
+
     fun reset() {
         replyStyle = ReplyStyle.STANDARD
         proactiveFollowUp = true
         autoLearn = true
+        localModel = true
     }
 }

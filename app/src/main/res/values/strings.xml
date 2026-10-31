@@ -48,22 +48,13 @@
     <string name="settings_continuous_desc">回答播完后自动重新打开麦克风</string>
     <string name="settings_speak">语音播报</string>
     <string name="settings_speak_desc">关闭后只显示文字，不出声</string>
-    <string name="settings_rate_default">播报语速：1.0x（正常）</string>
-    <string name="settings_rate_value">播报语速：%1$sx（%2$s）</string>
-    <string name="settings_pitch_default">音调：1.0x</string>
-    <string name="settings_pitch_value">音调：%1$sx</string>
-    <string name="settings_rate_very_slow">很慢</string>
-    <string name="settings_rate_slow">慢</string>
-    <string name="settings_rate_normal">正常</string>
-    <string name="settings_rate_fast">快</string>
-    <string name="settings_rate_very_fast">很快</string>
-    <string name="settings_preview">试听</string>
-    <string name="settings_preview_text">你好，我是你的语音助手，现在就是这个语速和音调。</string>
     <string name="settings_engine">语音引擎：%1$s</string>
     <string name="settings_engine_label">语音引擎</string>
     <string name="settings_engine_pick">换语音引擎</string>
     <string name="settings_engine_default">系统默认</string>
     <string name="settings_engine_title">选择语音引擎</string>
+    <string name="settings_engine_preview">你好，我是你的语音助手，这就是换完引擎后的声音。</string>
+    <string name="settings_engine_note">语速固定为系统默认；如果你手机自带的语音引擎效果不好，可以在这里换一个。</string>
 
     <string name="settings_group_style">说话方式</string>
     <string name="settings_style">回答风格</string>
@@ -73,23 +64,16 @@
     <string name="settings_follow_up">主动追问</string>
     <string name="settings_follow_up_desc">回答完递一句反问，让对话能继续</string>
 
-    <string name="settings_group_learn">自学习与智能</string>
+    <string name="settings_group_learn">自学习与本地模型</string>
     <string name="settings_auto_learn">自学习</string>
     <string name="settings_auto_learn_desc">相似说法自动学会，不用一句句教</string>
     <string name="settings_learn_stat">记忆分布：%1$d 条教的 / %2$d 条自学的 / %3$d 条内置</string>
     <string name="settings_pending_stat">待学习：%1$d 句还没答上来</string>
     <string name="settings_go_teach">去教它</string>
-    <string name="settings_cloud">云端增强（可选）</string>
-    <string name="settings_cloud_desc">本地答不上来时才联网问一次大模型，不填也能正常用</string>
-    <string name="settings_cloud_config">配置接口</string>
-    <string name="settings_cloud_state_ready">已启用：%1$s</string>
-    <string name="settings_cloud_state_need_key">已开启，但还没填接口信息</string>
-    <string name="settings_cloud_state_off">已关闭（完全离线运行）</string>
-    <string name="settings_cloud_dialog_title">云端大模型接口</string>
-    <string name="settings_cloud_endpoint_hint">接口地址（OpenAI 兼容 /chat/completions）</string>
-    <string name="settings_cloud_model_hint">模型名（例如 deepseek-chat）</string>
-    <string name="settings_cloud_key_hint">API Key（只存在本机）</string>
-    <string name="settings_cloud_note">留着不填也不影响使用：本地规则 + 语料 + 记忆库本身就够用，断网也能聊。</string>
+    <string name="settings_local_model">本地小模型</string>
+    <string name="settings_local_model_desc">内置的离线语言模型：答不上来时自动生成回复，聊得越多学得越多，全程不联网</string>
+    <string name="settings_model_state">模型进度：已学 %1$d 句 / %2$d 个字组参数</string>
+    <string name="settings_model_state_off">本地小模型已关闭（答不上来时直接提示教学）</string>
     <string name="settings_reset">恢复默认设置</string>
     <string name="settings_reset_done">已恢复默认设置（记忆库保留）</string>
     <string name="settings_group_context">对话状态</string>
@@ -137,8 +121,4 @@
     <string name="action_ok">确定</string>
     <string name="action_cancel">取消</string>
     <string name="action_delete">删除</string>
-
-    <!-- 云端兜底 -->
-    <string name="status_cloud">联网问大模型…</string>
-    <string name="cloud_thinking">本地答不上来，我联网想一下…</string>
 </resources>

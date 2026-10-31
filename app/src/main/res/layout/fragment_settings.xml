@@ -32,7 +32,7 @@
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
-        <!-- 语音：语速 / 音调 / 引擎 / 试听 -->
+        <!-- 语音：播报开关 / 连续对话 / 语音引擎 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -133,54 +133,12 @@
                 android:background="@color/bubble_bot_stroke" />
 
             <TextView
-                android:id="@+id/tvRateValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/settings_rate_default"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
-
-            <SeekBar
-                android:id="@+id/seekRate"
+                android:id="@+id/tvEngineNote"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:max="100"
-                android:progress="33" />
-
-            <TextView
-                android:id="@+id/tvPitchValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/settings_pitch_default"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
-
-            <SeekBar
-                android:id="@+id/seekPitch"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:max="100"
-                android:progress="33" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPreview"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/settings_preview"
-                android:textSize="13sp"
-                app:cornerRadius="18dp" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="12dp"
-                android:background="@color/bubble_bot_stroke" />
+                android:text="@string/settings_engine_note"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -424,7 +382,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/settings_cloud"
+                        android:text="@string/settings_local_model"
                         android:textColor="@color/text_primary"
                         android:textSize="15sp" />
 
@@ -432,34 +390,24 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="@string/settings_cloud_desc"
+                        android:text="@string/settings_local_model_desc"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
                 </LinearLayout>
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchCloud"
+                    android:id="@+id/switchLocalModel"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
             </LinearLayout>
 
             <TextView
-                android:id="@+id/tvCloudState"
+                android:id="@+id/tvModelState"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCloudConfig"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/settings_cloud_config"
-                android:textSize="13sp"
-                app:cornerRadius="18dp" />
         </LinearLayout>
 
         <!-- 对话状态 -->

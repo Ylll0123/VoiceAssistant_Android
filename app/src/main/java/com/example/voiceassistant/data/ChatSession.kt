@@ -56,39 +56,6 @@ class ChatSession(
     /** 最近一次助手命中的意图，设置页展示用 */
     fun lastIntent(): String? = items.lastOrNull { !it.isUser }?.intent
 
-    /**
-     * 改写最后一条助手消息。
-     *
-     * 云端兜底是异步的：本地先落一条「让我想想」，拿到结果后再把它替换掉，
-     * 这样界面上不会出现两条答案，也不会因为网络慢而卡住整段对话。
-     */
-    fun updateLastAssistant(text: String, intent: String? = null): Boolean {
-        val index = items.indexOfLast { !it.isUser }
-        if (index < 0) return false
-        items[index] = items[index].copy(text = text, intent = intent)
-        notifyChanged()
-        return true
-    }
-
-    /** 最近几轮对话（问，答），云端请求带上下文用 */
-    fun recentPairs(limit: Int = 3): List<Pair<String, String>> {
-        val pairs = mutableListOf<Pair<String, String>>()
-        var i = items.size - 1
-        while (i > 0 && pairs.size < limit) {
-            val answer = items[i]
-            if (!answer.isUser) {
-                val askIndex = (i - 1 downTo 0).firstOrNull { items[it].isUser }
-                if (askIndex != null) {
-                    pairs.add(0, items[askIndex].text to answer.text)
-                    i = askIndex - 1
-                    continue
-                }
-            }
-            i--
-        }
-        return pairs
-    }
-
     fun clear() {
         items.clear()
         engine.resetContext()

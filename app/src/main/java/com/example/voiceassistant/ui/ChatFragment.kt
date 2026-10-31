@@ -11,7 +11,6 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -20,7 +19,6 @@ import com.example.voiceassistant.R
 import com.example.voiceassistant.data.ChatMessage
 import com.example.voiceassistant.data.ChatSession
 import android.content.res.ColorStateList
-import kotlin.math.max
 
 /**
  * 对话页：消息列表 + 输入区 + 语音按钮。
@@ -39,7 +37,6 @@ class ChatFragment : Fragment(), MainActivity.ChatUi, ChatSession.Listener {
     private lateinit var btnClear: ImageButton
     private lateinit var btnSkills: TextView
     private lateinit var tvStatus: TextView
-    private lateinit var inputBar: LinearLayout
     private lateinit var root: LinearLayout
 
     private lateinit var adapter: ChatAdapter
@@ -77,21 +74,31 @@ class ChatFragment : Fragment(), MainActivity.ChatUi, ChatSession.Listener {
         btnClear = view.findViewById(R.id.btnClear)
         btnSkills = view.findViewById(R.id.btnSkills)
         tvStatus = view.findViewById(R.id.tvStatus)
-        inputBar = view.findViewById(R.id.inputBar)
     }
 
-    /** 键盘弹起时把输入区抬到键盘上方 */
+    /**
+     * 键盘 inset 的补偿统一由 Activity 的根布局做（见 MainActivity.applyInsets），
+     * 这里只负责一件补充的事：键盘弹起时把消息列表滚到最后一条，
+     * 保证「最后一条聊天记录显示在输入行上方」（微信 / QQ 的行为）。
+     */
     private fun applyImeInsets() {
+        var lastImeBottom = -1
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            inputBar.updatePadding(bottom = dp(10) + max(ime.bottom, 0))
+            if (ime.bottom != lastImeBottom) {
+                lastImeBottom = ime.bottom
+                if (ime.bottom > 0) root.post { scrollToBottom() }
+            }
             insets
         }
     }
 
     private fun setupList() {
         adapter = ChatAdapter()
-        rvMessages.layoutManager = LinearLayoutManager(requireContext())
+        val manager = LinearLayoutManager(requireContext())
+        // 从底部开始排：消息少的时候也贴着输入栏，而不是顶在列表上方
+        manager.stackFromEnd = true
+        rvMessages.layoutManager = manager
         rvMessages.adapter = adapter
         rvMessages.itemAnimator?.changeDuration = 150
     }

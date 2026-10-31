@@ -71,14 +71,6 @@ class SpeechController(context: Context) {
     var isSpeaking: Boolean = false
         private set
 
-    /** 播报语速，1.0 为正常；设置页可以调 */
-    var speechRate: Float = 1.0f
-        private set
-
-    /** 播报音调，1.0 为正常；设置页可以调 */
-    var speechPitch: Float = 1.0f
-        private set
-
     /** 当前使用的语音引擎包名；空串表示系统默认 */
     var enginePackage: String = ""
         private set
@@ -118,24 +110,11 @@ class SpeechController(context: Context) {
             engine.setLanguage(Locale.getDefault())
             ttsReady = true
         }
-        applyVoiceParams(engine)
         attachUtteranceListener(engine)
         pendingSpeak?.let {
             speak(it)
             pendingSpeak = null
         }
-    }
-
-    /**
-     * 把语速和音调写进引擎。
-     *
-     * 关键：**每次播报前都要重新写一遍**（见 [speak]）。
-     * 不少第三方 TTS 引擎会在内部缓存参数、或者在切语言/切引擎时把参数重置，
-     * 只在「设置改变时」写一次，用户拖动滑块就听不出任何变化。
-     */
-    private fun applyVoiceParams(engine: TextToSpeech) {
-        engine.setSpeechRate(speechRate)
-        engine.setPitch(speechPitch)
     }
 
     // ---------------------------------------------------------------- 语音识别
@@ -298,16 +277,13 @@ class SpeechController(context: Context) {
             pendingSpeak = cleaned
             return
         }
-        // 每一次开口前都重新写一遍语速和音调：
-        // 只在设置改变时写一次，部分引擎会在内部把参数重置掉，表现为「滑了没反应」
-        applyVoiceParams(engine)
         isSpeaking = true
         engine.speak(cleaned, TextToSpeech.QUEUE_FLUSH, null, "reply-${System.currentTimeMillis()}")
     }
 
     /**
      * 试听：无论「语音播报」开关是否打开都出声。
-     * 设置页里用它当场确认语速和音调，否则关着开关点试听会以为是坏了。
+     * 设置页里换完语音引擎后用它当场确认效果。
      */
     fun preview(text: String) {
         val keep = speakEnabled
@@ -326,19 +302,10 @@ class SpeechController(context: Context) {
     }
 
     /**
-     * 调整播报语速（0.5~2.0，1.0 为正常）。
-     * 即使 TTS 还没就绪也要先记下来，就绪后会自动应用。
+     * 调整播报语速 / 音调的功能已移除：
+     * 不少手机自带的 TTS 引擎会忽略或内部重置这些参数（表现为「调了没变化」），
+     * 与其留着两个不生效的滑块，不如固定用系统默认语速（1.0x）。
      */
-    fun setSpeechRate(rate: Float) {
-        speechRate = rate.coerceIn(0.5f, 2.0f)
-        tts?.let { applyVoiceParams(it) }
-    }
-
-    /** 调整播报音调（0.7~1.6，1.0 为正常） */
-    fun setSpeechPitch(pitch: Float) {
-        speechPitch = pitch.coerceIn(0.7f, 1.6f)
-        tts?.let { applyVoiceParams(it) }
-    }
 
     /** 机器上安装的所有语音合成引擎，设置页据此列出可选项 */
     fun availableEngines(): List<EngineInfo> {

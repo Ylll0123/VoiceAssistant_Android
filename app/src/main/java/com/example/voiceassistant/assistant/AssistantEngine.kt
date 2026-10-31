@@ -17,18 +17,22 @@ import com.example.voiceassistant.memory.MemorySearch
  * 7. 按顺序询问每条规则，第一条命中的采用其回复；规则可以要求「重讲一遍」（[RuleReply.rerun]）
  *    末尾的 [ChatRule] 接日常闲聊：话题语料 + 上下文承接 + 多变体回复
  * 8. 规则都不命中时，**查本地记忆库**：以前教过或预置过的说法，用相似度检索作答
- * 9. 记忆里也没有，才提示「你可以教我」，并把这句话记下来等答案
+ * 9. 记忆里也没有，问**内置小模型**（[NgramModel]，字符级 n-gram，
+ *    随对话持续学习）：它能生成一句相关的话就拿来用
+ * 10. 模型也接不住，才提示「你可以教我」，并把这句话记下来等答案
  *
  * ## 越聊越会的原因
- * 规则是写死的，语料和记忆库是「长出来的」两块：
+ * 规则是写死的，其余三层都是「长出来的」：
  * - 语料库（[DialogCorpus]）预置了几十个日常话题、每种话题多种说法，闲聊不重复；
- * - 记忆库每教一条就多一种问法，而且一条答案可以用「|」写几种变体，答的时候轮换。
- * 这部分完全离线，不依赖任何模型。
+ * - 记忆库每教一条就多一种问法，而且一条答案可以用「|」写几种变体，答的时候轮换；
+ * - 小模型把每轮对话都当作训练样本，聊得越多，兜底生成越有样子。
+ * 全部离线，不联网。
  */
 class AssistantEngine(
     private val dialogContext: DialogContext = DialogContext(),
     private val rules: List<IntentRule> = AssistantRules.all(),
-    private val memory: MemoryRepository? = null
+    private val memory: MemoryRepository? = null,
+    private val model: NgramModel? = null
 ) {
 
     /** 正在等用户给答案的那句问题 */
@@ -49,6 +53,9 @@ class AssistantEngine(
     /** 记忆库，界面（记忆页 / 设置页）读它 */
     fun memoryRepository(): MemoryRepository? = memory
 
+    /** 本地小模型，设置页读它展示学习进度 */
+    fun localModel(): NgramModel? = model
+
     /** 只关心回复文本时的简化入口 */
     fun reply(rawInput: String): String = respond(rawInput).text
 
@@ -60,6 +67,19 @@ class AssistantEngine(
      * 逐条尝试，取第一条能理解出意图的；全都理解不了才走兜底。
      */
     fun respond(candidates: List<String>): AssistantResponse {
+        val response = handle(candidates)
+        learnTurn(candidates.firstOrNull().orEmpty(), response)
+        return response
+    }
+
+    /** 把每一轮对话喂给本地小模型：聊得越多，兜底生成越有样子 */
+    private fun learnTurn(input: String, response: AssistantResponse) {
+        val m = model ?: return
+        if (input.isNotBlank()) m.observe(input)
+        if (response.intent !in UNLEARNABLE_INTENTS) m.observe(response.text)
+    }
+
+    private fun handle(candidates: List<String>): AssistantResponse {
         val cleaned = candidates.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (cleaned.isEmpty()) return AssistantResponse(LISTENING, INTENT_EMPTY)
 
@@ -153,7 +173,17 @@ class AssistantEngine(
                 return commit(hit.entry.question, RuleReply(memoryAnswer(hit.entry.answer), INTENT_MEMORY))
             }
 
-            // ⑦ 记忆里也没有：记下这句话，等用户决定要不要教
+            // ⑦ 记忆里也没有：问内置小模型能不能生成一句相关的话
+            if (AssistantConfig.localModel && model != null) {
+                val generated = model.generate(cleaned.first())
+                if (generated != null) {
+                    // 模型的回答只是「像那么回事」，允许用户接着说「我教你」纠正
+                    lastUnanswered = cleaned.first()
+                    return commit(cleaned.first(), RuleReply(generated, INTENT_LOCAL_MODEL))
+                }
+            }
+
+            // ⑧ 模型也接不住：记下这句话，等用户决定要不要教
             lastUnanswered = cleaned.first()
             onUnanswered?.invoke(cleaned.first())
 
@@ -187,6 +217,8 @@ class AssistantEngine(
         val entry = repo.remember(question, answer, MemoryRepository.SOURCE_TAUGHT)
         pendingTeachQuestion = null
         lastUnanswered = null
+        // 教的答案也是小模型的训练材料
+        model?.observe(answer)
         val multi = if (entry.answer.contains('|') || entry.answer.contains('｜')) {
             "这一句我准备了 ${entry.answer.split('|', '｜').size} 种说法，会轮换着讲。"
         } else {
@@ -323,6 +355,12 @@ class AssistantEngine(
     companion object {
         const val LISTENING = "我在听，你说吧。"
 
+        /** 这些意图的回复是系统提示语，不作为小模型的训练材料 */
+        private val UNLEARNABLE_INTENTS = setOf(
+            INTENT_EMPTY, INTENT_FALLBACK, INTENT_CLARIFY, INTENT_CLARIFY_REJECTED,
+            INTENT_TEACH_PROMPT, INTENT_TAUGHT, INTENT_TEACH_CANCEL
+        )
+
         const val FALLBACK =
             "这句我还答不上来。想让我记住的话，说「我教你」，然后把答案告诉我；" +
                 "也可以试试：现在几点、帮我算 12*8、讲个笑话。"
@@ -347,11 +385,8 @@ class AssistantEngine(
         /** 用户取消教学 */
         const val INTENT_TEACH_CANCEL = "teach_cancel"
 
-        /** 正在联网问云端（占位消息） */
-        const val INTENT_CLOUD_PENDING = "cloud_pending"
-
-        /** 答案来自云端大模型 */
-        const val INTENT_CLOUD = "cloud"
+        /** 回答来自内置小模型的生成 */
+        const val INTENT_LOCAL_MODEL = "local_model"
 
         /** 建议的相似度门槛：太低会瞎猜，太高又救不回来 */
         private const val SUGGEST_THRESHOLD = 0.72
