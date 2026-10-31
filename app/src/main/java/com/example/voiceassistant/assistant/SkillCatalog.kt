@@ -127,14 +127,28 @@ object SkillCatalog {
         Skill(
             id = "teach",
             title = "教我说话",
-            description = "教我一句新说法，记进本地记忆库，以后换个问法也能答上来",
+            description = "教我一句新说法，记进本地记忆库；用「|」可以教多种回答，我会换着说",
             category = CATEGORY_DIALOG,
-            examples = listOf("我教你", "记住：下班了 = 早点回家")
+            examples = listOf("我教你", "记住：下班了 = 早点回家|路上慢点")
+        ),
+        Skill(
+            id = "chat",
+            title = "日常聊天",
+            description = "内置日常话题语料：同一句话多种回答，累了、加班、心情不好都能接得住",
+            category = CATEGORY_DIALOG,
+            examples = listOf("我好累", "今天加班到十点", "周末有什么打算")
+        ),
+        Skill(
+            id = "continue_chat",
+            title = "接着上文聊",
+            description = "「为什么」「然后呢」「那怎么办」会顺着刚才的话题继续说，不会答非所问",
+            category = CATEGORY_DIALOG,
+            examples = listOf("我好累", "为什么", "那我该怎么办")
         ),
         Skill(
             id = "follow_up",
             title = "多轮追问",
-            description = "60 秒内可以用「那后天呢」「再来一个」这种省略说法接着聊",
+            description = "3 分钟内可以用「那后天呢」「再来一个」这种省略说法接着聊",
             category = CATEGORY_DIALOG,
             examples = listOf("那后天呢", "换一个")
         )

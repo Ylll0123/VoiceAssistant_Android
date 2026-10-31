@@ -27,6 +27,7 @@ object AssistantRules {
      * - 猜数字 / 连续计算 / 多轮追问必须在算数之前（它们的输入里也有数字）
      * - 世界时间必须在「现在几点」之前（「纽约现在几点」也含「几点」）
      * - 日期推算必须在日期之前（「下周三几号」也含「几号」）
+     * - 闲聊（[ChatRule]）必须放最后：日常语料关键词宽，功能性意图永远先走
      */
     fun all(): List<IntentRule> = listOf(
         GuessNumber,
@@ -47,7 +48,8 @@ object AssistantRules {
         Weather,
         Thanks,
         Farewell,
-        Greeting
+        Greeting,
+        ChatRule
     )
 
     // ------------------------------------------------------------------ 多轮对话
@@ -395,8 +397,9 @@ object AssistantRules {
 
         override fun reply(request: AssistantRequest): RuleReply? {
             val text = request.text
-            val asksWeekday = text.containsAny("星期几", "周几")
-            val asksDate = text.containsAny("几号", "日期", "几月几号", "多少号", "今天是")
+            // 日期关键词一律精确匹配：模糊容错会把「今天好开心」当成「今天是…」
+            val asksWeekday = text.contains("星期几") || text.contains("周几")
+            val asksDate = listOf("几号", "日期", "几月几号", "多少号", "今天是").any { text.contains(it) }
             if (!asksWeekday && !asksDate) return null
 
             val relative = relativeDay(text)
@@ -512,7 +515,7 @@ object AssistantRules {
 
         override fun reply(request: AssistantRequest): RuleReply? {
             if (!request.text.containsAny("名言", "诗句", "背首诗", "来首诗", "鸡汤")) return null
-            return RuleReply(pick(), intent)
+            return RuleReply(PhraseBook.pick(intent, quotes, request.context), intent)
         }
     }
 
@@ -532,7 +535,7 @@ object AssistantRules {
 
         override fun reply(request: AssistantRequest): RuleReply? {
             if (!request.text.containsAny("笑话", "逗我", "开心一下", "讲个好玩的")) return null
-            return RuleReply(pick(), intent)
+            return RuleReply(PhraseBook.pick(intent, jokes, request.context), intent)
         }
     }
 
@@ -542,12 +545,15 @@ object AssistantRules {
     object Identity : IntentRule {
         override val intent = "identity"
 
+        private val variants = listOf(
+            "我是 VoiceAssistant，一个跑在你手机上的本地语音助手。所有规则都在设备上执行，不联网也能用。",
+            "我是你手机里的本地语音助手。不上传、不联网，聊的每一句都留在设备上。",
+            "叫我助手就行。规则和语料都在本地，你教我的话我都记在这台手机里。"
+        )
+
         override fun reply(request: AssistantRequest): RuleReply? {
             if (!request.text.containsAny("你是谁", "你叫什么", "介绍自己")) return null
-            return RuleReply(
-                "我是 VoiceAssistant，一个跑在你手机上的本地语音助手。所有规则都在设备上执行，不联网也能用。",
-                intent
-            )
+            return RuleReply(PhraseBook.pick(intent, variants, request.context), intent)
         }
     }
 
@@ -556,7 +562,11 @@ object AssistantRules {
         override val intent = "support"
 
         override fun reply(request: AssistantRequest): RuleReply? {
-            if (!request.text.containsAny("能做什么", "会什么", "帮助", "功能", "怎么用", "会些什么")) return null
+            val text = request.text
+            // 精确匹配：模糊容错会把「为什么」当成「会什么」、「那怎么办」当成「怎么用」
+            val asked = listOf("能做什么", "会什么", "帮助", "功能", "怎么用", "会些什么")
+                .any { text.contains(it) }
+            if (!asked) return null
 
             val summary = buildString {
                 append("我现在会这些：\n")
@@ -583,13 +593,31 @@ object AssistantRules {
         }
     }
 
-    /** 谢谢 */
+    /** 谢谢：如果正在聊某个话题，回复会带上话题的影子，显得接得住上文 */
     object Thanks : IntentRule {
         override val intent = "thanks"
 
+        private val variants = listOf(
+            "不客气，随时叫我。",
+            "小事，别客气。",
+            "客气了，有需要再喊我。"
+        )
+
         override fun reply(request: AssistantRequest): RuleReply? {
             if (!request.text.containsAny("谢谢", "多谢", "感谢", "辛苦")) return null
-            return RuleReply("不客气，随时叫我。", intent)
+            val base = PhraseBook.pick(intent, variants, request.context)
+            val topic = DialogCorpus.find(request.context.activeTopic())
+            val text = if (topic != null) {
+                when (topic.id) {
+                    "tired", "sleepy" -> "$base 累了一天，早点歇着。"
+                    "sad", "angry", "breakup" -> "$base 想说的时候随时找我。"
+                    "overtime", "work", "deadline" -> "$base 忙完这阵记得喘口气。"
+                    else -> base
+                }
+            } else {
+                base
+            }
+            return RuleReply(text, intent)
         }
     }
 
@@ -597,9 +625,15 @@ object AssistantRules {
     object Farewell : IntentRule {
         override val intent = "farewell"
 
+        private val variants = listOf(
+            "好的，需要我的时候再喊我。",
+            "好，回头见。",
+            "去吧，我在这儿等着。"
+        )
+
         override fun reply(request: AssistantRequest): RuleReply? {
             if (!request.text.containsAny("再见", "拜拜", "退出")) return null
-            return RuleReply("好的，需要我的时候再喊我。", intent)
+            return RuleReply(PhraseBook.pick(intent, variants, request.context), intent)
         }
     }
 
@@ -609,8 +643,22 @@ object AssistantRules {
 
         override fun reply(request: AssistantRequest): RuleReply? {
             if (!request.text.containsAny("你好", "您好", "嗨", "在吗", "哈喽", "hello", "hi")) return null
-            return RuleReply("${greetingByHour()}，我是你的语音助手。想聊点什么？", intent)
+            // 已经打过招呼：换个说法，别机械重复「早上好，我是你的语音助手」
+            val metBefore = request.context.hasIntent(intent) || request.context.turns > 1
+            val text = if (metBefore) {
+                PhraseBook.pick(intent, repeatVariants, request.context)
+            } else {
+                "${greetingByHour()}，我是你的语音助手。想聊点什么？"
+            }
+            return RuleReply(text, intent)
         }
+
+        private val repeatVariants = listOf(
+            "嗨，又见面了。说吧。",
+            "在呢。今天怎么样？",
+            "嗯，我在。想聊点什么？",
+            "我在。有什么要聊的尽管说。"
+        )
 
         private fun greetingByHour(): String = when (LocalTime.now().hour) {
             in 5..10 -> "早上好"

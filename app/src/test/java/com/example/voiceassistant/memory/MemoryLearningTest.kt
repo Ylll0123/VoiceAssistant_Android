@@ -104,8 +104,9 @@ class MemoryLearningTest {
         val repo = InMemoryMemoryRepository()
         val engine = AssistantEngine(memory = repo)
 
-        // 教之前：答不上来
-        assertEquals(AssistantEngine.FALLBACK, engine.reply("我今天被老板批评了"))
+        // 教之前：闲聊语料能接住这句话（共情一下），但答不出教的内容
+        val before = engine.reply("我今天被老板批评了")
+        assertTrue("教之前不该答出答案，实际：$before", !before.contains("别往心里去"))
 
         // 用一句话教它
         val taught = engine.reply("记住：被老板批评了 = 别往心里去，问题解决掉就行")

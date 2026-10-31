@@ -1,5 +1,6 @@
 package com.example.voiceassistant.assistant
 
+import com.example.voiceassistant.memory.MemoryHit
 import com.example.voiceassistant.memory.MemoryRepository
 import com.example.voiceassistant.memory.MemorySearch
 
@@ -12,14 +13,17 @@ import com.example.voiceassistant.memory.MemorySearch
  * 3. 显式教学指令（「记住：下班了 = 早点回家」）直接入库
  * 4. 如果上一轮是「你是不是想问…」的确认轮，先按用户的回答处理（是 / 不是 / 换话题）
  * 5. 剥掉纠错前缀（「不对，我是说…」）后重新理解
- * 6. 按顺序询问每条规则，第一条命中的采用其回复；规则可以要求「重讲一遍」（[RuleReply.rerun]）
- * 7. 规则都不命中时，**查本地记忆库**：以前教过或预置过的说法，用相似度检索作答
- * 8. 记忆里也没有，才提示「你可以教我」，并把这句话记下来等答案
+ * 6. **用户教过的话优先**：记忆库里命中度很高的「教过的说法」直接作答，语料和规则都不抢
+ * 7. 按顺序询问每条规则，第一条命中的采用其回复；规则可以要求「重讲一遍」（[RuleReply.rerun]）
+ *    末尾的 [ChatRule] 接日常闲聊：话题语料 + 上下文承接 + 多变体回复
+ * 8. 规则都不命中时，**查本地记忆库**：以前教过或预置过的说法，用相似度检索作答
+ * 9. 记忆里也没有，才提示「你可以教我」，并把这句话记下来等答案
  *
  * ## 越聊越会的原因
- * 规则是写死的，记忆库是长出来的：每教一条就多一条问法，
- * 之后用户换个语序、带点口音（归一化 + 二元组相似度）也能命中。
- * 这部分完全离线，数据存在本地 SQLite，不依赖任何模型。
+ * 规则是写死的，语料和记忆库是「长出来的」两块：
+ * - 语料库（[DialogCorpus]）预置了几十个日常话题、每种话题多种说法，闲聊不重复；
+ * - 记忆库每教一条就多一种问法，而且一条答案可以用「|」写几种变体，答的时候轮换。
+ * 这部分完全离线，不依赖任何模型。
  */
 class AssistantEngine(
     private val dialogContext: DialogContext = DialogContext(),
@@ -56,11 +60,18 @@ class AssistantEngine(
         val first = cleaned.first()
 
         // ⓪ 正在等「这句话该怎么回答」：用户这句就是答案
+        //    「算了」任何时候都能取消教学，不会掉进兜底
+        if (TeachCommand.isCancel(first)) {
+            val wasWaiting = pendingTeachQuestion != null
+            pendingTeachQuestion = null
+            lastUnanswered = null
+            return AssistantResponse(
+                if (wasWaiting) "好，那先不教了。" else "好，那就先这样。",
+                INTENT_TEACH_CANCEL
+            )
+        }
+
         pendingTeachQuestion?.let { question ->
-            if (TeachCommand.isCancel(first)) {
-                pendingTeachQuestion = null
-                return AssistantResponse("好，那先不教了。", INTENT_TEACH_CANCEL)
-            }
             return teach(question, first)
         }
 
@@ -108,6 +119,18 @@ class AssistantEngine(
         for (candidate in cleaned) {
             val reply = matchOnce(candidate)
             if (reply != null) {
+                // 闲聊语料的优先级低于用户教过的话：
+                // 教过的说法就算同时落进某个闲聊话题，也按教的内容答
+                if (reply.intent == DialogContext.INTENT_CHAT) {
+                    val taughtHit = taughtHitFor(candidate)
+                    if (taughtHit != null) {
+                        memory?.bumpHit(taughtHit.entry.id)
+                        return commit(
+                            taughtHit.entry.question,
+                            RuleReply(memoryAnswer(taughtHit.entry.answer), INTENT_MEMORY)
+                        )
+                    }
+                }
                 firstMatched = candidate to reply
                 break
             }
@@ -118,7 +141,7 @@ class AssistantEngine(
             val hit = memory?.let { MemorySearch.best(cleaned.first(), it.entries()) }
             if (hit != null) {
                 memory.bumpHit(hit.entry.id)
-                return commit(hit.entry.question, RuleReply(hit.entry.answer, INTENT_MEMORY))
+                return commit(hit.entry.question, RuleReply(memoryAnswer(hit.entry.answer), INTENT_MEMORY))
             }
 
             // ⑦ 记忆里也没有：记下这句话，等用户决定要不要教
@@ -154,8 +177,13 @@ class AssistantEngine(
         val entry = repo.remember(question, answer, MemoryRepository.SOURCE_TAUGHT)
         pendingTeachQuestion = null
         lastUnanswered = null
+        val multi = if (entry.answer.contains('|') || entry.answer.contains('｜')) {
+            "这一句我准备了 ${entry.answer.split('|', '｜').size} 种说法，会轮换着讲。"
+        } else {
+            "想让我换着说，可以用「|」隔开多教几种回答。"
+        }
         return AssistantResponse(
-            "记住了。以后你说「${entry.question}」，我就回答：${entry.answer}",
+            "记住了。以后你说「${entry.question}」，我就回答：${entry.answer}$multi",
             INTENT_TAUGHT
         )
     }
@@ -180,11 +208,32 @@ class AssistantEngine(
         return null
     }
 
-    /** 命中并写回上下文 */
+    /** 命中并写回上下文；同时把回复记下来，下一轮挑变体时避重 */
     private fun commit(heard: String, reply: RuleReply): AssistantResponse {
         dialogContext.remember(reply.intent, reply.slots)
         dialogContext.rememberHeard(heard)
+        dialogContext.markReply(reply.text)
         return AssistantResponse(reply.text, reply.intent, heard)
+    }
+
+    /**
+     * 记忆答案支持多种变体：教的时候用「|」隔开（「记住：下班了 = 早点回家|路上慢点」），
+     * 答的时候轮换着说，避开最近刚说过的。
+     */
+    private fun memoryAnswer(raw: String): String {
+        val variants = raw.split('|', '｜').map { it.trim() }.filter { it.isNotEmpty() }
+        if (variants.size <= 1) return raw
+        val fresh = variants.filter { !dialogContext.wasSaidRecently(it) }
+        val pool = fresh.ifEmpty { variants }
+        return pool[dialogContext.turns % pool.size]
+    }
+
+    /** 在「教过的」记忆里找最像的一条；找不到或没有记忆库返回 null */
+    private fun taughtHitFor(text: String): MemoryHit? {
+        val repo = memory ?: return null
+        val taught = repo.entries().filter { it.isTaught }
+        if (taught.isEmpty()) return null
+        return MemorySearch.best(text, taught)
     }
 
     /** 处理一条（可能来自重讲或确认的）输入 */

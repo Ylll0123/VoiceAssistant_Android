@@ -10,6 +10,7 @@ import androidx.fragment.app.Fragment
 import com.example.voiceassistant.MainActivity
 import com.example.voiceassistant.R
 import com.example.voiceassistant.assistant.AssistantRules
+import com.example.voiceassistant.assistant.DialogCorpus
 import com.example.voiceassistant.assistant.SkillCatalog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
@@ -112,7 +113,7 @@ class SettingsFragment : Fragment() {
             lastIntent ?: "无"
         )
 
-        tvContext.text = if (context.isAlive()) {
+        val aliveText = if (context.isAlive()) {
             val seconds = (context.remainingMs() / 1000).toInt()
             val base = getString(
                 R.string.settings_context_alive,
@@ -132,6 +133,12 @@ class SettingsFragment : Fragment() {
             getString(R.string.settings_context_idle)
         }
 
+        // 话题卡片：证明「接着上文聊」是真实的状态，不是巧合
+        val topicText = DialogCorpus.find(context.activeTopic())?.let { topic ->
+            "\n" + getString(R.string.settings_topic, topic.title, context.topicTurn)
+        } ?: ""
+        tvContext.text = aliveText + topicText
+
         tvMessageCount.text = getString(
             R.string.settings_message_count,
             host.session.messages.size
@@ -148,6 +155,12 @@ class SettingsFragment : Fragment() {
             AssistantRules.all().size,
             SkillCatalog.skills.size,
             host.session.engine.memoryRepository()?.count() ?: 0
+        ) + "\n" + getString(
+            R.string.settings_corpus,
+            DialogCorpus.topicCount(),
+            DialogCorpus.sentenceCount(),
+            context.turns,
+            context.chatTurns
         )
     }
 
