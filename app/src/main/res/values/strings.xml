@@ -80,6 +80,7 @@
     <string name="settings_local_model_desc">内置的离线语言模型：答不上来时自动生成回复，聊得越多学得越多，全程不联网</string>
     <string name="settings_model_state">模型进度：已学 %1$d 句 / %2$d 个字组参数</string>
     <string name="settings_model_state_off">本地小模型已关闭（答不上来时直接提示教学）</string>
+    <string name="settings_thought_state">思维模式：%1$d 类提问，共 %2$d 套说法轮换；网络只在你说「帮我查」时才用</string>
     <string name="settings_reset">恢复默认设置</string>
     <string name="settings_reset_done">已恢复默认设置（记忆库保留）</string>
     <string name="settings_group_context">对话状态</string>

@@ -14,6 +14,7 @@ import com.example.voiceassistant.assistant.CityClimate
 import com.example.voiceassistant.assistant.DialogCorpus
 import com.example.voiceassistant.assistant.Dictionary
 import com.example.voiceassistant.assistant.KnowledgeBase
+import com.example.voiceassistant.assistant.ReplyCrafter
 import com.example.voiceassistant.assistant.SkillCatalog
 import com.example.voiceassistant.memory.MemoryRepository
 import com.google.android.material.button.MaterialButton
@@ -216,11 +217,12 @@ class SettingsFragment : Fragment() {
         if (model == null || !host.localModelEnabled) {
             tvModelState.text = getString(R.string.settings_model_state_off)
         } else {
+            val (kinds, templates) = ReplyCrafter.stats()
             tvModelState.text = getString(
                 R.string.settings_model_state,
                 model.sentenceCount(),
                 model.nodeCount()
-            )
+            ) + "\n" + getString(R.string.settings_thought_state, kinds, templates)
         }
     }
 

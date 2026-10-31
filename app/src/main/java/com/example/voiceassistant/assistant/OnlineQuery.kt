@@ -31,12 +31,20 @@ object OnlineQuery {
         val city: CityClimate.CityClimate? = null
     )
 
-    /** 本地答不上来、值得去网上查一次的意图 */
-    private val SEARCHABLE_INTENTS = setOf(
-        AssistantEngine.INTENT_FALLBACK,
-        AssistantEngine.INTENT_LOCAL_MODEL,
-        AssistantEngine.INTENT_CLARIFY_REJECTED,
-        DialogContext.INTENT_CLARIFY
+    /**
+     * **用户明确要求上网查**的说法。
+     *
+     * ## 为什么只认这几种
+     * 早期版本是「本地答不上来就去搜」，结果用户随口说句心里话也会被拉去查资料，
+     * 既慢又不像聊天。联网现在只认**显式请求**（查 / 搜 / 百度 / 网上 / 资料 / 新闻 / 实时），
+     * 其余情况一律留在本机：**不知道就用思维模式给出分析路径**（见 [ReplyCrafter]），不搜。
+     */
+    private val EXPLICIT_WEB_CUES = listOf(
+        "帮我查", "帮我搜", "帮我找", "帮我看看网上", "查一下", "查一查", "查查", "查个",
+        "搜索一下", "搜一下", "搜搜", "搜素", "网上查", "网上搜", "上网查", "去网上",
+        "百度一下", "百度搜", "必应搜", "谷歌搜", "上百度", "百度百科", "百科", "维基",
+        "查资料", "找资料", "有资料", "查百科", "查新闻", "查股价", "查汇率", "查快递",
+        "最新消息", "最新进展", "最新情况", "实时报价", "实时数据", "实时 COVID", "今天的新闻", "近况如何", "进展如何"
     )
 
     /** 出现这些词说明问的是实时天气 / 气温 */
@@ -47,7 +55,9 @@ object OnlineQuery {
     /** 问句里这些只是套话，去掉之后剩下的才是真正的查询主题 */
     private val QUERY_PREFIXES = listOf(
         "请告诉我", "告诉我", "我想知道", "我想了解一下", "想了解一下", "想知道",
-        "帮我查一下", "帮我查查", "帮我搜索", "帮我搜", "查一下", "查查", "搜索", "搜一下",
+        "百度百科查查", "百度百科查", "百度搜一下", "百度一下", "百度搜", "上百度查查", "帮我查一下",
+        "帮我查查", "帮我搜索", "帮我搜", "网上查查", "网上查", "网上搜", "搜索一下",
+        "查一下", "查一查", "查查", "搜索", "搜一下",
         "请问", "介绍一下", "给我讲讲", "讲讲", "说说", "说一下", "什么是", "什么叫"
     )
 
@@ -78,21 +88,37 @@ object OnlineQuery {
         val raw = input.trim()
         if (raw.isEmpty()) return null
         val text = FuzzyMatcher.normalize(raw)
+        // 注意：判断 cue 必须用**原始句子**。[FuzzyMatcher.normalize] 会剥掉「帮我查一下」
+        // 这类前缀（它本来是给语义匹配用的），归一化之后再找「帮我查」就永远找不到了。
+        val lowered = raw.lowercase()
+        if (SKIP_KEYWORDS.any { lowered.contains(it) }) return null
 
-        // ① 实时天气：城市明确（或者刚聊过某个城市）才值得联网
-        if (WEATHER_CUES.any { text.contains(it) }) {
-            val city = CityClimate.find(raw) ?: fallbackCity
-            if (city != null) return Plan(Kind.WEATHER, city.city, city)
-        }
-
-        // ② 本地答不上来 → 去网上查；太短或者有跳过词就别查了
-        if (intent in SEARCHABLE_INTENTS) {
-            if (SKIP_KEYWORDS.any { text.contains(it) }) return null
+        // ① 用户明确说「帮我查 / 搜一下 / 百度」→ 才去网上查，并且抽出真正要查的主题
+        if (wantsWeb(raw)) {
             val topic = extractTopic(raw)
             if (topic.length >= 2) return Plan(Kind.SEARCH, topic)
         }
 
+        // ② 实时天气：城市明确（或者刚聊过某个城市）才值得联网
+        if (WEATHER_CUES.any { lowered.contains(it) }) {
+            val city = CityClimate.find(raw) ?: fallbackCity
+            if (city != null) return Plan(Kind.WEATHER, city.city, city)
+        }
+
+        // ③ 其余一律不联网：本地会用「思维模式」给出分析思路（ReplyCrafter），不搜不编
         return null
+    }
+
+    /**
+     * 这句话是不是在**明确要求上网查**。
+     * 提供给界面 / 测试判断用（例如决定是否显示「联网中」提示）。
+     */
+    fun wantsWeb(raw: String): Boolean {
+        val lowered = raw.trim().lowercase()
+        if (lowered.isEmpty()) return false
+        if (SKIP_KEYWORDS.any { lowered.contains(it) }) return false
+        return EXPLICIT_WEB_CUES.any { lowered.contains(it) } ||
+            EXPLICIT_WEB_CUES.any { FuzzyMatcher.normalize(raw).contains(it) }
     }
 
     /**

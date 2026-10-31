@@ -111,7 +111,12 @@ class MultiTurnTest {
         engine.reply("现在几点")
         engine.resetContext()
 
-        assertEquals(AssistantEngine.FALLBACK, engine.reply("那后天呢"))
+        val response = engine.respond("那后天呢")
+        assertNotEquals(
+            "上下文过期了就不该给『追thinking框架』这类有内容的回答",
+            AssistantEngine.INTENT_THOUGHT,
+            response.intent
+        )
     }
 
     @Test

@@ -846,15 +846,27 @@ object AssistantRules {
 
         override fun reply(request: AssistantRequest): RuleReply? {
             if (!request.text.containsAny("你好", "您好", "嗨", "在吗", "哈喽", "hello", "hi")) return null
-            // 已经打过招呼：换个说法，别机械重复「早上好，我是你的语音助手」
+            // 已经打过招呼：换个说法，别机械重复同一句开场白
             val metBefore = request.context.hasIntent(intent) || request.context.turns > 1
             val text = if (metBefore) {
                 PhraseBook.pick(intent, repeatVariants, request.context)
             } else {
-                "${greetingByHour()}，我是你的语音助手。想聊点什么？"
+                // 第一次打招呼也不再固定成「我是你的语音助手」：
+                // 轮换几套开场，并且顺手告诉用户我能干什么，比自我介绍有用
+                PhraseBook.pick(intent, firstVariants, request.context)
+                    .replace("{greeting}", greetingByHour())
             }
             return RuleReply(text, intent)
         }
+
+        private val firstVariants = listOf(
+            "{greeting}！今天想聊点什么？问我天气、翻译个词、或者帮你把拿不准的事捋一捋都行。",
+            "嗨，我在。想先来点实用的，还是随便聊聊？我可以查天气、做翻译，也能陪你把一件事拆开想。",
+            "{greeting}。除了陪你聊天，我还能查天气、翻译单词、帮你分析问题——先来哪个？",
+            "你好呀。不知道从哪开始的话，可以问我「北京天气怎么样」「苹果用英语怎么说」，或者直接说你想解决的事。",
+            "{greeting}，我是你的语音助手。我能查天气、做翻译、帮你理清思路，也能陪你闲聊。想从哪开始？",
+            "嗨，来啦。今天有什么想聊的，或者需要我帮你拿个主意？"
+        )
 
         private val repeatVariants = listOf(
             "嗨，又见面了。说吧。",

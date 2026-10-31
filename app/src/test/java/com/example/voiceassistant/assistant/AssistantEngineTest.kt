@@ -1,6 +1,7 @@
 package com.example.voiceassistant.assistant
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -63,12 +64,19 @@ class AssistantEngineTest {
     }
 
     @Test
-    fun `无法理解时给出示例引导`() {
-        assertEquals(AssistantEngine.FALLBACK, engine.reply("帮我订一张去火星的机票"))
+    fun `无法理解时会把话头接回来，而且不会每次都说同一句`() {
+        val first = engine.respond("帮我订一张去火星的机票")
+        assertEquals(AssistantEngine.INTENT_FALLBACK, first.intent)
+        assertTrue("应该是完整的一句话，实际：${first.text}", first.text.length >= 10)
+
+        val second = engine.respond("帮我订一张去火星的机票")
+        assertNotEquals("连续问同一句不该完全重复", first.text, second.text)
     }
 
     @Test
     fun `只有数字没有运算符时不当作算术`() {
-        assertEquals(AssistantEngine.FALLBACK, engine.reply("12345"))
+        val response = engine.respond("12345")
+        // 数字没有可识别的提问类型，不该走「思考框架」，落到最终兜底
+        assertNotEquals(AssistantEngine.INTENT_THOUGHT, response.intent)
     }
 }

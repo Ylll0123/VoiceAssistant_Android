@@ -24,6 +24,29 @@ object SmallTalk {
     /** 新话题匹配的最低得分：低于它宁可说不知道，也不硬聊 */
     const val MIN_SCORE = 0.78
 
+    /**
+     * 关键词直接命中（而不是靠句子相似蹭上来）的分数。
+     * 到这个分数才允许闲聊去接一个**明确提问**的句子。
+     */
+    private const val STRONG_TOPIC_SCORE = 0.90
+
+    /**
+     * 这句话是不是在**问东西**（不是抒发、不是打招呼）。
+     *
+     * 用户在提问时，闲聊语料里那些「写得不错，继续加油」式的通用接话是不合适的——
+     * 它会把具体问题变成答非所问。这类句子交给常识知识库 / 思维模式更好。
+     */
+    private val ASKING_CUES = listOf(
+        "怎么办", "咋办", "该如何", "该怎么做", "怎么才能", "怎样才能", "如何解决", "如何做",
+        "为什么", "为啥", "原因是", "啥原因", "怎么会",
+        "该不该", "要不要", "值不值", "怎么选", "怎么选择", "有什么区别", "哪个好",
+        "是什么", "什么是", "什么意思", "啥意思", "怎么回事", "怎么读", "怎么念",
+        "你觉得", "你怎么看", "怎么看", "给点建议", "有什么建议", "帮我分析", "分析一下",
+        "介绍一下", "讲讲", "解释", "原理"
+    )
+
+    private fun asksSomething(text: String): Boolean = ASKING_CUES.any { text.contains(it) }
+
     /** 挑一条回复：避开刚说过的，剩下的按轮数轮换（确定性好，可单测） */
     fun pickReply(pool: List<String>, context: DialogContext): String? {
         if (pool.isEmpty()) return null
@@ -81,7 +104,7 @@ object SmallTalk {
 
         // ① 承接上文：「为什么」「然后呢」「那怎么办」「嗯嗯」——沿用当前话题
         //    注意「嗯嗯」会被归一化剥成一个「嗯」，所以承接句允许单字
-        if (current != null) {
+        if (current != null && isPureFollowUp(normalized)) {
             val continued = continueTopic(normalized, current, context)
             if (continued != null) return continued
         }
@@ -89,6 +112,13 @@ object SmallTalk {
         // ② 新话题识别：太短的句子没有话题信息
         if (normalized.length < 2) return null
         val (topic, score) = bestTopic(normalized) ?: return null
+
+        // 提问优先让位：闲聊语料答不上「论文写不出来怎么办」这种具体问题，
+        // 硬接会给出另一个话题的通用回复，看着就是答非所问。
+        // 所以**明确在提问**且话题匹配不够强（不是关键词直接命中）时，
+        // 让给后面的常识知识库和思维模式去处理。
+        if (asksSomething(normalized)) return null
+
         val body = pickReply(topic.replies, context) ?: return null
         val switched = topic.id != context.activeTopic()
         val full = assemble(topic, body, context, switched)
@@ -200,6 +230,26 @@ object SmallTalk {
         return text.startsWith("它") || text.startsWith("这事") ||
             text.startsWith("这个") || text.startsWith("那个") ||
             text.startsWith("这件事")
+    }
+
+    /**
+     * 这是不是一句**单纯的**承接话（「为什么」「还有呢」「嗯嗯」），而不是借承接词
+     * 提出的一个新问题。
+     *
+     * 判据是把承接词去掉后还剩多少内容：
+     * - 「为什么」→ 剩空 → 确实在问上文的展开；
+     * - 「为什么最近总是失眠」→ 剩「最近总是失眠」→ 是一个新话题，
+     *   硬按上个话题接，就会用「压力大」的语料去答「失眠」，看着像答非所问。
+     */
+    private fun isPureFollowUp(text: String): Boolean {
+        if (text.length <= 3) return true
+        if (isPronounReference(text)) return true
+
+        var rest = text
+        for (cue in MORE_CUES + ADVICE_CUES + ECHO_CUES) rest = rest.replace(cue, "")
+        rest = rest.trim('我', '那', '就', '还', '再', '又', '的', '了', '啊', '呢', '呀', '吧',
+            '？', '?', '，', ',', ' ', '。', '.')
+        return rest.length <= 2
     }
 
     private fun containsAnyFuzzy(text: String, vararg cues: String): Boolean =

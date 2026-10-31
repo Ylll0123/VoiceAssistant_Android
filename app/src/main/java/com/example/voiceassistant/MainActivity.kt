@@ -26,6 +26,8 @@ import com.example.voiceassistant.assistant.CityClimate
 import com.example.voiceassistant.assistant.DialogCorpus
 import com.example.voiceassistant.assistant.KnowledgeBase
 import com.example.voiceassistant.assistant.NgramModel
+import com.example.voiceassistant.assistant.ReplyCrafter
+import com.example.voiceassistant.assistant.ThoughtBank
 import com.example.voiceassistant.assistant.OnlineQuery
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatSession
@@ -344,11 +346,17 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
             // 模型才学得到「问句的尾巴接答案的开头」，续写才有因果
             model.observePairs(MemorySeed.pairs)
             model.observePairs(KnowledgeBase.trainingPairs())
+            // 思维模式语料：让模型学到这种「接住 + 给路径 + 抛回来」的说话方式，
+            // 代价是模型文件变大（用户允许适当增加占用空间）
+            model.observeAll(ThoughtBank.allSentences())
+            model.observePairs(ReplyCrafter.trainingPairs())
             saveLocalModel()
         } else if (model.pairCount() == 0) {
             // 旧存档（v2.4 之前）没有问答对，补齐再存一次
             model.observePairs(MemorySeed.pairs)
             model.observePairs(KnowledgeBase.trainingPairs())
+            model.observeAll(ThoughtBank.allSentences())
+            model.observePairs(ReplyCrafter.trainingPairs())
             saveLocalModel()
         }
         return model

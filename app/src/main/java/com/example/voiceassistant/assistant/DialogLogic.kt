@@ -210,60 +210,46 @@ object DialogLogic {
      *
      * @return 结构化的一段话；null 表示这句话不适合走这条路（交给小模型兜底）
      */
-    fun frameAnswer(input: String): String? {
+    fun frameAnswer(input: String): String? = frameAnswer(input, null)
+
+    /**
+     * 本地确实答不上来时，给一套**有结构的思路**。
+     *
+     * 这里复用 [ReplyCrafter] 的说法池（同一个问题的多种思路只在 [ThoughtBank] 里写一次），
+     * 按轮数轮换，所以同一句连着问也会换一套说法，不会一字不差地复读。
+     *
+     * @param context 会话上下文：提供轮数做轮换、避开最近说过的说法；null 时固定用第一套
+     * @return 结构化的一段话；null 表示这句话不适合走这条路（交给小模型兜底）
+     */
+    fun frameAnswer(input: String, context: DialogContext?): String? {
         val raw = input.trim()
         val text = FuzzyMatcher.normalize(raw)
         if (text.length < 3) return null
-        val topic = stripToTopic(raw)
-        if (topic.isEmpty()) return null
+        val topic = "「${stripToTopic(raw)}」"
+        if (topic.length <= 2) return null
 
         return when {
             // 做选择：给决策顺序
-            DECISION_CUES.any { text.contains(it) } -> decision(topic)
+            DECISION_CUES.any { text.contains(it) } ->
+                ReplyCrafter.rotate(ReplyCrafter.Mode.CHOICE, topic, context)
 
             // 求办法：给拆解顺序
-            SOLVE_CUES.any { text.contains(it) } -> solve(topic)
+            SOLVE_CUES.any { text.contains(it) } ->
+                ReplyCrafter.rotate(ReplyCrafter.Mode.METHOD, topic, context)
 
             // 问原因：给归因顺序，并说明不敢瞎猜
-            CAUSE_CUES.any { text.contains(it) } -> cause(topic)
+            CAUSE_CUES.any { text.contains(it) } ->
+                ReplyCrafter.rotate(ReplyCrafter.Mode.CAUSE, topic, context)
 
             // 要评价：给"事实—影响—取舍"三层
-            OPINION_CUES.any { text.contains(it) } -> opinion(topic)
+            OPINION_CUES.any { text.contains(it) } ->
+                ReplyCrafter.rotate(ReplyCrafter.Mode.OPINION, topic, context)
 
             else -> null
         }
     }
 
-    private fun decision(topic: String): String =
-        "「$topic」这种选择题，我建议你按三步想，比反复纠结有用：\n" +
-            "1. 先定目的——你想通过它得到什么，目的清楚了，选项通常自己少一半；\n" +
-            "2. 再看代价——最坏的结果你能不能接受，能接受就去做；\n" +
-            "3. 最后留退路——能不能先小规模试一次，不行再退回来。\n" +
-            "你现在最在意的是哪一步？说给我听，我帮你往下推。"
-
-    private fun solve(topic: String): String =
-        "「$topic」看起来难，多半是因为它不是一个问题，是几件事叠在一起。我们按四步拆：\n" +
-            "1. 先说清现状——现在具体卡在哪一步；\n" +
-            "2. 把目标缩小到这周能做完的一件小事；\n" +
-            "3. 选一个今天就能开始的最小动作，别等；\n" +
-            "4. 做完复盘，再决定下一步要不要调整。\n" +
-            "你先说第一步：卡在哪了？"
-
-    private fun cause(topic: String): String =
-        "「$topic」的确切成因我不想瞎编，这类问题通常从三个角度去找：\n" +
-            "1. 直接触发条件——是最近才变的，还是一直这样；\n" +
-            "2. 长期影响因素——哪些背景条件一直在起作用；\n" +
-            "3. 反例验证——有没有时候明明条件相同却没发生，那就能排除掉某个解释。\n" +
-            "你把背景再说细一点（什么时候开始的、有没有例外），我帮你把范围缩小。"
-
-    private fun opinion(topic: String): String =
-        "说我的看法可以，但我不想给空话。「$topic」我习惯分三层看：\n" +
-            "1. 事实是什么（有证据的部分）；\n" +
-            "2. 影响谁（对最关键的人或事带来什么）；\n" +
-            "3. 愿意付出什么代价换这个结果。\n" +
-            "这三点你先补一下，我就能给你一个站得住的判断，而不是随便附和。"
-
-    /** 从原始问句里剥出「事情本身」当小标题：去掉语气词和句尾标点 */
+    /** 从原始问句里剥出「事情本身」当小标题：去掉客套话、语气词和句尾标点 */
     fun stripToTopic(raw: String): String {
         return raw.trim()
             .trim('？', '?', '！', '!', '。', '.', '，', ',', '啊', '呢', '呀', '吧', '嘛', ' ')
@@ -271,6 +257,12 @@ object DialogLogic {
             .removePrefix("我想问")
             .removePrefix("问一下")
             .removePrefix("请问")
+            .removePrefix("我想知道")
+            .removePrefix("帮我查一下")
+            .removePrefix("给我讲讲")
+            .removePrefix("介绍一下")
+            .removePrefix("讲讲")
+            .removePrefix("说说")
             .trim()
             .let { if (it.length > 24) it.substring(0, 24) else it }
     }

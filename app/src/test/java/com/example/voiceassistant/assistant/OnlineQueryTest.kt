@@ -1,6 +1,7 @@
 package com.example.voiceassistant.assistant
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,10 +31,33 @@ class OnlineQueryTest {
     }
 
     @Test
-    fun `本地答不上来的问题去联网查百科`() {
-        val plan = OnlineQuery.plan("介绍一下量子纠缠", AssistantEngine.INTENT_FALLBACK)!!
+    fun `用户明确说帮我查或搜一下才联网`() {
+        val plan = OnlineQuery.plan("帮我查一下量子纠缠", AssistantEngine.INTENT_FALLBACK)!!
         assertEquals(OnlineQuery.Kind.SEARCH, plan.kind)
         assertEquals("量子纠缠", plan.query)
+
+        val searched = OnlineQuery.plan("百度搜一下光合作用", AssistantEngine.INTENT_FALLBACK)!!
+        assertEquals(OnlineQuery.Kind.SEARCH, searched.kind)
+        assertEquals("光合作用", searched.query)
+    }
+
+    @Test
+    fun `没说要查就不联网：交给本地思维模式回答`() {
+        // 只是随口问一句，本地答不上来也不去搜——这是 v2.7 明确的行为
+        assertNull(OnlineQuery.plan("介绍一下量子纠缠", AssistantEngine.INTENT_FALLBACK))
+        assertNull(OnlineQuery.plan("量子纠缠是什么意思", AssistantEngine.INTENT_FALLBACK))
+        assertNull(OnlineQuery.plan("我到底该不该换个环境", AssistantEngine.INTENT_FALLBACK))
+        assertNull(OnlineQuery.plan("最近好累啊", AssistantEngine.INTENT_FALLBACK))
+    }
+
+    @Test
+    fun `wantsWeb 只在显式要求时为真`() {
+        assertTrue(OnlineQuery.wantsWeb("帮我查一下人工智能"))
+        assertTrue(OnlineQuery.wantsWeb("百度百科查查这个词"))
+        assertFalse(OnlineQuery.wantsWeb("为什么天空是蓝的"))
+        assertFalse(OnlineQuery.wantsWeb("我该不该考研"))
+        // 天气走专门的实时通道，不算「搜索」
+        assertTrue(OnlineQuery.plan("北京天气怎么样", "weather") != null)
     }
 
     @Test

@@ -203,10 +203,27 @@ class AssistantEngine(
 
             // ⑦b 本地确实不会：**不瞎编**，给一套有结构的思路（决策 / 拆解 / 归因），
             //     比让小模型拼一句"像话但没逻辑"的话可靠得多
-            val framed = DialogLogic.frameAnswer(cleaned.first())
+            val framed = DialogLogic.frameAnswer(cleaned.first(), dialogContext)
             if (framed != null) {
                 lastUnanswered = cleaned.first()
                 return commit(cleaned.first(), RuleReply(framed, INTENT_LOGIC_FRAME))
+            }
+
+            // ⑦c 还接不住：进入「思维模式」——先判断这句话在问什么（情绪 / 比较 /
+            //     归因 / 选择 / 求法 / 看法 / 讲解 / 事实），再给对应的思考路径。
+            //     每种都有 4~6 套说法轮换，并且明确说清哪些是我不确定的，不编事实。
+            //     识别不出提问类型（UNKNOWN，多半是陈述句）时不抢答，留给小模型。
+            val mode = ReplyCrafter.detect(cleaned.first())
+            if (mode != ReplyCrafter.Mode.UNKNOWN) {
+                val thought = ReplyCrafter.craft(
+                    cleaned.first(),
+                    dialogContext,
+                    withStyle = AssistantConfig.replyStyle != AssistantConfig.ReplyStyle.CONCISE
+                )
+                if (thought != null) {
+                    lastUnanswered = cleaned.first()
+                    return commit(cleaned.first(), RuleReply(thought, INTENT_THOUGHT))
+                }
             }
 
             // ⑧ 知识库也没有：问内置小模型能不能生成一句相关的话
@@ -232,7 +249,13 @@ class AssistantEngine(
                     INTENT_CLARIFY
                 )
             } else {
-                AssistantResponse(FALLBACK, INTENT_FALLBACK)
+                // ⑨ 实在接不住：换着花样把话头递回给用户（不再永远重复同一句）
+                val text = ReplyCrafter.fallbackReply(dialogContext)
+                // 记下来，下一轮换一种说法，避免连续两次一字不差
+                dialogContext.markReply(text)
+                lastUnanswered = cleaned.first()
+                onUnanswered?.invoke(cleaned.first())
+                AssistantResponse(text, INTENT_FALLBACK)
             }
         }
 
@@ -436,6 +459,9 @@ class AssistantEngine(
 
         /** 回答是「推理框架」（不会答案，但给了思考 / 决策的步骤） */
         const val INTENT_LOGIC_FRAME = "logic_frame"
+
+        /** 回答来自「思维模式」：按提问类型给对应的思考路径（ReplyCrafter） */
+        const val INTENT_THOUGHT = "thought"
 
         /** 回答来自联网查询（实时天气 / 百科搜索） */
         const val INTENT_WEB = "web"
