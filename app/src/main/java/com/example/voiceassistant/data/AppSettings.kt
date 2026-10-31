@@ -62,6 +62,14 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_LOCAL_MODEL, true)
         set(value) = prefs.edit().putBoolean(KEY_LOCAL_MODEL, value).apply()
 
+    /**
+     * 是否联网查询：实时天气走 Open-Meteo，答不上来的问题查维基百科。
+     * 默认开启，但**联网失败不影响使用**——会退回本地内置内容。
+     */
+    var onlineSearch: Boolean
+        get() = prefs.getBoolean(KEY_ONLINE, true)
+        set(value) = prefs.edit().putBoolean(KEY_ONLINE, value).apply()
+
     /** 答不上来的话先收进这里，用户在记忆页一键教会 */
     var pendingQuestions: List<String>
         get() {
@@ -102,6 +110,7 @@ class AppSettings(context: Context) {
         private const val KEY_FOLLOW_UP = "proactive_follow_up"
         private const val KEY_AUTO_LEARN = "auto_learn"
         private const val KEY_LOCAL_MODEL = "local_model"
+        private const val KEY_ONLINE = "online_search"
         private const val KEY_PENDING = "pending_questions"
 
         private const val SEP = "␟"

@@ -41,10 +41,17 @@ object AssistantConfig {
      */
     var localModel: Boolean = true
 
+    /**
+     * 联网查询：实时天气、百科问答会去网上查，并用查到的内容替换本地答案。
+     * 关掉之后完全离线（只给常年气候数据和本地知识库），没网也能正常用。
+     */
+    var onlineSearch: Boolean = true
+
     fun reset() {
         replyStyle = ReplyStyle.STANDARD
         proactiveFollowUp = true
         autoLearn = true
         localModel = true
+        onlineSearch = true
     }
 }

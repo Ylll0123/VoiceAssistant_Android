@@ -26,7 +26,8 @@ class CommonSenseTest {
         val reply = engine().reply("北京天气怎么样")
         assertTrue(reply.contains("北京"))
         assertTrue(reply.contains("常年"))
-        assertTrue(reply.contains("不是今天的实时天气") || reply.contains("不联网"))
+        // 现在支持联网了，措辞改成"不是此刻的实时天气"
+        assertTrue(reply.contains("实时天气"))
     }
 
     @Test

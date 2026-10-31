@@ -13,7 +13,13 @@ data class Skill(
     val title: String,
     val description: String,
     val category: String,
-    val examples: List<String>
+    val examples: List<String>,
+    /**
+     * 这个技能要联网才能完整生效。
+     * 联网是在 Activity 层异步做的（先出本地答案，查到再刷新那条气泡），
+     * 纯引擎层跑不到，所以一致性测试要跳过它。
+     */
+    val requiresNetwork: Boolean = false
 )
 
 /**
@@ -157,9 +163,9 @@ object SkillCatalog {
         Skill(
             id = "weather",
             title = "天气与气温",
-            description = "给出城市当月的常年气温区间和穿衣建议（纯离线，说明不是实时数据）",
+            description = "联网给出实时气温体感和当日高低（没网就用常年气候数据，照样有答案）",
             category = CATEGORY_LIFE,
-            examples = listOf("北京天气怎么样", "上海气温多少", "明天天气怎么样")
+            examples = listOf("北京天气怎么样", "上海气温多少", "那里现在几度")
         ),
         Skill(
             id = "outing",
@@ -181,6 +187,21 @@ object SkillCatalog {
             description = "天气原理、健康、学习、生活窍门、安全急救等几百条有标准答案的问题",
             category = CATEGORY_KNOWLEDGE,
             examples = listOf("为什么会下雨", "感冒了怎么办", "怎么缓解焦虑", "手机进水怎么办")
+        ),
+        Skill(
+            id = "decide",
+            title = "分析与决策",
+            description = "拿不准的选择、找不到头绪的问题，给一套「目的—代价—退路」的判断顺序",
+            category = CATEGORY_KNOWLEDGE,
+            examples = listOf("我该不该考研", "论文写不出来怎么办", "为什么最近总是失眠")
+        ),
+        Skill(
+            id = "online",
+            title = "联网查资料",
+            description = "本地答不上来时上网搜索，把查到的摘要连同来源一起说给你（没网自动回落）",
+            category = CATEGORY_KNOWLEDGE,
+            examples = listOf("帮我查一下量子纠缠", "光合作用是什么", "介绍一下 metaverse"),
+            requiresNetwork = true
         ),
         Skill(
             id = "follow_up",

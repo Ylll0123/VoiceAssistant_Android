@@ -18,6 +18,12 @@
     <string name="status_continuous_off">连续对话已关闭，需要点麦克风才会听</string>
     <string name="status_skill_sent">已从技能页发送：%1$s</string>
     <string name="status_heard">我听到的是「%1$s」</string>
+    <string name="status_online">正在联网查询…</string>
+    <string name="status_offline_fail">没连上网络，已用本地内容回答</string>
+    <string name="settings_online">联网查询</string>
+    <string name="settings_online_desc">实时天气走 Open-Meteo，答不上来的问题查维基百科；关掉也能离线使用</string>
+    <string name="settings_online_state">联网已开启：实时天气 + 百科搜索，失败自动回落到本地内容</string>
+    <string name="settings_online_state_off">联网已关闭：只用本地内置的气候数据和知识库</string>
 
     <!-- 输入区 -->
     <string name="hint_input">输入文字，或点左侧麦克风</string>

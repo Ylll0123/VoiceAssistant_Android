@@ -14,7 +14,11 @@ import org.junit.Test
  */
 class SkillCatalogTest {
 
+    /** 依赖上下文的技能（接着算、多轮追问）需要前置对话，单独测 */
     private val contextDependent = setOf("calc_continue", "follow_up")
+
+    /** 依赖联网的技能由 Activity 层异步执行，纯引擎层跑不到，在 OnlineQueryTest 里验证 */
+    private val networkDependent = setOf("online")
 
     /** 和真机一致的引擎：带一个本地记忆库（测试用内存实现） */
     private fun newEngine() = AssistantEngine(memory = InMemoryMemoryRepository())
@@ -23,6 +27,7 @@ class SkillCatalogTest {
     fun `技能页的每个示例都能被引擎执行`() {
         SkillCatalog.skills
             .filterNot { it.id in contextDependent }
+            .filterNot { it.id in networkDependent }
             .forEach { skill ->
                 skill.examples.forEach { example ->
                     val reply = newEngine().reply(example)

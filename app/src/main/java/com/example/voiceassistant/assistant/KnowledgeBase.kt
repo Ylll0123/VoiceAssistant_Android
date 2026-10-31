@@ -33,7 +33,7 @@ object KnowledgeBase {
 
     /** 全部知识条目（分组懒加载，第一次用到才建） */
     val entries: List<KnowledgeQA> by lazy {
-        KbLife.entries + KbStudy.entries + KbTech.entries + KbScience.entries
+        KbLife.entries + KbStudy.entries + KbTech.entries + KbScience.entries + KbLogic.entries
     }
 
     /** 知识条数，设置页展示用 */

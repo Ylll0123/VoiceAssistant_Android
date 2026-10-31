@@ -44,6 +44,13 @@ class DialogContext(
         private set
 
     /**
+     * 上一轮反问用户补的那个参数槽位（例如只说了「翻译」没说词）。
+     * 下一句话如果是在答这句反问，就会被拿去回填槽位再执行。
+     */
+    var pendingSlot: String? = null
+        private set
+
+    /**
      * 上一轮聊到的主题（知识分类 / 城市名这类实体）。
      * 连续聊同一主题时回复会加一句承接语，让上下两轮串起来。
      */
@@ -158,6 +165,33 @@ class DialogContext(
         pendingUtterance = null
     }
 
+    /**
+     * 反问用户补一个缺失的参数（槽位）。
+     * 和 [setPending] 的区别：这里是「你还没说完」，那里是「我是不是听错了」。
+     */
+    fun setSlot(slot: String) {
+        pendingSlot = slot
+        lastIntent = INTENT_SLOT
+        updatedAt = clock()
+    }
+
+    /** 取走待补的槽位（读一次就清掉，避免反复触发）；上下文过期返回 null */
+    fun consumeSlot(): String? {
+        val value = if (hasIntent(INTENT_SLOT)) pendingSlot else null
+        pendingSlot = null
+        return value
+    }
+
+    /** 记住上一轮提到的实体（城市名 / 翻译的词 / 知识主题），下一轮才能指代它 */
+    fun rememberEntity(entity: String) {
+        if (entity.isBlank()) return
+        slots[SLOT_ENTITY] = entity
+        lastSubject = entity
+    }
+
+    /** 上一轮提到的实体；指代消解（「它」「那里」）就换成它 */
+    fun entitySlot(): String? = slot(SLOT_ENTITY)
+
     /** 读取槽位；上下文过期则视为不存在 */
     fun slot(key: String): String? = if (isAlive()) slots[key] else null
 
@@ -175,6 +209,7 @@ class DialogContext(
         lastHeard = null
         lastSubject = null
         pendingUtterance = null
+        pendingSlot = null
         updatedAt = 0L
         slots.clear()
         topicId = null
@@ -195,11 +230,17 @@ class DialogContext(
         /** 「你是不是想问…」这类确认轮的意图标识 */
         const val INTENT_CLARIFY = "clarify"
 
+        /** 「你还没说完」这类补参数反问的意图标识 */
+        const val INTENT_SLOT = "slot"
+
         /** 闲聊意图标识 */
         const val INTENT_CHAT = "chat"
 
         /** 槽位里存放话题 id 的键 */
         const val SLOT_TOPIC = "topic"
+
+        /** 槽位里存放当前实体（城市名 / 翻译的词 / 知识主题）的键 */
+        const val SLOT_ENTITY = "entity"
 
         /** 记住最近 12 句回复，够覆盖三四种变体的一轮循环 */
         private const val MAX_RECENT_REPLIES = 12

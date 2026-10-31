@@ -139,6 +139,15 @@ class AssistantEngine(
             }
         }
 
+        // ③b 上一轮在问「你要 xx 的哪个 / 什么」：这句就是把缺的参数补上了
+        if (dialogContext.hasIntent(DialogContext.INTENT_SLOT)) {
+            val slot = dialogContext.consumeSlot()
+            if (slot != null) {
+                val filled = DialogLogic.fillSlot(slot, first)
+                if (filled != null) return respondInternal(filled, depth = 0)
+            }
+        }
+
         // ④ 纠错说法：「不对，我是说讲个笑话」→ 只用后半句重新理解
         val corrected = stripCorrection(cleaned.first())
         if (corrected != null) {
@@ -190,6 +199,14 @@ class AssistantEngine(
                     knowledge.answer
                 }
                 return commit(cleaned.first(), RuleReply(text, INTENT_KNOWLEDGE))
+            }
+
+            // ⑦b 本地确实不会：**不瞎编**，给一套有结构的思路（决策 / 拆解 / 归因），
+            //     比让小模型拼一句"像话但没逻辑"的话可靠得多
+            val framed = DialogLogic.frameAnswer(cleaned.first())
+            if (framed != null) {
+                lastUnanswered = cleaned.first()
+                return commit(cleaned.first(), RuleReply(framed, INTENT_LOGIC_FRAME))
             }
 
             // ⑧ 知识库也没有：问内置小模型能不能生成一句相关的话
@@ -274,6 +291,8 @@ class AssistantEngine(
         dialogContext.remember(reply.intent, reply.slots)
         dialogContext.rememberHeard(heard)
         dialogContext.markReply(reply.text)
+        // 记下这句话里提到的实体（城市名等），下一轮说「那里 / 它」才指代得上
+        CityClimate.find(heard)?.let { dialogContext.rememberEntity(it.city) }
         return AssistantResponse(reply.text, reply.intent, heard)
     }
 
@@ -414,6 +433,12 @@ class AssistantEngine(
 
         /** 回答来自内置小模型的生成 */
         const val INTENT_LOCAL_MODEL = "local_model"
+
+        /** 回答是「推理框架」（不会答案，但给了思考 / 决策的步骤） */
+        const val INTENT_LOGIC_FRAME = "logic_frame"
+
+        /** 回答来自联网查询（实时天气 / 百科搜索） */
+        const val INTENT_WEB = "web"
 
         /** 回答来自内置常识知识库 */
         const val INTENT_KNOWLEDGE = "knowledge"

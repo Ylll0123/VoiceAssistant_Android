@@ -53,6 +53,22 @@ class ChatSession(
         return response
     }
 
+    /** 最后一条助手消息的下标；联网结果回来后要改的就是它 */
+    fun lastAssistantIndex(): Int = items.indexOfLast { !it.isUser }
+
+    /**
+     * 替换一条助手消息的内容。
+     *
+     * 联网查询是异步的：本地先给一句（常年气候数据 / "我上网查一下"），
+     * 结果回来后把这条替换掉，用户看到的是同一条气泡刷新，而不是又冒一条。
+     */
+    fun replaceAssistant(index: Int, text: String, intent: String? = null) {
+        if (index in items.indices && !items[index].isUser) {
+            items[index] = ChatMessage(text = text, isUser = false, intent = intent)
+            notifyChanged()
+        }
+    }
+
     /** 最近一次助手命中的意图，设置页展示用 */
     fun lastIntent(): String? = items.lastOrNull { !it.isUser }?.intent
 

@@ -34,11 +34,13 @@ class SettingsFragment : Fragment() {
     private lateinit var switchFollowUp: SwitchMaterial
     private lateinit var switchAutoLearn: SwitchMaterial
     private lateinit var switchLocalModel: SwitchMaterial
+    private lateinit var switchOnline: SwitchMaterial
     private lateinit var tvEngine: TextView
     private lateinit var toggleStyle: MaterialButtonToggleGroup
     private lateinit var tvLearnStat: TextView
     private lateinit var tvPendingStat: TextView
     private lateinit var tvModelState: TextView
+    private lateinit var tvOnlineState: TextView
     private lateinit var tvLastIntent: TextView
     private lateinit var tvContext: TextView
     private lateinit var tvMessageCount: TextView
@@ -62,6 +64,8 @@ class SettingsFragment : Fragment() {
         switchFollowUp = view.findViewById(R.id.switchFollowUp)
         switchAutoLearn = view.findViewById(R.id.switchAutoLearn)
         switchLocalModel = view.findViewById(R.id.switchLocalModel)
+        switchOnline = view.findViewById(R.id.switchOnline)
+        tvOnlineState = view.findViewById(R.id.tvOnlineState)
         tvEngine = view.findViewById(R.id.tvEngine)
         toggleStyle = view.findViewById(R.id.toggleStyle)
         tvLearnStat = view.findViewById(R.id.tvLearnStat)
@@ -191,6 +195,20 @@ class SettingsFragment : Fragment() {
             if (host.localModelEnabled != checked) host.setLocalModelEnabled(checked)
         }
         updateModelState()
+
+        switchOnline.isChecked = host.onlineSearchEnabled
+        switchOnline.setOnCheckedChangeListener { _, checked ->
+            if (host.onlineSearchEnabled != checked) host.setOnlineSearchEnabled(checked)
+            updateOnlineState()
+        }
+        updateOnlineState()
+    }
+
+    private fun updateOnlineState() {
+        tvOnlineState.text = getString(
+            if (host.onlineSearchEnabled) R.string.settings_online_state
+            else R.string.settings_online_state_off
+        )
     }
 
     private fun updateModelState() {

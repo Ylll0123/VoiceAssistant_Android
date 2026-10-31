@@ -22,11 +22,14 @@ import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import com.example.voiceassistant.assistant.AssistantConfig
 import com.example.voiceassistant.assistant.AssistantEngine
+import com.example.voiceassistant.assistant.CityClimate
 import com.example.voiceassistant.assistant.DialogCorpus
 import com.example.voiceassistant.assistant.KnowledgeBase
 import com.example.voiceassistant.assistant.NgramModel
+import com.example.voiceassistant.assistant.OnlineQuery
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatSession
+import com.example.voiceassistant.data.WebSearch
 import com.example.voiceassistant.memory.MemorySeed
 import com.example.voiceassistant.memory.SqliteMemoryRepository
 import com.example.voiceassistant.speech.SpeechController
@@ -66,6 +69,18 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
      */
     private lateinit var localModel: NgramModel
 
+    /**
+     * 最近一次查过天气的城市。
+     * 用户接着说「那上海呢 / 那里呢」时用它兜底，
+     * 否则 OnlineQuery 拿不到城市就不联网。
+     */
+    private var lastWeatherCity: CityClimate.CityClimate? = null
+
+    /** 联网 runner：串行执行，避免同时打出去好几个请求 */
+    private val netExecutor = java.util.concurrent.Executors.newSingleThreadExecutor {
+        Thread(it, "web-search").apply { isDaemon = true }
+    }
+
     /** 会话状态（消息 + 引擎 + 本地记忆库 + 小模型），整个应用共享一份 */
     val session: ChatSession by lazy {
         ChatSession(
@@ -98,6 +113,9 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         private set
 
     var localModelEnabled: Boolean = true
+        private set
+
+    var onlineSearchEnabled: Boolean = true
         private set
 
     private lateinit var ivTabChat: ImageView
@@ -290,6 +308,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         proactiveFollowUp = settings.proactiveFollowUp
         autoLearn = settings.autoLearn
         localModelEnabled = settings.localModel
+        onlineSearchEnabled = settings.onlineSearch
         syncAssistantConfig()
     }
 
@@ -303,6 +322,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         AssistantConfig.proactiveFollowUp = proactiveFollowUp
         AssistantConfig.autoLearn = autoLearn
         AssistantConfig.localModel = localModelEnabled
+        AssistantConfig.onlineSearch = onlineSearchEnabled
     }
 
     /**
@@ -389,6 +409,12 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         syncAssistantConfig()
     }
 
+    fun setOnlineSearchEnabled(enabled: Boolean) {
+        onlineSearchEnabled = enabled
+        settings.onlineSearch = enabled
+        syncAssistantConfig()
+    }
+
     /** 恢复默认设置（不动记忆库），并立刻生效 */
     fun resetSettings() {
         settings.reset()
@@ -437,6 +463,17 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
             }, 2500)
         }
 
+        // 本地答好了，但有些问题值得联网补一句实时 / 更准的内容
+        val plan = if (AssistantConfig.onlineSearch) {
+            OnlineQuery.plan(cleaned.first(), response.intent, lastWeatherCity)
+        } else {
+            null
+        }
+        if (plan != null) {
+            searchOnline(plan, session.lastAssistantIndex(), response.text)
+            return
+        }
+
         if (speakEnabled) {
             if (heard == null || heard == cleaned.first()) {
                 chatUi?.showStatus(getString(R.string.status_speaking))
@@ -447,6 +484,57 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
                 chatUi?.showStatus(getString(R.string.status_idle))
             }
             maybeRestartListening(400)
+        }
+    }
+
+    /**
+     * 异步联网查询。
+     *
+     * 本地那条回答先留在屏幕上（常年气候 / "我上网查一下"），
+     * 子线程拿到结果后回主线程**替换同一条气泡**再播报，
+     * 所以用户看到的是"下面在查 → 这条刷新了"，而不是突然多出一条。
+     * 联网失败（没网 / 接口不可达）就保留本地回答补一句说明，离线可用性不受影响。
+     */
+    private fun searchOnline(plan: OnlineQuery.Plan, messageIndex: Int, localAnswer: String) {
+        if (plan.kind == OnlineQuery.Kind.WEATHER && plan.city != null) {
+            lastWeatherCity = plan.city
+        }
+        chatUi?.showStatus(getString(R.string.status_online), highlight = true)
+
+        netExecutor.execute {
+            val result: Pair<String, String>? = runCatching {
+                when (plan.kind) {
+                    OnlineQuery.Kind.WEATHER -> {
+                        val city = plan.city ?: return@runCatching null
+                        WebSearch.fetchWeather(city)?.let { AssistantEngine.INTENT_WEB to WebSearch.composeWeather(it) }
+                    }
+                    OnlineQuery.Kind.SEARCH -> {
+                        WebSearch.fetchSummary(plan.query)
+                            ?.let { AssistantEngine.INTENT_WEB to WebSearch.composeSearch(it) }
+                    }
+                }
+            }.getOrNull()
+
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                if (result != null) {
+                    session.replaceAssistant(messageIndex, result.second, result.first)
+                    chatUi?.showStatus(getString(R.string.status_idle))
+                    if (speakEnabled) {
+                        chatUi?.showStatus(getString(R.string.status_speaking))
+                        speech.speak(result.second)
+                    }
+                } else {
+                    // 没查到：本地答案照旧，只是补一句说明，不让用户空等
+                    session.replaceAssistant(
+                        messageIndex,
+                        "$localAnswer\n（我想联网核实一下，但这次没连上，以上是我本地内置的内容。）",
+                        null
+                    )
+                    chatUi?.showStatus(getString(R.string.status_offline_fail))
+                    if (speakEnabled) speech.speak(localAnswer)
+                }
+            }
         }
     }
 

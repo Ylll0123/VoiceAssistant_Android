@@ -33,6 +33,8 @@ object AssistantRules {
         GuessNumber,
         CalcContinue,
         FollowUp,
+        ContextCarry,
+        SlotClarify,
         Arithmetic,
         Timezone,
         Time,
@@ -54,6 +56,42 @@ object AssistantRules {
         KnowledgeRule,
         ChatRule
     )
+
+    /**
+     * 上下文承接：把「为什么 / 还有吗 / 它多少钱 / 那里」这类**残缺的话**
+     * 补全成完整句子，再交给下面的具体规则去答。
+     *
+     * 好处是多轮追问不用在每条规则里各写一遍判断题：
+     * 这里的补全结果直接走 [RuleReply.rerun]，其余规则一个字都不用改。
+     * 上一轮没聊过任何东西（上下文失效）时自然返回 null，不会瞎补。
+     */
+    object ContextCarry : IntentRule {
+        override val intent = "context_carry"
+
+        override fun reply(request: AssistantRequest): RuleReply? {
+            if (!request.context.isAlive()) return null
+            val completed = DialogLogic.expand(request.raw, request.context) ?: return null
+            if (completed == request.raw.trim()) return null
+            return RuleReply("", intent, rerun = completed)
+        }
+    }
+
+    /**
+     * 缺参数反问：用户只说了「翻译」「什么意思」，没说对象。
+     *
+     * 与其硬答一句莫名其妙的话，不如把缺的东西问出来（[DialogContext.setSlot]），
+     * 用户下一句补上后，引擎会把答案填回槽位再执行真正的查询。
+     */
+    object SlotClarify : IntentRule {
+        override val intent = DialogContext.INTENT_SLOT
+
+        override fun reply(request: AssistantRequest): RuleReply? {
+            // 缺不缺参数是这句话本身的属性，跟上下文有没有过期无关
+            val slot = DialogLogic.missingSlot(request.raw) ?: return null
+            request.context.setSlot(slot)
+            return RuleReply(DialogLogic.slotQuestion(slot), intent)
+        }
+    }
 
     /**
      * 常识问答：把知识库提到规则层，排在闲聊之前。
