@@ -447,8 +447,13 @@ class SettingsFragment : Fragment() {
             )
             return
         }
-        toast(getString(R.string.settings_cloud_testing))
-        host.testCloud(cfg) { result -> toast(result) }
+        tvCloudState.text = getString(R.string.settings_cloud_testing)
+        host.testCloud(cfg) { result ->
+            // Toast 会把服务端原文截掉一半，排查问题不方便：
+            // 把完整结果留在状态行里，它不会消失，可以逐字对照
+            tvCloudState.text = result
+            toast(result)
+        }
     }
 
     // ------------------------------------------------------------------ 状态

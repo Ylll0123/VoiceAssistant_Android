@@ -80,7 +80,12 @@ object CloudBrain {
     /** 一次调用的结果：成功拿到回答 / 失败并带上人话原因 */
     sealed class CloudResult {
         data class Ok(val text: String, val model: String) : CloudResult()
-        data class Fail(val reason: String) : CloudResult()
+
+        /**
+         * @param retryable 是否值得重试：`true` 表示服务端有响应（网络是通的），
+         *   失败原因可能靠调整参数解决；`false` 表示网络层就断了，重试只是多等一个超时。
+         */
+        data class Fail(val reason: String, val retryable: Boolean = false) : CloudResult()
     }
 
     /** 服务商预设：换服务商 = 换 Base URL + 模型名，其它都一样 */
@@ -126,9 +131,14 @@ object CloudBrain {
     private const val UA = "VoiceAssistant/2.8 (Android; OpenAI-compatible)"
     private const val DEFAULT_TIMEOUT_MS = 20000
     private const val DEFAULT_MAX_TOKENS = 320
-    private const val DEFAULT_TEMPERATURE = 0.7
+    /**
+     * 默认温度为 1——这是 OpenAI `/chat/completions` 自身的默认值，
+     * 也是兼容性最好的选择：方舟上的思考型模型（kimi-k3 / doubao-seed）只允许这个值，
+     * 用 0.7 会被 400 拒绝。语音助手场景里 1.0 与 0.7 的回答质量差别很小。
+     */
+    private const val DEFAULT_TEMPERATURE = 1.0
 
-    /** temperature 被模型拒绝后的重试输出上限：思考型模型会先花 token 推理，320 往往不够 */
+    /** 重试时的输出上限：思考型模型会先把 token 花在内部推理上，320 常常不够把正文吐出来 */
     private const val RETRY_MAX_TOKENS = 1024
 
     // ------------------------------------------------------------------ 请求
@@ -152,7 +162,7 @@ object CloudBrain {
         model: String,
         messages: List<ChatTurn>,
         maxTokens: Int = DEFAULT_MAX_TOKENS,
-        temperature: Double = 0.7
+        temperature: Double = DEFAULT_TEMPERATURE
     ): String {
         val turns = messages.joinToString(",") {
             "{\"role\":\"${escapeJson(it.role)}\",\"content\":\"${escapeJson(it.content)}\"}"
@@ -269,14 +279,13 @@ object CloudBrain {
         val first = attempt(config, url, messages, config.maxTokens, DEFAULT_TEMPERATURE)
         if (first is CloudResult.Ok) return first
 
-        // 有的模型（如方舟上的思考型 kimi-k3 / doubao-seed）硬性规定 temperature 只能为 1，
-        // 返回 400 并在错误里点名 temperature——这种情况自动用 temperature=1 重试一次，
-        // 同时把输出上限放宽（思考模型会先把 token 花在推理上）
-        val reason = (first as CloudResult.Fail).reason
-        if (needsTemperatureRetry(reason)) {
-            return attempt(config, url, messages, maxOf(config.maxTokens, RETRY_MAX_TOKENS), 1.0)
-        }
-        return first
+        // 拿到了服务端响应却没内容：多半是思考型模型把 token 花在内部推理上，
+        // 正文没输出完。这种情况把上限放宽重试一次。网络异常不重试（只會多等一个超时）。
+        val fail = first as CloudResult.Fail
+        if (!fail.retryable) return first
+        val retryTokens = maxOf(config.maxTokens, RETRY_MAX_TOKENS)
+        if (retryTokens == config.maxTokens) return first
+        return attempt(config, url, messages, retryTokens, DEFAULT_TEMPERATURE)
     }
 
     /** 发一次请求并解析结果（不含重试逻辑） */
@@ -296,7 +305,7 @@ object CloudBrain {
                     ?: config.model
                 CloudResult.Ok(content, usedModel)
             } else {
-                CloudResult.Fail(parseError(response.first, response.second))
+                CloudResult.Fail(parseError(response.first, response.second), retryable = true)
             }
         }.getOrElse { e ->
             CloudResult.Fail(describeException(e, config.timeoutMs))
@@ -304,12 +313,12 @@ object CloudBrain {
     }
 
     /**
-     * 错误信息是否在说「temperature 不让自定义」。
+     * 错误信息是否在谈论 temperature 限制。
      *
-     * 常见原文：`temperature` only 1 is allowed for this model /
-     * temperature must be 1 / invalid temperature（不同网关措辞不一，统一按关键词判）。
+     * 现在请求固定用合法的默认值 1.0，不会再触发这类报错；
+     * 保留这个函数是为了「用户手动配置了奇怪的温度」时能把原因说清楚。
      */
-    fun needsTemperatureRetry(reason: String): Boolean =
+    fun mentionsTemperatureLimit(reason: String): Boolean =
         reason.contains("temperature", ignoreCase = true)
 
     /** 只问一句「在吗」，用于设置页的连通性测试 */

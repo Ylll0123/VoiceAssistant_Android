@@ -260,28 +260,40 @@ class CloudBrainTest {
         }
     }
 
-    // -------------------------------------------------------- temperature 限制重试
+    // ------------------------------------------------------- 默认值与重试策略
 
     @Test
-    fun `方舟的 temperature 报错能识别为需要重试`() {
-        // 真实报错（截自火山方舟 kimi-k3-1-pro）：
-        // 请求失败：`temperature` only 1 is allowed for this model Request id: ...
-        assertTrue(CloudBrain.needsTemperatureRetry("请求失败：`temperature` only 1 is allowed for this model Request i..."))
-        assertTrue(CloudBrain.needsTemperatureRetry("请求失败：Temperature must be 1"))
-        assertFalse(CloudBrain.needsTemperatureRetry("Key 不对或没权限：invalid api key"))
-        assertFalse(CloudBrain.needsTemperatureRetry("请求超过 20 秒没回来（可能网络不通）"))
+    fun `默认温度为 1，兼容方舟思考型模型`() {
+        // OpenAI /chat/completions 自身的默认值就是 1；用 0.7 会被方舟的
+        // kimi-k3 / doubao-seed 这类模型以「temperature only 1 is allowed」拒绝
+        val body = CloudBrain.buildBody("kimi-k3-1-pro-261024", listOf(CloudBrain.ChatTurn.user("你好")))
+        assertTrue("默认请求体必须是 temperature 1.0：$body", body.contains("\"temperature\":1.0"))
+        assertFalse(body.contains("\"temperature\":0.7"))
     }
 
     @Test
-    fun `重试请求体用 temperature 1 并放宽输出上限`() {
+    fun `能认出 temperature 相关的报错`() {
+        assertTrue(CloudBrain.mentionsTemperatureLimit("请求失败：`temperature` only 1 is allowed for this model"))
+        assertTrue(CloudBrain.mentionsTemperatureLimit("请求失败：Temperature must be 1"))
+        assertFalse(CloudBrain.mentionsTemperatureLimit("Key 不对或没权限：invalid api key"))
+    }
+
+    @Test
+    fun `输出上限放宽时可到 1024`() {
         val body = CloudBrain.buildBody(
             "kimi-k3-1-pro-261024",
             listOf(CloudBrain.ChatTurn.user("你好")),
-            maxTokens = 1024,
-            temperature = 1.0
+            maxTokens = 1024
         )
-        assertTrue(body.contains("\"temperature\":1.0"))
         assertTrue(body.contains("\"max_tokens\":1024"))
-        assertFalse(body.contains("\"temperature\":0.7"))
+        assertTrue(body.contains("\"temperature\":1.0"))
+    }
+
+    @Test
+    fun `失败标记出能不能重试`() {
+        val net = CloudBrain.CloudResult.Fail("连不上服务器", retryable = false)
+        val server = CloudBrain.CloudResult.Fail("接口地址找不到", retryable = true)
+        assertFalse((net as CloudBrain.CloudResult.Fail).retryable)
+        assertTrue((server as CloudBrain.CloudResult.Fail).retryable)
     }
 }
