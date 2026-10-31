@@ -10,7 +10,10 @@ import androidx.fragment.app.Fragment
 import com.example.voiceassistant.MainActivity
 import com.example.voiceassistant.R
 import com.example.voiceassistant.assistant.AssistantRules
+import com.example.voiceassistant.assistant.CityClimate
 import com.example.voiceassistant.assistant.DialogCorpus
+import com.example.voiceassistant.assistant.Dictionary
+import com.example.voiceassistant.assistant.KnowledgeBase
 import com.example.voiceassistant.assistant.SkillCatalog
 import com.example.voiceassistant.memory.MemoryRepository
 import com.google.android.material.button.MaterialButton
@@ -272,6 +275,13 @@ class SettingsFragment : Fragment() {
             DialogCorpus.sentenceCount(),
             context.turns,
             context.chatTurns
+        ) + "\n" + getString(
+            R.string.settings_knowledge,
+            KnowledgeBase.size(),
+            KnowledgeBase.questionCount(),
+            KnowledgeBase.answerCount(),
+            Dictionary.size(),
+            CityClimate.size()
         )
     }
 

@@ -43,6 +43,13 @@ class DialogContext(
     var topicTurn: Int = 0
         private set
 
+    /**
+     * 上一轮聊到的主题（知识分类 / 城市名这类实体）。
+     * 连续聊同一主题时回复会加一句承接语，让上下两轮串起来。
+     */
+    var lastSubject: String? = null
+        private set
+
     /** 本次会话一共处理了几轮 */
     var turns: Int = 0
         private set
@@ -107,6 +114,14 @@ class DialogContext(
         lastHeard = text
     }
 
+    /** 记下这一轮的主题，下一轮同主题时回复会带承接语 */
+    fun rememberSubject(subject: String) {
+        lastSubject = subject
+    }
+
+    /** 上一轮是不是在聊这个主题 */
+    fun isSubject(subject: String): Boolean = lastSubject == subject
+
     /** 记下刚说出口的一句回复，供下一轮挑选变体时避重 */
     fun markReply(text: String) {
         val value = text.trim()
@@ -158,6 +173,7 @@ class DialogContext(
     fun clear() {
         lastIntent = null
         lastHeard = null
+        lastSubject = null
         pendingUtterance = null
         updatedAt = 0L
         slots.clear()

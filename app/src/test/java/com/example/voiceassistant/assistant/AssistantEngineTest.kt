@@ -56,9 +56,10 @@ class AssistantEngineTest {
     }
 
     @Test
-    fun `问天气时说明尚未接入`() {
+    fun `问天气给出常年气候参考并说明查不到实时数据`() {
         val weather = engine.reply("明天天气怎么样")
-        assertTrue("实际：$weather", weather.contains("还没接入"))
+        assertTrue("实际：$weather", weather.contains("常年"))
+        assertTrue("实际：$weather", weather.contains("查不到") || weather.contains("不联网"))
     }
 
     @Test

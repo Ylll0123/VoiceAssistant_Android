@@ -86,6 +86,7 @@
     <string name="settings_recognizer_ok">语音识别服务：可用</string>
     <string name="settings_recognizer_missing">语音识别服务：不可用（只能文字输入）</string>
     <string name="settings_version">版本：%1$s（%2$d 条规则 / %3$d 个技能 / %4$d 条记忆）</string>
+    <string name="settings_knowledge">常识知识库：%1$d 条知识 / %2$d 种问法 / %3$d 种答法；词典 %4$d 词 / 气候城市 %5$d 个</string>
     <string name="settings_corpus">日常语料：%1$d 个话题 / %2$d 条应答 / 已聊 %3$d 轮（闲聊 %4$d 轮）</string>
     <string name="settings_topic">当前话题：%1$s（第 %2$d 轮）</string>
 

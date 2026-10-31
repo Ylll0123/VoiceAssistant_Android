@@ -75,8 +75,13 @@ class AssistantEngine(
     /** 把每一轮对话喂给本地小模型：聊得越多，兜底生成越有样子 */
     private fun learnTurn(input: String, response: AssistantResponse) {
         val m = model ?: return
-        if (input.isNotBlank()) m.observe(input)
-        if (response.intent !in UNLEARNABLE_INTENTS) m.observe(response.text)
+        if (input.isBlank()) return
+        // 成对的问答才学得到"问句尾接答案头"，系统的提示语不当训练材料
+        if (response.intent !in UNLEARNABLE_INTENTS) {
+            m.observePair(input, response.text)
+        } else {
+            m.observe(input)
+        }
     }
 
     private fun handle(candidates: List<String>): AssistantResponse {
@@ -173,7 +178,21 @@ class AssistantEngine(
                 return commit(hit.entry.question, RuleReply(memoryAnswer(hit.entry.answer), INTENT_MEMORY))
             }
 
-            // ⑦ 记忆里也没有：问内置小模型能不能生成一句相关的话
+            // ⑦ 记忆里也没有：查内置常识知识库（几百条有标准答案的日常问题）
+            val knowledge = KnowledgeBase.match(cleaned.first(), dialogContext)
+            if (knowledge != null) {
+                val continued = dialogContext.isSubject(knowledge.qa.category) &&
+                    dialogContext.hasIntent(INTENT_KNOWLEDGE)
+                dialogContext.rememberSubject(knowledge.qa.category)
+                val text = if (continued && wantsBridge()) {
+                    bridgeWord(dialogContext.turns) + knowledge.answer
+                } else {
+                    knowledge.answer
+                }
+                return commit(cleaned.first(), RuleReply(text, INTENT_KNOWLEDGE))
+            }
+
+            // ⑧ 知识库也没有：问内置小模型能不能生成一句相关的话
             if (AssistantConfig.localModel && model != null) {
                 val generated = model.generate(cleaned.first())
                 if (generated != null) {
@@ -295,6 +314,14 @@ class AssistantEngine(
         repo.remember(heard, hit.entry.answer, MemoryRepository.SOURCE_LEARNED)
     }
 
+    /** 简洁风格不追加承接语 */
+    private fun wantsBridge(): Boolean =
+        AssistantConfig.replyStyle != AssistantConfig.ReplyStyle.CONCISE
+
+    /** 连续聊同一主题时的承接语，按轮数轮换，避免每次都一样 */
+    private fun bridgeWord(turns: Int): String =
+        BRIDGE_WORDS[turns % BRIDGE_WORDS.size]
+
     /** 在「教过的」记忆里找最像的一条；找不到或没有记忆库返回 null */
     private fun taughtHitFor(text: String): MemoryHit? {
         val repo = memory ?: return null
@@ -388,6 +415,9 @@ class AssistantEngine(
         /** 回答来自内置小模型的生成 */
         const val INTENT_LOCAL_MODEL = "local_model"
 
+        /** 回答来自内置常识知识库 */
+        const val INTENT_KNOWLEDGE = "knowledge"
+
         /** 建议的相似度门槛：太低会瞎猜，太高又救不回来 */
         private const val SUGGEST_THRESHOLD = 0.72
 
@@ -402,6 +432,11 @@ class AssistantEngine(
 
         /** 「重讲一遍」最多嵌套两层，防止规则互相触发形成死循环 */
         private const val MAX_RERUN_DEPTH = 2
+
+        /** 连续聊同一主题时的承接语：让上下两轮读起来是连着的 */
+        private val BRIDGE_WORDS = listOf(
+            "接着说，", "顺着这个话题，", "再往下说，", "接着刚才的，"
+        )
 
         /** 纠错前缀：「不对，我是说…」 */
         private val CORRECTION_PREFIX =

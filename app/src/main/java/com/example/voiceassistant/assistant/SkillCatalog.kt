@@ -27,9 +27,11 @@ object SkillCatalog {
     const val CATEGORY_TOOL = "生活小工具"
     const val CATEGORY_FUN = "娱乐与闲聊"
     const val CATEGORY_DIALOG = "多轮对话"
+    const val CATEGORY_LIFE = "天气与出行"
+    const val CATEGORY_KNOWLEDGE = "常识问答"
 
     val categories: List<String> = listOf(
-        CATEGORY_TIME, CATEGORY_CALC, CATEGORY_TOOL, CATEGORY_FUN, CATEGORY_DIALOG
+        CATEGORY_TIME, CATEGORY_CALC, CATEGORY_LIFE, CATEGORY_KNOWLEDGE, CATEGORY_TOOL, CATEGORY_FUN, CATEGORY_DIALOG
     )
 
     val skills: List<Skill> = listOf(
@@ -151,6 +153,34 @@ object SkillCatalog {
             description = "「为什么」「然后呢」「那怎么办」会顺着刚才的话题继续说，不会答非所问",
             category = CATEGORY_DIALOG,
             examples = listOf("我好累", "为什么", "那我该怎么办")
+        ),
+        Skill(
+            id = "weather",
+            title = "天气与气温",
+            description = "给出城市当月的常年气温区间和穿衣建议（纯离线，说明不是实时数据）",
+            category = CATEGORY_LIFE,
+            examples = listOf("北京天气怎么样", "上海气温多少", "明天天气怎么样")
+        ),
+        Skill(
+            id = "outing",
+            title = "出行建议",
+            description = "按月份和城市给出出行、穿衣、带伞这类能照做的提醒",
+            category = CATEGORY_LIFE,
+            examples = listOf("出行有什么建议", "今天出门要带伞吗", "这个月穿什么")
+        ),
+        Skill(
+            id = "translate",
+            title = "单词翻译",
+            description = "内置中英基础词典双向查询，中翻英、英翻中都能用",
+            category = CATEGORY_KNOWLEDGE,
+            examples = listOf("苹果用英语怎么说", "apple 是什么意思", "翻译老师")
+        ),
+        Skill(
+            id = "knowledge",
+            title = "常识问答",
+            description = "天气原理、健康、学习、生活窍门、安全急救等几百条有标准答案的问题",
+            category = CATEGORY_KNOWLEDGE,
+            examples = listOf("为什么会下雨", "感冒了怎么办", "怎么缓解焦虑", "手机进水怎么办")
         ),
         Skill(
             id = "follow_up",

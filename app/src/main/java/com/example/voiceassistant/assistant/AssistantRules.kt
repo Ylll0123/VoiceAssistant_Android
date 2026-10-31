@@ -45,12 +45,36 @@ object AssistantRules {
         Joke,
         Identity,
         Help,
+        Translate,
         Weather,
+        Outing,
         Thanks,
         Farewell,
         Greeting,
+        KnowledgeRule,
         ChatRule
     )
+
+    /**
+     * 常识问答：把知识库提到规则层，排在闲聊之前。
+     *
+     * 为什么需要它：像「为什么会下雨」这种问原理的句子，含「下雨」二字，
+     * 闲聊语料里也有雨天话题，会被当成聊天接走；但它其实是一个有标准答案的
+     * 常识问题。这里只认**高相似度**（≥0.85，基本就是整句对得上）的问法，
+     * 低分的仍然留给闲聊和引擎末端的知识库兜底，不会抢情绪话题。
+     */
+    object KnowledgeRule : IntentRule {
+        override val intent = AssistantEngine.INTENT_KNOWLEDGE
+
+        override fun reply(request: AssistantRequest): RuleReply? {
+            val hit = KnowledgeBase.match(request.text, request.context) ?: return null
+            if (hit.score < MIN_RULE_SCORE) return null
+            request.context.rememberSubject(hit.qa.category)
+            return RuleReply(hit.answer, intent, mapOf("subject" to hit.qa.category))
+        }
+
+        private const val MIN_RULE_SCORE = 0.85
+    }
 
     // ------------------------------------------------------------------ 多轮对话
 
@@ -170,8 +194,31 @@ object AssistantRules {
                     return RuleReply(dateSentence(LocalDate.now().plusDays(relative.first), relative.second), "date")
                 }
                 if (context.hasIntent("weather")) {
-                    return RuleReply(weatherPlaceholder(relative.second), "weather")
+                    val city = CityClimate.find(context.slot("city").orEmpty())
+                    return RuleReply(
+                        "${relative.second}的实时天气我查不到，常年气候参考：${CityClimate.describe(city)}",
+                        "weather"
+                    )
                 }
+            }
+
+            // 「那北京呢」：沿用上一轮的天气/温度，只换城市
+            // 必须是省略句——「北京天气怎么样」这种完整问句由 Weather 自己处理，
+            // 否则这里会把它再改写成自己，形成死循环（深度用尽后返回空回复）
+            if (context.hasIntent("weather") &&
+                CityClimate.find(text) != null &&
+                text.length <= 6 &&
+                !text.contains("怎么样") &&
+                !WEATHER_WORDS.any { text.contains(it) }
+            ) {
+                val city = CityClimate.find(text)!!
+                return RuleReply("", "weather", rerun = "${city.city}天气怎么样")
+            }
+
+            // 「那苹果呢」：沿用上一轮的翻译，只换词
+            if (context.hasIntent("translate") && text.endsWith("呢") && text.length <= 8) {
+                val word = text.trimEnd('呢').trim()
+                if (word.isNotEmpty()) return RuleReply("", "translate", rerun = "$word 用英语怎么说")
             }
 
             // 「那东京呢」：沿用上一次的世界时间，只换城市
@@ -583,13 +630,131 @@ object AssistantRules {
         }
     }
 
-    /** 天气：占位，等接入数据源后替换成真实查询 */
+    /**
+     * 天气 / 温度：用内置的城市常年气候数据回答。
+     *
+     * 纯离线助手查不到实时天气，但能给出**这个城市这个月的常年气温区间 + 穿衣建议**，
+     * 这比一句「查不到」有用得多；回答里明确标注是常年平均、不是实时数据，不误导用户。
+     * 「为什么会下雨」这类问原理的交给常识知识库（那才是它该答的）。
+     */
     object Weather : IntentRule {
         override val intent = "weather"
 
+        /** 问原理的说法，让位给知识库 */
+        private val EXPLAIN_CUES = arrayOf("为什么", "为啥", "怎么形成", "如何形成", "原理", "是怎么回事", "怎么来的")
+
         override fun reply(request: AssistantRequest): RuleReply? {
-            if (!request.text.containsAny("天气", "下雨", "气温", "温度")) return null
-            return RuleReply(weatherPlaceholder("今天"), intent)
+            val text = request.text
+            // 用精确包含：模糊容错会把「怎么办」判成「怎么穿」，规则会抢走不属于它的话
+            if (!WEATHER_WORDS.any { text.contains(it) }) return null
+            if (EXPLAIN_CUES.any { text.contains(it) }) return null
+
+            val city = CityClimate.find(request.raw) ?: CityClimate.find(text)
+            val day = relativeDay(text)?.second
+            val body = CityClimate.describe(city)
+            val answer = if (day != null) {
+                "${day}的具体天气我查不到（纯离线不联网），但常年气候可以给你参考：$body"
+            } else {
+                body
+            }
+            return RuleReply(
+                answer,
+                intent,
+                mapOf("city" to (city?.city ?: ""), "day" to (day ?: ""))
+            )
+        }
+    }
+
+    /** 出行建议：结合当前月份和城市，给能照做的提醒 */
+    object Outing : IntentRule {
+        override val intent = "outing"
+
+        private val OUTING_WORDS = listOf(
+            "出行", "出门", "带伞", "适合出门", "出游", "出去玩", "旅游", "通勤", "上班路上",
+            "穿什么", "怎么穿", "适合穿", "出行建议", "出行注意"
+        )
+
+        override fun reply(request: AssistantRequest): RuleReply? {
+            val text = request.text
+            if (!OUTING_WORDS.any { text.contains(it) }) return null
+
+            val city = CityClimate.find(request.raw) ?: CityClimate.find(text)
+                ?: CityClimate.find(request.context.slot("city").orEmpty())
+            val month = LocalDate.now().monthValue
+            val tip = CityClimate.outingTip(month, city)
+            val range = city?.let { CityClimate.rangeOf(it, month) }
+            val dress = range?.let { CityClimate.dressAdvice(it.last) }
+            val answer = buildString {
+                if (city != null) append("${city.city}这个月常年 ${range!!.first}℃~${range.last}℃，")
+                append("出行建议：")
+                append(tip)
+                if (dress != null) append("。穿衣上：$dress")
+                append("。这是常年气候参考，实时天气我目前查不到——要出门前看一眼手机天气更保险。")
+            }
+            return RuleReply(answer, intent, mapOf("city" to (city?.city ?: "")))
+        }
+    }
+
+    /**
+     * 基础单词翻译：内置中英词典双向查询（纯离线）。
+     *
+     * 支持「苹果用英语怎么说」「翻译苹果」「apple 是什么意思」三种说法；
+     * 查不到就引导用户教一句（教的答案进记忆库，下次就会了）。
+     */
+    object Translate : IntentRule {
+        override val intent = "translate"
+
+        /** 中 → 英 的说法 */
+        private val TO_EN_CUES = listOf(
+            "用英语怎么说", "用英语怎么讲", "用英文怎么说", "英语怎么说", "英文怎么说",
+            "用英语怎么写", "英语怎么写", "英文怎么写", "用英语说", "用英文说",
+            "的英语是什么", "的英文是什么", "英语是什么", "英文是什么",
+            "翻译成英语", "翻译成英文", "用英语", "用英文"
+        )
+
+        /** 英 → 中 的说法 */
+        private val TO_ZH_CUES = listOf(
+            "是什么意思", "什么意思", "中文是什么", "怎么翻译", "翻译一下", "翻译成中文", "翻译"
+        )
+
+        override fun reply(request: AssistantRequest): RuleReply? {
+            val raw = request.raw.trim()
+            val text = request.text
+
+            // 整句是英文单词：英 → 中
+            if (Dictionary.isEnglish(raw)) {
+                val chinese = Dictionary.toChinese(raw)
+                    ?: return RuleReply(
+                        "「$raw」不在我的内置词典里。你可以教我：说「记住：$raw = 中文意思」，我下次就会了。",
+                        intent
+                    )
+                return RuleReply("「$raw」的中文是「$chinese」。", intent)
+            }
+
+            val cue = TO_EN_CUES.firstOrNull { text.contains(it) }
+                ?: TO_ZH_CUES.firstOrNull { text.contains(it) }
+                ?: return null
+
+            var word = text
+            for (c in TO_EN_CUES + TO_ZH_CUES) word = word.replace(c, "")
+            word = word.trim()
+                .trim('的', '是', '说', '讲', '写', '成', '为', '在', '了', '啊', '呢', '呀', '？', '?', '！', '!', '，', ',', '。', '.', ' ')
+            if (word.length < 1 || word.length > 10) return null
+
+            // 中文词里夹着英文（「翻译 apple」）时按英文查
+            val english = Dictionary.toEnglish(word)
+            if (english != null) {
+                return RuleReply("「$word」的英语是 $english。", intent)
+            }
+            val chinese = Dictionary.toChinese(word)
+            if (chinese != null) {
+                return RuleReply("「$word」的中文是「$chinese」。", intent)
+            }
+            return RuleReply(
+                "「$word」我的内置词典里还没有（词典收了 ${Dictionary.size()} 个常用词）。" +
+                    "你可以教我：说「记住：$word = 英文」，我马上就记住。",
+                intent
+            )
         }
     }
 
@@ -709,6 +874,10 @@ private fun weekdayValue(char: String): Int? = when (char) {
     "日", "天" -> 7
     else -> null
 }
+
+private val WEATHER_WORDS = listOf(
+            "天气", "下雨", "下雪", "气温", "温度", "多少度", "几度", "冷吗", "热吗", "天气怎么样"
+        )
 
 /** 天气占位回复，多轮追问时也能说明是哪一天 */
 private fun weatherPlaceholder(dayLabel: String): String =

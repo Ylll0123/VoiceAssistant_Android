@@ -23,6 +23,7 @@ import androidx.fragment.app.Fragment
 import com.example.voiceassistant.assistant.AssistantConfig
 import com.example.voiceassistant.assistant.AssistantEngine
 import com.example.voiceassistant.assistant.DialogCorpus
+import com.example.voiceassistant.assistant.KnowledgeBase
 import com.example.voiceassistant.assistant.NgramModel
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatSession
@@ -319,6 +320,15 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
                 DialogCorpus.topics.flatMap { it.replies + it.more + it.advice + it.followUps + it.samples }
             )
             model.observeAll(MemorySeed.pairs.map { it.second })
+            // 常识知识库的问答对是模型的"主课"：问句和答案配对训练，
+            // 模型才学得到「问句的尾巴接答案的开头」，续写才有因果
+            model.observePairs(MemorySeed.pairs)
+            model.observePairs(KnowledgeBase.trainingPairs())
+            saveLocalModel()
+        } else if (model.pairCount() == 0) {
+            // 旧存档（v2.4 之前）没有问答对，补齐再存一次
+            model.observePairs(MemorySeed.pairs)
+            model.observePairs(KnowledgeBase.trainingPairs())
             saveLocalModel()
         }
         return model
