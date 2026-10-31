@@ -11,6 +11,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -83,7 +84,21 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        // 显式指定浅色系统栏样式。
+        // enableEdgeToEdge() 不带参数时会按系统深色模式自动选择图标颜色，
+        // 手机开深色模式 -> 状态栏用浅色图标，而本应用界面是浅色底，
+        // 结果状态栏图标几乎看不见，看起来就和模拟器「完全不一样」。
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            ),
+            navigationBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            )
+        )
         setContentView(R.layout.activity_main)
 
         applyInsets()
@@ -95,7 +110,18 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         speech.listener = this
         speech.speakEnabled = speakEnabled
 
-        selectTab(Tab.CHAT)
+        // 重建（旋转 / 分屏 / 被系统回收后恢复）时回到原来那一页，
+        // 否则每次重建都跳回对话页，看起来像是「页面丢了」
+        val restored = savedInstanceState?.getString(KEY_TAB)
+            ?.let { name -> runCatching { Tab.valueOf(name) }.getOrNull() }
+            ?: Tab.CHAT
+        currentTab = null
+        selectTab(restored)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_TAB, currentTab?.name ?: Tab.CHAT.name)
     }
 
     // ------------------------------------------------------------------ 页面框架
@@ -386,4 +412,8 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private companion object {
+        const val KEY_TAB = "current_tab"
+    }
 }

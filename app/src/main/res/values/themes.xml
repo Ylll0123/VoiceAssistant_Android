@@ -1,8 +1,35 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.VoiceAssistant" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+    <!--
+        固定浅色主题，不用 DayNight。
+        本应用的配色（背景 / 气泡 / 文字）全部是写死的浅色值，
+        一旦跟随系统深色模式，就会出现「手机深色模式下界面和电脑模拟器完全不一样」：
+        开关、涟漪、状态栏图标、输入框提示文字都会跟着系统变。
+        这里统一钉死，保证不同设备显示一致。
+    -->
+    <style name="Base.Theme.VoiceAssistant" parent="Theme.Material3.Light.NoActionBar">
+        <!-- 主色，让 Material 控件（开关、涟漪）与界面配色一致 -->
+        <item name="colorPrimary">@color/brand_primary</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorPrimaryContainer">@color/chip_bg</item>
+        <item name="colorOnPrimaryContainer">@color/brand_primary_dark</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorSurfaceVariant">@color/input_bg</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="android:colorBackground">@color/bg_app</item>
+
+        <!-- 窗口底色，避免启动瞬间黑屏 / 白屏与界面不一致 -->
+        <item name="android:windowBackground">@color/bg_app</item>
+
+        <!-- 状态栏 / 导航栏：透明 + 深色图标，与浅色界面配套 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+
+        <!-- 关掉强制深色（部分国产 ROM 会强行反色） -->
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
     </style>
 
     <style name="Theme.VoiceAssistant" parent="Base.Theme.VoiceAssistant" />
