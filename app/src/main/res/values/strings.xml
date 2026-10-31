@@ -16,6 +16,7 @@
     <string name="status_continuous_on">连续对话已开启，回答完会自动听你说话</string>
     <string name="status_continuous_off">连续对话已关闭，需要点麦克风才会听</string>
     <string name="status_skill_sent">已从技能页发送：%1$s</string>
+    <string name="status_heard">我听到的是「%1$s」</string>
 
     <!-- 输入区 -->
     <string name="hint_input">输入文字，或点左侧麦克风</string>
@@ -35,6 +36,8 @@
     <!-- 技能页 -->
     <string name="skills_title">技能中心</string>
     <string name="skills_subtitle">点下面的示例说法，会直接跳到对话页执行。所有能力都在本机完成，不联网。</string>
+    <string name="skills_empty">暂时没有可展示的技能。</string>
+    <string name="skills_load_failed">技能列表加载失败：%1$s\n请把这个提示截图反馈给开发者。</string>
 
     <!-- 设置页 -->
     <string name="settings_title">设置</string>

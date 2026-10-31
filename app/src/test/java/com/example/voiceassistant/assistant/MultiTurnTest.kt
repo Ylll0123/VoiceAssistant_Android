@@ -113,4 +113,47 @@ class MultiTurnTest {
 
         assertEquals(AssistantEngine.FALLBACK, engine.reply("那后天呢"))
     }
+
+    @Test
+    fun `世界时间可以追问换城市`() {
+        val engine = AssistantEngine()
+        assertTrue(engine.reply("纽约现在几点").contains("纽约"))
+
+        val reply = engine.reply("那东京呢")
+        assertTrue("应该接着报东京时间，实际：$reply", reply.contains("东京"))
+    }
+
+    @Test
+    fun `单位换算可以追问换数值`() {
+        val engine = AssistantEngine()
+        assertTrue(engine.reply("10 公里是多少英里").contains("英里"))
+
+        val reply = engine.reply("那 20 公里呢")
+        assertTrue("应该按上次的换算方向换算 20 公里，实际：$reply", reply.contains("12.4"))
+    }
+
+    @Test
+    fun `完整的换算问句不会被追问规则劫持`() {
+        val engine = AssistantEngine()
+        engine.reply("10 公里是多少英里")
+
+        val reply = engine.reply("30 摄氏度是多少华氏度")
+        assertTrue("应该正常算华氏度，实际：$reply", reply.contains("86"))
+    }
+
+    @Test
+    fun `同义词也能落到同一意图`() {
+        val engine = AssistantEngine()
+        assertNotEquals(AssistantEngine.FALLBACK, engine.reply("讲个段子"))
+
+        val weekday = engine.reply("今天礼拜几")
+        assertTrue("「礼拜几」应归一成「星期几」，实际：$weekday", weekday.contains("星期"))
+    }
+
+    @Test
+    fun `纠错说法会按后半句重新理解`() {
+        val engine = AssistantEngine()
+        val reply = engine.reply("不对，我是说讲个笑话")
+        assertTrue("应该讲笑话，实际：$reply", reply.length > 4 && reply != AssistantEngine.FALLBACK)
+    }
 }

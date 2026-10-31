@@ -37,6 +37,7 @@ class ChatFragment : Fragment(), MainActivity.ChatUi, ChatSession.Listener {
     private lateinit var btnMute: ImageButton
     private lateinit var btnContinuous: ImageButton
     private lateinit var btnClear: ImageButton
+    private lateinit var btnSkills: TextView
     private lateinit var tvStatus: TextView
     private lateinit var inputBar: LinearLayout
     private lateinit var root: LinearLayout
@@ -74,6 +75,7 @@ class ChatFragment : Fragment(), MainActivity.ChatUi, ChatSession.Listener {
         btnMute = view.findViewById(R.id.btnMute)
         btnContinuous = view.findViewById(R.id.btnContinuous)
         btnClear = view.findViewById(R.id.btnClear)
+        btnSkills = view.findViewById(R.id.btnSkills)
         tvStatus = view.findViewById(R.id.tvStatus)
         inputBar = view.findViewById(R.id.inputBar)
     }
@@ -125,6 +127,8 @@ class ChatFragment : Fragment(), MainActivity.ChatUi, ChatSession.Listener {
         }
 
         btnClear.setOnClickListener { host.clearChat() }
+
+        btnSkills.setOnClickListener { host.openSkills() }
     }
 
     // ---------------------------------------------------------------- 状态回调

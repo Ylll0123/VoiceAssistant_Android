@@ -3,13 +3,14 @@ package com.example.voiceassistant.assistant
 /**
  * 多轮对话上下文。
  *
- * 只保存两样东西：
- * - [lastIntent] 上一轮命中的意图（比如 date / arithmetic / joke / guess）
- * - 若干「槽位」slot（比如上次算出的数值、猜数字游戏的目标值）
+ * 保存四类信息：
+ * - [lastIntent] 上一轮命中的意图（date / arithmetic / timezone / guess ...）
+ * - 若干「槽位」slot（上次算出的数值、猜数字的目标值、单位换算的两端单位）
+ * - [pendingUtterance] 待用户确认的那句话（「你是不是想问：现在几点了？」）
+ * - [lastHeard] 上一轮实际采用的识别文本，用于界面上回显「我听到的是…」
  *
- * 有效期 [timeoutMs]（默认 60 秒）：超过这个时间没有新的交互就自动作废，
+ * 有效期 [timeoutMs]（默认 3 分钟）：超过这个时间没有新的交互就自动作废，
  * 避免用户隔了很久说一句「那后天呢」时被套用到很早之前的上下文上。
- *
  * 时间来源通过 [clock] 注入，方便在单元测试里模拟时间流逝。
  */
 class DialogContext(
@@ -18,6 +19,14 @@ class DialogContext(
 ) {
 
     var lastIntent: String? = null
+        private set
+
+    /** 上一轮实际采用的输入（多候选时可能不是识别结果的第一条） */
+    var lastHeard: String? = null
+        private set
+
+    /** 待确认的候选说法；用户回「是 / 对 / 第一个」就执行它 */
+    var pendingUtterance: String? = null
         private set
 
     private var updatedAt: Long = 0L
@@ -38,6 +47,31 @@ class DialogContext(
         lastIntent = intent
         updatedAt = clock()
         slots.putAll(newSlots)
+        // 一旦有新的正式一轮，之前的待确认就作废
+        pendingUtterance = null
+    }
+
+    /** 记下这一轮实际采用的识别文本（不影响有效期判断） */
+    fun rememberHeard(text: String) {
+        lastHeard = text
+    }
+
+    /** 记下一个待确认的说法，等下一轮用户回答 */
+    fun setPending(utterance: String) {
+        pendingUtterance = utterance
+        updatedAt = clock()
+        lastIntent = INTENT_CLARIFY
+    }
+
+    /** 取走待确认说法（读一次就清掉，避免重复触发） */
+    fun consumePending(): String? {
+        val value = if (hasIntent(INTENT_CLARIFY)) pendingUtterance else null
+        pendingUtterance = null
+        return value
+    }
+
+    fun clearPending() {
+        pendingUtterance = null
     }
 
     /** 读取槽位；上下文过期则视为不存在 */
@@ -54,11 +88,17 @@ class DialogContext(
 
     fun clear() {
         lastIntent = null
+        lastHeard = null
+        pendingUtterance = null
         updatedAt = 0L
         slots.clear()
     }
 
     companion object {
-        const val DEFAULT_TIMEOUT_MS = 60_000L
+        /** 3 分钟：一次演示里从「问天气」走到「追问」通常十几秒，留足余量 */
+        const val DEFAULT_TIMEOUT_MS = 180_000L
+
+        /** 「你是不是想问…」这类确认轮的意图标识 */
+        const val INTENT_CLARIFY = "clarify"
     }
 }

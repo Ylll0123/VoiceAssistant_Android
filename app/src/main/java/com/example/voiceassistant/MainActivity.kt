@@ -102,18 +102,19 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
     private fun applyInsets() {
         val root: LinearLayout = findViewById(R.id.root)
-        val bottomNav: View = findViewById(R.id.bottomNav)
 
-        // 顶部让出状态栏
+        // 统一交给根布局处理：顶部让出状态栏，底部让出导航栏。
+        // 早先是把底部 inset 加到导航栏内部 padding 上，在部分手机上
+        // 导航栏会被系统栏挤出去（技能 / 设置两个入口看不见），
+        // 现在改成根布局留白，底部导航一定落在可用区域内。
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
-            view.updatePadding(top = top)
-            insets
-        }
-        // 底部导航延伸到导航栏，内部留出 padding
-        ViewCompat.setOnApplyWindowInsetsListener(bottomNav) { view, insets ->
-            val bottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
-            view.updatePadding(bottom = dp(6) + bottom)
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(
+                left = bars.left,
+                top = bars.top,
+                right = bars.right,
+                bottom = bars.bottom
+            )
             insets
         }
     }
@@ -194,20 +195,43 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     }
 
     /** 处理一条用户输入（文字或识别结果）：写入会话 → 播报 */
-    fun sendText(text: String) {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) return
+    fun sendText(text: String) = sendCandidates(listOf(text))
 
-        val response = session.send(trimmed)
+    /**
+     * 处理一次识别（可能有多条候选）。
+     *
+     * 引擎会挑一条能理解的说法，如果挑中的不是首选，
+     * 状态栏会显示「听到：xxx」，让用户知道助手是怎么理解的。
+     */
+    fun sendCandidates(candidates: List<String>) {
+        val cleaned = candidates.map { it.trim() }.filter { it.isNotEmpty() }
+        if (cleaned.isEmpty()) return
+
+        val response = session.send(cleaned)
+
+        val heard = response.heard
+        if (heard != null && heard != cleaned.first()) {
+            chatUi?.showStatus(getString(R.string.status_heard, heard), highlight = true)
+            mainHandler.postDelayed({
+                if (!speech.isSpeaking) chatUi?.showStatus(getString(R.string.status_idle))
+            }, 2500)
+        }
 
         if (speakEnabled) {
-            chatUi?.showStatus(getString(R.string.status_speaking))
+            if (heard == null || heard == cleaned.first()) {
+                chatUi?.showStatus(getString(R.string.status_speaking))
+            }
             speech.speak(response.text)
         } else {
-            chatUi?.showStatus(getString(R.string.status_idle))
+            if (heard == null || heard == cleaned.first()) {
+                chatUi?.showStatus(getString(R.string.status_idle))
+            }
             maybeRestartListening(400)
         }
     }
+
+    /** 顶栏「技能」按钮：即使底部导航被系统栏遮住，也能进技能页 */
+    fun openSkills() = selectTab(Tab.SKILLS)
 
     /** 技能页点击示例：切回对话页并直接执行 */
     fun runFromSkill(example: String) {
@@ -292,10 +316,10 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         chatUi?.setMicActive(false)
     }
 
-    override fun onFinalResult(text: String) {
+    override fun onFinalResult(text: String, candidates: List<String>) {
         chatUi?.setMicActive(false)
         chatUi?.showStatus(getString(R.string.status_idle))
-        sendText(text)
+        sendCandidates(candidates)
     }
 
     override fun onError(message: String) {

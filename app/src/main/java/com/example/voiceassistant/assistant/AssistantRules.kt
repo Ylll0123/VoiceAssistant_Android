@@ -145,18 +145,23 @@ object AssistantRules {
     }
 
     /**
-     * 多轮追问：把「那后天呢」「换一个」「再来一首」这类省略句补全。
-     * 靠上下文里的上一轮意图判断用户到底在问什么。
+     * 多轮追问：把「那后天呢」「那东京呢」「那 20 公里呢」「换一个」这类省略句补全。
+     *
+     * 实现方式是**改写 + 重讲**：根据上一轮的意图和槽位，把省略句补成完整说法，
+     * 再交给 [RuleReply.rerun] 重新走一遍规则。
+     * 这样追问逻辑不用复制粘贴各意图的实现，新增能力时只要在这里补一条改写即可。
      */
     object FollowUp : IntentRule {
         override val intent = "follow_up"
 
         private val weatherWords = arrayOf("天气", "气温", "下雨", "温度")
+        private val numberPattern = Regex("\\d+(\\.\\d+)?")
 
         override fun reply(request: AssistantRequest): RuleReply? {
             val text = request.text
             val context = request.context
 
+            // 「那后天呢」：沿用上一轮的日期 / 天气
             val relative = relativeDay(text)
             if (relative != null && !text.containsAny(*weatherWords)) {
                 if (context.hasIntent("date") && text.length <= 8) {
@@ -167,6 +172,34 @@ object AssistantRules {
                 }
             }
 
+            // 「那东京呢」：沿用上一次的世界时间，只换城市
+            // 只认「省略句」——以「呢」结尾的短句，否则像「东京现在几点」这种
+            // 完整问句会被当成追问改写，规则永远轮不到自己处理
+            if (context.hasIntent("timezone") &&
+                text.endsWith("呢") &&
+                text.length <= 6 &&
+                !text.containsAny("几点", "时间")
+            ) {
+                val city = Timezone.cityIn(text)
+                if (city != null) {
+                    return RuleReply("", "timezone", rerun = "$city 现在几点")
+                }
+            }
+
+            // 「那 20 公里呢」：沿用上一次的换算方向，只换数值
+            if (context.hasIntent("unit_convert") &&
+                text.endsWith("呢") &&
+                !text.containsAny("多少", "换算", "等于")
+            ) {
+                val from = context.slot("unit_from")
+                val to = context.slot("unit_to")
+                val number = numberPattern.find(text)?.value
+                if (from != null && to != null && number != null) {
+                    return RuleReply("", "unit_convert", rerun = "$number $from 是多少 $to")
+                }
+            }
+
+            // 「再来一个 / 换一个」：换一条笑话或名言
             if (text.containsAny("再来一个", "再来一首", "换一个", "再讲一个", "还有吗")) {
                 return when {
                     context.hasIntent("joke") -> RuleReply(Joke.pick(), "joke")
@@ -251,13 +284,19 @@ object AssistantRules {
             val hasCelsius = text.contains("摄氏") || (text.contains("度") && !text.contains("华氏"))
             val hasFahrenheit = text.contains("华氏")
             if (hasCelsius && hasFahrenheit && text.containsAny("多少", "换成", "等于", "是")) {
+                // 记住换算方向，下一轮「那 20 度呢」可以直接沿用
+                val slots = mapOf("unit_from" to "摄氏度", "unit_to" to "华氏度")
                 return if (text.indexOf("华氏") < text.indexOf("度")) {
                     // 华氏 -> 摄氏
                     val result = (value - 32) * 5 / 9
-                    RuleReply("${formatNumber(value)} 华氏度 = ${formatNumber(result)} 摄氏度", intent)
+                    RuleReply(
+                        "${formatNumber(value)} 华氏度 = ${formatNumber(result)} 摄氏度",
+                        intent,
+                        mapOf("unit_from" to "华氏度", "unit_to" to "摄氏度")
+                    )
                 } else {
                     val result = value * 9 / 5 + 32
-                    RuleReply("${formatNumber(value)} 摄氏度 = ${formatNumber(result)} 华氏度", intent)
+                    RuleReply("${formatNumber(value)} 摄氏度 = ${formatNumber(result)} 华氏度", intent, slots)
                 }
             }
 
@@ -268,7 +307,11 @@ object AssistantRules {
                     val result = value * conversion.factor
                     return RuleReply(
                         "${formatNumber(value)} ${conversion.fromLabel} = ${formatNumber(result)} ${conversion.toLabel}",
-                        intent
+                        intent,
+                        mapOf(
+                            "unit_from" to conversion.fromLabel,
+                            "unit_to" to conversion.toLabel
+                        )
                     )
                 }
             }
@@ -319,11 +362,14 @@ object AssistantRules {
 
         private val formatter = DateTimeFormatter.ofPattern("HH:mm")
 
+        /** 文本里出现的城市名，没有则返回 null（多轮追问「那东京呢」也用它） */
+        fun cityIn(text: String): String? = cities.keys.firstOrNull { text.contains(it) }
+
         override fun reply(request: AssistantRequest): RuleReply? {
             val text = request.text
             if (!text.containsAny("几点", "时间", "时候")) return null
 
-            val city = cities.keys.firstOrNull { text.contains(it) } ?: return null
+            val city = cityIn(text) ?: return null
             val zone = ZoneId.of(cities.getValue(city))
             val time = LocalTime.now(zone).format(formatter)
             val local = LocalTime.now().format(formatter)

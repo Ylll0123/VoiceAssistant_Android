@@ -16,14 +16,18 @@ data class AssistantRequest(
 /**
  * 规则命中结果。
  *
- * @param text 回复内容
+ * @param text 回复内容；只要设置了 [rerun]，这段文字会被忽略
  * @param intent 意图标识，写回上下文供下一轮使用
  * @param slots 需要记住的槽位（例如上次计算的结果、猜数字的目标值）
+ * @param rerun 把省略句补全成完整说法后重新理解一遍。
+ *              多轮追问用它复用已有规则，避免在每个追问分支里重复实现逻辑，
+ *              例如「那东京呢」→「东京现在几点」、「那 20 公里呢」→「20 公里是多少英里」
  */
 data class RuleReply(
     val text: String,
     val intent: String,
-    val slots: Map<String, String> = emptyMap()
+    val slots: Map<String, String> = emptyMap(),
+    val rerun: String? = null
 )
 
 /**

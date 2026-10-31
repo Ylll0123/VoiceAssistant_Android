@@ -31,8 +31,14 @@ class SpeechController(context: Context) {
         /** 边说边识别的中间结果，用于实时展示 */
         fun onPartialResult(text: String)
 
-        /** 识别结束，拿到最终文本 */
-        fun onFinalResult(text: String)
+        /**
+         * 识别结束，拿到最终文本。
+         *
+         * @param text 系统给出的首选结果（置信度最高）
+         * @param candidates 全部候选结果，按置信度从高到低。
+         *                   引擎会逐条尝试理解，首选结果被听错时还有机会救回来
+         */
+        fun onFinalResult(text: String, candidates: List<String>)
 
         /** 说话结束，正在等识别结果 */
         fun onEndOfSpeech()
@@ -123,7 +129,9 @@ class SpeechController(context: Context) {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "zh-CN")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            // 多要几条候选：系统识别会在 RESULT 里按置信度返回，
+            // 首选被听错时，后面几条往往是对的（「打开日立」/「打开日历」）
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             // 说完后停顿约 1.2 秒自动结束，避免一直等着
             putExtra(
                 RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
@@ -171,15 +179,16 @@ class SpeechController(context: Context) {
 
         override fun onResults(results: Bundle?) {
             isListening = false
-            val text = results
+            val candidates = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull()
-                ?.trim()
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.distinct()
                 .orEmpty()
-            if (text.isEmpty()) {
+            if (candidates.isEmpty()) {
                 listener?.onError("没听清，再说一次？")
             } else {
-                listener?.onFinalResult(text)
+                listener?.onFinalResult(candidates.first(), candidates)
             }
         }
 

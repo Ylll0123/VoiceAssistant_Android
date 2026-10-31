@@ -45,6 +45,22 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
+        <!-- 技能入口：底部导航在个别机型上会被系统栏挤掉，这里再留一个入口 -->
+        <TextView
+            android:id="@+id/btnSkills"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginEnd="2dp"
+            android:background="@drawable/bg_chip"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/tab_skills"
+            android:textColor="@color/brand_primary"
+            android:textSize="13sp" />
+
         <ImageButton
             android:id="@+id/btnMute"
             android:layout_width="40dp"

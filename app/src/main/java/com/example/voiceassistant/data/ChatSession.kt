@@ -35,13 +35,20 @@ class ChatSession(
         notifyChanged()
     }
 
+    /** 文字输入 / 技能页示例：只有一条说法 */
+    fun send(userText: String): AssistantResponse = send(listOf(userText))
+
     /**
-     * 处理一条用户输入：先写入用户消息，再让引擎生成回复并写入助手消息。
-     * 返回引擎响应，调用方可用它决定播报什么。
+     * 处理一次输入。
+     *
+     * 语音识别会给出多条候选（按置信度排序），整组交给引擎挑选；
+     * 气泡里显示系统首选的那条，用户看到的就是「手机听到的话」。
+     * 如果引擎最终采用了别的候选，回复里会说明，状态栏也会提示实际理解的说法。
      */
-    fun send(userText: String): AssistantResponse {
-        addUser(userText)
-        val response = engine.respond(userText)
+    fun send(candidates: List<String>): AssistantResponse {
+        val primary = candidates.firstOrNull()?.trim().orEmpty()
+        addUser(primary)
+        val response = engine.respond(candidates)
         addAssistant(response.text, response.intent)
         return response
     }

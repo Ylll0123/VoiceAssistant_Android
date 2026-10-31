@@ -15,16 +15,16 @@
         android:layout_height="0dp"
         android:layout_weight="1" />
 
-    <!-- 底部导航 -->
+    <!-- 底部导航：固定高度，避免大字体 / 系统栏设置把它挤掉，导致技能、设置入口看不见 -->
     <LinearLayout
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="58dp"
         android:background="@color/surface"
         android:elevation="8dp"
         android:orientation="horizontal"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp">
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp">
 
         <LinearLayout
             android:id="@+id/tabChat"
@@ -36,13 +36,13 @@
             android:focusable="true"
             android:gravity="center"
             android:orientation="vertical"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp">
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp">
 
             <ImageView
                 android:id="@+id/ivTabChat"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:contentDescription="@string/tab_chat"
                 android:src="@drawable/ic_tab_chat"
                 android:tint="@color/brand_primary" />
@@ -67,13 +67,13 @@
             android:focusable="true"
             android:gravity="center"
             android:orientation="vertical"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp">
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp">
 
             <ImageView
                 android:id="@+id/ivTabSkills"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:contentDescription="@string/tab_skills"
                 android:src="@drawable/ic_tab_skills"
                 android:tint="@color/text_secondary" />
@@ -98,13 +98,13 @@
             android:focusable="true"
             android:gravity="center"
             android:orientation="vertical"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp">
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp">
 
             <ImageView
                 android:id="@+id/ivTabSettings"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:contentDescription="@string/tab_settings"
                 android:src="@drawable/ic_tab_settings"
                 android:tint="@color/text_secondary" />
