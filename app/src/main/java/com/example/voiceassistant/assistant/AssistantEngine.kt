@@ -37,6 +37,12 @@ class AssistantEngine(
     /** 上一句没答上来的话，用户说「我教你」时用它当问题 */
     private var lastUnanswered: String? = null
 
+    /**
+     * 自学习钩子：这句话本地实在答不上来时通知调用方。
+     * Activity 收到后把它收进「待学习」列表，用户在记忆页可以一键教会。
+     */
+    var onUnanswered: ((String) -> Unit)? = null
+
     /** 当前会话的上下文（上一轮意图 + 槽位），设置页里会用它做调试展示 */
     fun context(): DialogContext = dialogContext
 
@@ -125,6 +131,7 @@ class AssistantEngine(
                     val taughtHit = taughtHitFor(candidate)
                     if (taughtHit != null) {
                         memory?.bumpHit(taughtHit.entry.id)
+                        autoLearn(candidate, taughtHit)
                         return commit(
                             taughtHit.entry.question,
                             RuleReply(memoryAnswer(taughtHit.entry.answer), INTENT_MEMORY)
@@ -141,11 +148,14 @@ class AssistantEngine(
             val hit = memory?.let { MemorySearch.best(cleaned.first(), it.entries()) }
             if (hit != null) {
                 memory.bumpHit(hit.entry.id)
+                // 自学习：说法相似但不完全一样 → 记住这个新说法，下回直接会答
+                autoLearn(cleaned.first(), hit)
                 return commit(hit.entry.question, RuleReply(memoryAnswer(hit.entry.answer), INTENT_MEMORY))
             }
 
             // ⑦ 记忆里也没有：记下这句话，等用户决定要不要教
             lastUnanswered = cleaned.first()
+            onUnanswered?.invoke(cleaned.first())
 
             // ⑧ 找最像的示例说法，反过来向用户确认（多轮的开端）
             val suggestion = suggest(cleaned.first())
@@ -226,6 +236,31 @@ class AssistantEngine(
         val fresh = variants.filter { !dialogContext.wasSaidRecently(it) }
         val pool = fresh.ifEmpty { variants }
         return pool[dialogContext.turns % pool.size]
+    }
+
+    /**
+     * 自学习：把「相似的新说法」自动变成新记忆。
+     *
+     * 场景：用户教过「下班了 → 早点回家」，后来随口说「我下班了啊」。
+     * 这句在记忆里没有，但和教过的那条很像，于是：
+     * 1. 用教过的答案回答（保证答得对）；
+     * 2. 把「我下班了啊」这条**新说法**也写进记忆库（source = learned）。
+     *
+     * 之后再说这句就不需要相似匹配了，是直接命中。
+     * 只从用户教过（或已经自学过）的条目扩散，避免把预置语料也复制成一大堆记忆。
+     */
+    private fun autoLearn(heard: String, hit: MemoryHit) {
+        if (!AssistantConfig.autoLearn) return
+        // 完全一样的说法没什么可学的，太不像的怕学错
+        if (hit.score >= EXACT_SCORE || hit.score < AUTO_LEARN_SCORE) return
+        if (!(hit.entry.isTaught || hit.entry.isLearned)) return
+
+        val repo = memory ?: return
+        val normalized = FuzzyMatcher.normalize(heard)
+        if (normalized.length < MIN_LEARN_LENGTH) return
+        if (repo.entries().any { it.normalized == normalized }) return
+
+        repo.remember(heard, hit.entry.answer, MemoryRepository.SOURCE_LEARNED)
     }
 
     /** 在「教过的」记忆里找最像的一条；找不到或没有记忆库返回 null */
@@ -312,8 +347,23 @@ class AssistantEngine(
         /** 用户取消教学 */
         const val INTENT_TEACH_CANCEL = "teach_cancel"
 
+        /** 正在联网问云端（占位消息） */
+        const val INTENT_CLOUD_PENDING = "cloud_pending"
+
+        /** 答案来自云端大模型 */
+        const val INTENT_CLOUD = "cloud"
+
         /** 建议的相似度门槛：太低会瞎猜，太高又救不回来 */
         private const val SUGGEST_THRESHOLD = 0.72
+
+        /** 记忆里已有完全一样的说法时不必再学一遍 */
+        private const val EXACT_SCORE = 0.995
+
+        /** 自学习的相似度门槛：比记忆检索门槛 0.72 再高一点，宁可少学也别学错 */
+        private const val AUTO_LEARN_SCORE = 0.76
+
+        /** 太短的说法（两三个字）语义太泛，不自动记 */
+        private const val MIN_LEARN_LENGTH = 4
 
         /** 「重讲一遍」最多嵌套两层，防止规则互相触发形成死循环 */
         private const val MAX_RERUN_DEPTH = 2

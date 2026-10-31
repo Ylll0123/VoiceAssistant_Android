@@ -134,9 +134,16 @@ object SkillCatalog {
         Skill(
             id = "chat",
             title = "日常聊天",
-            description = "内置日常话题语料：同一句话多种回答，累了、加班、心情不好都能接得住",
+            description = "内置日常话题语料：同一句话多种回答，累了、加班、宿舍、快递都能接得住",
             category = CATEGORY_DIALOG,
-            examples = listOf("我好累", "今天加班到十点", "周末有什么打算")
+            examples = listOf("我好累", "今天加班到十点", "宿舍太吵了", "快递还没到")
+        ),
+        Skill(
+            id = "self_learn",
+            title = "自学习",
+            description = "教过一句之后，相似的新说法它自己就学会了；答不上来的话会收进记忆页等你教",
+            category = CATEGORY_DIALOG,
+            examples = listOf("记住：下班了 = 早点回家", "我下班了啊")
         ),
         Skill(
             id = "continue_chat",

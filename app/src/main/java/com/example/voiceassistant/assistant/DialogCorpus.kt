@@ -17,7 +17,8 @@ package com.example.voiceassistant.assistant
 object DialogCorpus {
 
     val topics: List<ChatTopic> by lazy {
-        greetings() + moods() + workAndStudy() + dailyLife() + peopleAndSelf()
+        greetings() + moods() + workAndStudy() + dailyLife() + peopleAndSelf() +
+            campus() + hobby() + health() + outing() + digital() + growth()
     }
 
     private val byId: Map<String, ChatTopic> by lazy { topics.associateBy { it.id } }
@@ -935,6 +936,467 @@ object DialogCorpus {
                 "在整理我的记忆库。"
             ),
             followUps = listOf("你呢？")
+        )
+    )
+
+    // ------------------------------------------------------------------ 校园
+
+    private fun campus(): List<ChatTopic> = listOf(
+        ChatTopic(
+            id = "dorm",
+            title = "宿舍",
+            keywords = listOf("宿舍", "室友", "寝室", "上下铺", "住宿"),
+            samples = listOf("室友又熬夜打游戏", "宿舍太吵了"),
+            replies = listOf(
+                "宿舍生活，八成矛盾都是作息不合。",
+                "室友是抽盲盒，抽到合拍的要珍惜。",
+                "宿舍待不住就去图书馆。"
+            ),
+            more = listOf(
+                "作息、卫生、声音，这三样占宿舍矛盾的一大半。",
+                "说开了其实没多大事，憋着才会变成大事。"
+            ),
+            advice = listOf("把话说在具体事上，别上升到人。"),
+            followUps = listOf("室友怎么了？")
+        ),
+        ChatTopic(
+            id = "class",
+            title = "上课",
+            keywords = listOf("上课", "早八", "点名", "逃课", "选修"),
+            samples = listOf("今天又是满课", "早上第一节就不想起"),
+            replies = listOf(
+                "早八是最反人类的发明。",
+                "课满的时候，人只剩下赶的份。",
+                "今天有几节课？"
+            ),
+            more = listOf("逃课省下的那点时间，多半也拿去补觉了。"),
+            advice = listOf("把最难的那节课安排在精神最好的时段。"),
+            followUps = listOf("今天课多吗？")
+        ),
+        ChatTopic(
+            id = "thesis",
+            title = "论文",
+            keywords = listOf("论文", "开题", "查重", "答辩", "毕设"),
+            samples = listOf("我的论文还没动笔", "导师又催我了"),
+            replies = listOf(
+                "论文最难的永远是开头那一页。",
+                "先写烂一版，比空着强一百倍。",
+                "进展到哪一步了？"
+            ),
+            more = listOf(
+                "论文不是写出来的，是改出来的。",
+                "导师催你，说明他还没放弃你。"
+            ),
+            advice = listOf(
+                "今天只写一小节，别想整篇。",
+                "先列提纲再填内容，比对着空白页发呆有用。"
+            ),
+            followUps = listOf("卡在哪了？")
+        ),
+        ChatTopic(
+            id = "postgrad",
+            title = "考研",
+            keywords = listOf("考研", "上岸", "保研", "读研"),
+            samples = listOf("我在准备升学考试", "二战了"),
+            replies = listOf(
+                "考研是跟自己较劲的过程。",
+                "能坚持到考场，就已经淘汰掉一批人了。",
+                "现在复习到哪了？"
+            ),
+            more = listOf(
+                "考研的难点不在难，在于每天都要重复。",
+                "二战不丢人，很多人都是第二次才想明白要什么。"
+            ),
+            advice = listOf("每天固定时段，比状态好时猛学一天管用。"),
+            followUps = listOf("考哪个方向？")
+        ),
+        ChatTopic(
+            id = "graduate",
+            title = "毕业",
+            keywords = listOf("毕业", "离校", "散伙饭"),
+            samples = listOf("马上要离开学校了", "拍毕业照了"),
+            replies = listOf(
+                "毕业那天感觉很普通，回头看才觉得重要。",
+                "学生证一过期，很多事就贵了。",
+                "毕业之后打算去哪？"
+            ),
+            more = listOf("离校最难受的不是分别，是突然没有下一站了。"),
+            followUps = listOf("想好去哪了吗？")
+        ),
+        ChatTopic(
+            id = "club",
+            title = "社团",
+            keywords = listOf("社团", "学生会", "招新"),
+            samples = listOf("我要不要退出社团", "社团事太多了"),
+            replies = listOf(
+                "社团值不值，看它有没有让你变忙又不成长。",
+                "活动多不等于收获多。",
+                "在里面做什么？"
+            ),
+            more = listOf("很多社团的本质是给学长跑腿。"),
+            advice = listOf("留一个真喜欢的，其他的可以放手。"),
+            followUps = listOf("忙得过来吗？")
+        )
+    )
+
+    // ------------------------------------------------------------------ 兴趣
+
+    private fun hobby(): List<ChatTopic> = listOf(
+        ChatTopic(
+            id = "photo",
+            title = "拍照",
+            keywords = listOf("拍照", "摄影", "相机", "修图"),
+            samples = listOf("我刚买了台相机", "今天拍了好看的照片"),
+            replies = listOf(
+                "拍照的人眼里有光，因为一直在找。",
+                "好照片一半靠等，一半靠运气。",
+                "拍了什么？"
+            ),
+            more = listOf("摄影先练眼，再练器材。"),
+            followUps = listOf("喜欢拍什么题材？")
+        ),
+        ChatTopic(
+            id = "draw",
+            title = "画画",
+            keywords = listOf("画画", "手绘", "素描", "涂鸦"),
+            samples = listOf("我画了一幅画", "最近在练线条"),
+            replies = listOf(
+                "画画的人，手会比脑子先想明白。",
+                "画得丑的阶段，每个人都要过。",
+                "画了什么？"
+            ),
+            more = listOf("手绘最值钱的是手感，那东西练不出来，只能磨。"),
+            advice = listOf("别撕画，留着，半年后能看见进步。"),
+            followUps = listOf("平时画什么？")
+        ),
+        ChatTopic(
+            id = "instrument",
+            title = "乐器",
+            keywords = listOf("弹琴", "吉他", "钢琴", "弹吉他", "学乐器"),
+            samples = listOf("我在练一首曲子", "手指按弦好疼"),
+            replies = listOf(
+                "乐器前三个月最难熬，之后就顺了。",
+                "练琴没有捷径，只能一点点磨。",
+                "在练什么曲子？"
+            ),
+            more = listOf("手指起茧是必经之路，疼说明在进步。"),
+            advice = listOf("每天十五分钟，比一周猛练两小时有用。"),
+            followUps = listOf("学了多久了？")
+        ),
+        ChatTopic(
+            id = "writing",
+            title = "写日记",
+            keywords = listOf("写日记", "写作", "记日记", "写点东西"),
+            samples = listOf("我每天写一点文字", "想开始记录生活"),
+            replies = listOf(
+                "写下来这件事本身就在整理思路。",
+                "日记不用给别人看，写得乱也没关系。",
+                "今天想写点什么？"
+            ),
+            more = listOf("很多想不通的事，写到一半就通了。"),
+            advice = listOf("写三行就算完成，别给自己定字数。"),
+            followUps = listOf("写了多久了？")
+        ),
+        ChatTopic(
+            id = "cook",
+            title = "做饭",
+            keywords = listOf("做饭", "下厨", "炒菜", "烘焙", "自己煮"),
+            samples = listOf("我自己做了顿饭", "想学做菜"),
+            replies = listOf(
+                "自己做饭的人，生活有底。",
+                "做菜最治愈的部分是切菜那几分钟。",
+                "今天做了什么？"
+            ),
+            more = listOf("做饭的成就感很即时，这是它吸引人的地方。"),
+            advice = listOf("先学三道菜轮着做，比收藏一百个菜谱有用。"),
+            followUps = listOf("拿手菜是什么？")
+        ),
+        ChatTopic(
+            id = "dance",
+            title = "跳舞",
+            keywords = listOf("跳舞", "舞蹈", "学跳舞", "跳舞课"),
+            samples = listOf("我去上了节舞蹈课", "跟着视频跳"),
+            replies = listOf(
+                "跳舞的好处是，身体动起来脑子就空了。",
+                "跳得难看的那几节课，谁都要经历。",
+                "跳什么类型？"
+            ),
+            more = listOf("记不住动作很正常，先跟上节奏就行。"),
+            followUps = listOf("学多久了？")
+        )
+    )
+
+    // ------------------------------------------------------------------ 身体
+
+    private fun health(): List<ChatTopic> = listOf(
+        ChatTopic(
+            id = "sick",
+            title = "生病",
+            keywords = listOf("感冒", "发烧", "生病", "不舒服"),
+            samples = listOf("我好像着凉了", "浑身没劲"),
+            replies = listOf(
+                "生病的时候，先把标准降到最低。",
+                "难受就别硬撑，今天允许自己什么都不做。",
+                "吃药了吗？"
+            ),
+            more = listOf("感冒最实在的治疗是睡觉和喝水。"),
+            advice = listOf(
+                "先睡一觉，比什么药都先起作用。",
+                "超过三天还烧，就去医院看看。"
+            ),
+            followUps = listOf("有没有吃药？")
+        ),
+        ChatTopic(
+            id = "doctor",
+            title = "看医生",
+            keywords = listOf("去医院", "看病", "挂号", "打针", "吃药"),
+            samples = listOf("预约了门诊", "刚从医院回来"),
+            replies = listOf(
+                "去医院最累的是等待，不是看病。",
+                "看完医生就把心放下一半。",
+                "医生怎么说？"
+            ),
+            more = listOf("排队两小时、问诊五分钟，这就是常态。"),
+            advice = listOf("把症状和时间先写下来，问诊时不会漏。"),
+            followUps = listOf("结果怎么样？")
+        ),
+        ChatTopic(
+            id = "headache",
+            title = "头疼",
+            keywords = listOf("头疼", "头痛", "头晕", "偏头痛"),
+            samples = listOf("脑袋昏沉沉的", "头一跳一跳地疼"),
+            replies = listOf(
+                "先别盯屏幕了，起来走两步。",
+                "大部分头疼是缺水加缺觉。",
+                "今天喝水了吗？"
+            ),
+            more = listOf("长时间低头，脖子僵了头就会跟着疼。"),
+            advice = listOf("闭眼休息十分钟，比揉太阳穴管用。"),
+            followUps = listOf("疼多久了？")
+        ),
+        ChatTopic(
+            id = "eyes",
+            title = "眼睛累",
+            keywords = listOf("眼睛酸", "眼睛疼", "眼干", "视力"),
+            samples = listOf("看屏幕看得眼睛疼", "眼睛好干"),
+            replies = listOf(
+                "眼睛累了就别硬看，抬头看看远处。",
+                "眨眼次数一少，眼睛就干。",
+                "今天看了多久屏幕？"
+            ),
+            more = listOf("盯着屏幕的时候，人会忘记眨眼。"),
+            advice = listOf("每二十分钟看一次窗外，远一点的地方。"),
+            followUps = listOf("是不是看太久手机了？")
+        )
+    )
+
+    // ------------------------------------------------------------------ 出行
+
+    private fun outing(): List<ChatTopic> = listOf(
+        ChatTopic(
+            id = "rush",
+            title = "赶时间",
+            keywords = listOf("赶时间", "来不及", "快迟到", "迟到"),
+            samples = listOf("要迟到了", "时间不够用了"),
+            replies = listOf(
+                "越赶越容易出错，先深呼吸一下。",
+                "迟到五分钟，其实没你想的那么严重。",
+                "几点要到？"
+            ),
+            more = listOf("赶时间的时候，人会把小事搞砸。"),
+            advice = listOf("先把最要紧的那一件事做完，剩下的随它去。"),
+            followUps = listOf("还来得及吗？")
+        ),
+        ChatTopic(
+            id = "stroll",
+            title = "逛街",
+            keywords = listOf("逛街", "逛商场", "遛弯", "出去转转"),
+            samples = listOf("出去随便走走", "下楼溜达一圈"),
+            replies = listOf(
+                "没目的地地走一走，脑子会清爽很多。",
+                "逛街最大的收获往往不是买到的东西。",
+                "去哪儿逛？"
+            ),
+            more = listOf("走路是最便宜的解压方式。"),
+            followUps = listOf("一个人还是有伴？")
+        ),
+        ChatTopic(
+            id = "car",
+            title = "开车",
+            keywords = listOf("开车", "停车", "车位", "加油", "驾照"),
+            samples = listOf("找不到停车位", "刚拿到驾照"),
+            replies = listOf(
+                "找车位才是最耗时间的那段路。",
+                "新手上路，紧张说明你认真。",
+                "开了多久了？"
+            ),
+            more = listOf("停车难的地方，开车和走路差不多快。"),
+            advice = listOf("先练熟倒车，其他都好说。"),
+            followUps = listOf("去哪儿？")
+        ),
+        ChatTopic(
+            id = "bike",
+            title = "骑车",
+            keywords = listOf("骑车", "单车", "共享单车", "电动车"),
+            samples = listOf("扫了辆单车", "骑电动车上班"),
+            replies = listOf(
+                "骑车的时候风一吹，脑子就松了。",
+                "短距离骑车常常比坐车快。",
+                "骑到哪儿？"
+            ),
+            more = listOf("骑车通勤的人，脾气普遍好一些。"),
+            advice = listOf("别抢那一分钟，慢一点最省事。"),
+            followUps = listOf("远吗？")
+        )
+    )
+
+    // ------------------------------------------------------------------ 数码与网络
+
+    private fun digital(): List<ChatTopic> = listOf(
+        ChatTopic(
+            id = "network",
+            title = "网络卡",
+            keywords = listOf("网络卡", "网速", "断网", "网不好", "wifi"),
+            samples = listOf("网太卡了", "一直转圈加载不出来"),
+            replies = listOf(
+                "网卡的时候，人先崩。",
+                "先关一下 Wi-Fi 再开，八成能好。",
+                "是在家还是在外面？"
+            ),
+            more = listOf("加载转圈的那几秒，最消耗耐心。"),
+            advice = listOf("重启路由器，这招至今仍是第一名。"),
+            followUps = listOf("现在好了吗？")
+        ),
+        ChatTopic(
+            id = "phone_broken",
+            title = "手机出问题",
+            keywords = listOf("手机卡", "屏幕碎", "内存满", "手机坏"),
+            samples = listOf("手机摔了一下", "存储空间不够了"),
+            replies = listOf(
+                "先备份，其他的后面再说。",
+                "内存满的时候，手机会比人还焦虑。",
+                "还能用吗？"
+            ),
+            more = listOf("手机一卡，人就容易以为是自己急。"),
+            advice = listOf("先清相册和视频，这两样最占地方。"),
+            followUps = listOf("要不要去修？")
+        ),
+        ChatTopic(
+            id = "delivery",
+            title = "快递",
+            keywords = listOf("快递", "取件", "物流", "外卖还没到"),
+            samples = listOf("快递一直不派送", "外卖超时了"),
+            replies = listOf(
+                "等快递的时间，主观上会被拉长三倍。",
+                "物流停在一动不动，最让人上火。",
+                "买什么了？"
+            ),
+            more = listOf("快递的快乐有两种：下单时和拆开时，中间那几天是煎熬。"),
+            advice = listOf("超时太久就直接联系骑手，别干等。"),
+            followUps = listOf("到哪儿了？")
+        ),
+        ChatTopic(
+            id = "shopping",
+            title = "买东西",
+            keywords = listOf("剁手", "购物车", "买东西", "双十一"),
+            samples = listOf("又忍不住下单了", "购物车堆满了"),
+            replies = listOf(
+                "下单的快感在付款那一秒就结束了。",
+                "购物车放着不买，也是一种省钱。",
+                "买了什么？"
+            ),
+            more = listOf("大部分冲动消费，后悔期只有三天。"),
+            advice = listOf("先放购物车三天，还想买再下单。"),
+            followUps = listOf("真的需要吗？")
+        )
+    )
+
+    // ------------------------------------------------------------------ 认识自己
+
+    private fun growth(): List<ChatTopic> = listOf(
+        ChatTopic(
+            id = "habit",
+            title = "习惯",
+            keywords = listOf("早起", "自律", "养成习惯", "坚持不下来"),
+            samples = listOf("我总是三天打鱼", "想养成一个习惯"),
+            replies = listOf(
+                "习惯不是靠意志力，是靠环境。",
+                "坚持不下来，多半是目标定大了。",
+                "想养成什么习惯？"
+            ),
+            more = listOf("自律的人不是更能忍，是把诱惑挪远了。"),
+            advice = listOf("从两分钟能做完的版本开始。"),
+            followUps = listOf("卡在第几天了？")
+        ),
+        ChatTopic(
+            id = "confidence",
+            title = "不自信",
+            keywords = listOf("自卑", "不自信", "没底气", "觉得自己不行"),
+            samples = listOf("我觉得自己什么都做不好", "总怕被人看出来不行"),
+            replies = listOf(
+                "不自信的人，往往是对自己要求最高的那批。",
+                "你只是还没看到自己已有的东西。",
+                "最近被什么事打击了？"
+            ),
+            more = listOf("别人看你，远没有你以为的那么仔细。"),
+            advice = listOf("先做一件能确定完成的小事。"),
+            followUps = listOf("最近怎么了？")
+        ),
+        ChatTopic(
+            id = "forgetful",
+            title = "记性差",
+            keywords = listOf("记性差", "忘事", "记不住", "健忘"),
+            samples = listOf("转头就忘了", "刚说的事就想不起来"),
+            replies = listOf(
+                "记不住常常是因为当时没真的在听。",
+                "脑子里装太多的时候，什么都留不下。",
+                "忘了什么？"
+            ),
+            more = listOf("记性差和不用心是两回事，别先怪自己。"),
+            advice = listOf("随手记一条，比逼自己记住靠谱。"),
+            followUps = listOf("忘什么了？")
+        ),
+        ChatTopic(
+            id = "hesitate",
+            title = "选择困难",
+            keywords = listOf("选择困难", "纠结", "选不出来"),
+            samples = listOf("两个都想选", "一直拿不定主意"),
+            replies = listOf(
+                "纠结说明两个选项差别不大，那选哪个都不会错太远。",
+                "先随便选一个，走两步就知道了。",
+                "在选什么？"
+            ),
+            more = listOf("真正重要的选择，往往不需要纠结那么久。"),
+            advice = listOf("给自己五分钟，到点必须选。"),
+            followUps = listOf("有哪几个选项？")
+        ),
+        ChatTopic(
+            id = "social_tired",
+            title = "不想社交",
+            keywords = listOf("社恐", "不想社交", "人多就累", "不想见人"),
+            samples = listOf("聚会能不去就不去", "跟人说话很耗电"),
+            replies = listOf(
+                "不想社交不是缺点，是电量管理。",
+                "独处充电和社交放电，都需要。",
+                "今天有聚会？"
+            ),
+            more = listOf("内向的人不是不会说话，是说话消耗大。"),
+            advice = listOf("该推的就推，别为了面子硬撑。"),
+            followUps = listOf("今天要见人吗？")
+        ),
+        ChatTopic(
+            id = "clean",
+            title = "收拾房间",
+            keywords = listOf("收拾房间", "大扫除", "房间乱", "整理"),
+            samples = listOf("屋子乱得下不去脚", "想好好整理一下"),
+            replies = listOf(
+                "环境一乱，脑子也跟着乱。",
+                "收拾房间是成本最低的重启方式。",
+                "打算从哪儿开始？"
+            ),
+            more = listOf("扔东西比收纳更解决问题。"),
+            advice = listOf("先只收拾桌面，别一上来扫全屋。"),
+            followUps = listOf("多久没收拾了？")
         )
     )
 }

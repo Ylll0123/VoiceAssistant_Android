@@ -134,12 +134,14 @@ object FuzzyMatcher {
      * 三个字的关键词只在短句里容错——短句基本就是一条指令（「我们玩猜数子」），
      * 长句里往往是自然语言（「明天天气怎么样」），
      * 否则「怎么样」会被判成「怎么用」、「多少英」会被判成「多少号」。
+     *
+     * 五个字以上也只容错 1 个字：长关键词本来就够独特，
+     * 放开到 2 个字会让「有什么关系」被判成「有什么办法」。
      */
     fun allowedDistance(keyword: String, textLength: Int = Int.MAX_VALUE): Int = when {
         keyword.length <= 2 -> 0
         keyword.length == 3 -> if (textLength <= SHORT_SENTENCE_LENGTH) 1 else 0
-        keyword.length == 4 -> 1
-        else -> 2
+        else -> 1
     }
 
     /** 短句阈值：不超过这个长度才允许 3 字关键词做容错 */

@@ -48,8 +48,50 @@
     <string name="settings_continuous_desc">回答播完后自动重新打开麦克风</string>
     <string name="settings_speak">语音播报</string>
     <string name="settings_speak_desc">关闭后只显示文字，不出声</string>
-    <string name="settings_rate_default">播报语速：1.0x</string>
-    <string name="settings_rate_value">播报语速：%1$sx</string>
+    <string name="settings_rate_default">播报语速：1.0x（正常）</string>
+    <string name="settings_rate_value">播报语速：%1$sx（%2$s）</string>
+    <string name="settings_pitch_default">音调：1.0x</string>
+    <string name="settings_pitch_value">音调：%1$sx</string>
+    <string name="settings_rate_very_slow">很慢</string>
+    <string name="settings_rate_slow">慢</string>
+    <string name="settings_rate_normal">正常</string>
+    <string name="settings_rate_fast">快</string>
+    <string name="settings_rate_very_fast">很快</string>
+    <string name="settings_preview">试听</string>
+    <string name="settings_preview_text">你好，我是你的语音助手，现在就是这个语速和音调。</string>
+    <string name="settings_engine">语音引擎：%1$s</string>
+    <string name="settings_engine_label">语音引擎</string>
+    <string name="settings_engine_pick">换语音引擎</string>
+    <string name="settings_engine_default">系统默认</string>
+    <string name="settings_engine_title">选择语音引擎</string>
+
+    <string name="settings_group_style">说话方式</string>
+    <string name="settings_style">回答风格</string>
+    <string name="settings_style_concise">简洁</string>
+    <string name="settings_style_standard">标准</string>
+    <string name="settings_style_detailed">详细</string>
+    <string name="settings_follow_up">主动追问</string>
+    <string name="settings_follow_up_desc">回答完递一句反问，让对话能继续</string>
+
+    <string name="settings_group_learn">自学习与智能</string>
+    <string name="settings_auto_learn">自学习</string>
+    <string name="settings_auto_learn_desc">相似说法自动学会，不用一句句教</string>
+    <string name="settings_learn_stat">记忆分布：%1$d 条教的 / %2$d 条自学的 / %3$d 条内置</string>
+    <string name="settings_pending_stat">待学习：%1$d 句还没答上来</string>
+    <string name="settings_go_teach">去教它</string>
+    <string name="settings_cloud">云端增强（可选）</string>
+    <string name="settings_cloud_desc">本地答不上来时才联网问一次大模型，不填也能正常用</string>
+    <string name="settings_cloud_config">配置接口</string>
+    <string name="settings_cloud_state_ready">已启用：%1$s</string>
+    <string name="settings_cloud_state_need_key">已开启，但还没填接口信息</string>
+    <string name="settings_cloud_state_off">已关闭（完全离线运行）</string>
+    <string name="settings_cloud_dialog_title">云端大模型接口</string>
+    <string name="settings_cloud_endpoint_hint">接口地址（OpenAI 兼容 /chat/completions）</string>
+    <string name="settings_cloud_model_hint">模型名（例如 deepseek-chat）</string>
+    <string name="settings_cloud_key_hint">API Key（只存在本机）</string>
+    <string name="settings_cloud_note">留着不填也不影响使用：本地规则 + 语料 + 记忆库本身就够用，断网也能聊。</string>
+    <string name="settings_reset">恢复默认设置</string>
+    <string name="settings_reset_done">已恢复默认设置（记忆库保留）</string>
     <string name="settings_group_context">对话状态</string>
     <string name="settings_group_device">设备与版本</string>
     <string name="settings_last_intent">上一轮意图：%1$s</string>
@@ -71,6 +113,18 @@
     <string name="memory_empty">还没有记忆。点右上角「教一句」，告诉助手「这句话该怎么回答」。</string>
     <string name="memory_source_taught">我教的</string>
     <string name="memory_source_seed">内置</string>
+    <string name="memory_source_learned">自学的</string>
+    <string name="memory_count_full">共 %1$d 条（教 %2$d / 自学 %3$d / 内置 %4$d）</string>
+    <string name="memory_pending_group">没答上来的话（%1$d）</string>
+    <string name="memory_pending_hint">这些是你说过、我还没学会的。点一下就能教会我。</string>
+    <string name="memory_pending_empty">暂时没有。聊天时遇到我答不上来的，会自动收进这里。</string>
+    <string name="memory_teach_pending_title">教这句该怎么回答</string>
+    <string name="memory_teach_pending_saved">学会了：当我听到「%1$s」，就说「%2$s」</string>
+    <string name="memory_clear_pending">清空待学习</string>
+    <string name="memory_clear_learned">清空自学的</string>
+    <string name="memory_clear_taught">清空我教的</string>
+    <string name="memory_clear_all">全部清空</string>
+    <string name="memory_clear_title">要清空哪些记忆？</string>
     <string name="memory_delete_title">删除这条记忆？</string>
     <string name="memory_delete_message">删除后助手就答不上这个说法了，可以再教一遍。</string>
     <string name="memory_clear">清空我教的</string>
@@ -83,4 +137,8 @@
     <string name="action_ok">确定</string>
     <string name="action_cancel">取消</string>
     <string name="action_delete">删除</string>
+
+    <!-- 云端兜底 -->
+    <string name="status_cloud">联网问大模型…</string>
+    <string name="cloud_thinking">本地答不上来，我联网想一下…</string>
 </resources>

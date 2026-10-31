@@ -75,6 +75,14 @@ class SpeechController(context: Context) {
     var speechRate: Float = 1.0f
         private set
 
+    /** 播报音调，1.0 为正常；设置页可以调 */
+    var speechPitch: Float = 1.0f
+        private set
+
+    /** 当前使用的语音引擎包名；空串表示系统默认 */
+    var enginePackage: String = ""
+        private set
+
     private val appContext: Context = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
@@ -83,27 +91,51 @@ class SpeechController(context: Context) {
     private var pendingSpeak: String? = null
 
     init {
-        // TextToSpeech 初始化是异步的，就绪前的播报请求会先暂存
-        tts = TextToSpeech(appContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                val result = tts?.setLanguage(Locale.SIMPLIFIED_CHINESE)
-                ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
-                    result != TextToSpeech.LANG_NOT_SUPPORTED
-                if (!ttsReady) {
-                    Log.w(TAG, "中文语音包不可用，退回默认语言")
-                    tts?.setLanguage(Locale.getDefault())
-                    ttsReady = true
-                }
-                tts?.setSpeechRate(speechRate)
-                pendingSpeak?.let {
-                    speak(it)
-                    pendingSpeak = null
-                }
-                attachUtteranceListener()
-            } else {
-                Log.w(TAG, "TextToSpeech 初始化失败: $status")
-            }
+        createTts(enginePackage)
+    }
+
+    private fun createTts(engine: String) {
+        val created = if (engine.isEmpty()) {
+            TextToSpeech(appContext, onTtsInit)
+        } else {
+            // 指定引擎：部分手机自带引擎会忽略语速设置，换一个引擎语速才生效
+            TextToSpeech(appContext, onTtsInit, engine)
         }
+        tts = created
+    }
+
+    private val onTtsInit = TextToSpeech.OnInitListener { status ->
+        val engine = tts
+        if (status != TextToSpeech.SUCCESS || engine == null) {
+            Log.w(TAG, "TextToSpeech 初始化失败: $status")
+            return@OnInitListener
+        }
+        val result = engine.setLanguage(Locale.SIMPLIFIED_CHINESE)
+        ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
+            result != TextToSpeech.LANG_NOT_SUPPORTED
+        if (!ttsReady) {
+            Log.w(TAG, "中文语音包不可用，退回默认语言")
+            engine.setLanguage(Locale.getDefault())
+            ttsReady = true
+        }
+        applyVoiceParams(engine)
+        attachUtteranceListener(engine)
+        pendingSpeak?.let {
+            speak(it)
+            pendingSpeak = null
+        }
+    }
+
+    /**
+     * 把语速和音调写进引擎。
+     *
+     * 关键：**每次播报前都要重新写一遍**（见 [speak]）。
+     * 不少第三方 TTS 引擎会在内部缓存参数、或者在切语言/切引擎时把参数重置，
+     * 只在「设置改变时」写一次，用户拖动滑块就听不出任何变化。
+     */
+    private fun applyVoiceParams(engine: TextToSpeech) {
+        engine.setSpeechRate(speechRate)
+        engine.setPitch(speechPitch)
     }
 
     // ---------------------------------------------------------------- 语音识别
@@ -222,8 +254,8 @@ class SpeechController(context: Context) {
     // ---------------------------------------------------------------- 语音播报
 
     /** 监听播报结束：连续对话靠它决定何时重新打开麦克风 */
-    private fun attachUtteranceListener() {
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+    private fun attachUtteranceListener(engine: TextToSpeech) {
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
                 isSpeaking = true
             }
@@ -261,12 +293,27 @@ class SpeechController(context: Context) {
         if (!speakEnabled) return
         val cleaned = text.replace(Regex("[\\p{So}\\p{Cn}]"), "").trim()
         if (cleaned.isEmpty()) return
-        if (!ttsReady) {
+        val engine = tts
+        if (!ttsReady || engine == null) {
             pendingSpeak = cleaned
             return
         }
+        // 每一次开口前都重新写一遍语速和音调：
+        // 只在设置改变时写一次，部分引擎会在内部把参数重置掉，表现为「滑了没反应」
+        applyVoiceParams(engine)
         isSpeaking = true
-        tts?.speak(cleaned, TextToSpeech.QUEUE_FLUSH, null, "reply-${System.currentTimeMillis()}")
+        engine.speak(cleaned, TextToSpeech.QUEUE_FLUSH, null, "reply-${System.currentTimeMillis()}")
+    }
+
+    /**
+     * 试听：无论「语音播报」开关是否打开都出声。
+     * 设置页里用它当场确认语速和音调，否则关着开关点试听会以为是坏了。
+     */
+    fun preview(text: String) {
+        val keep = speakEnabled
+        speakEnabled = true
+        speak(text)
+        speakEnabled = keep
     }
 
     fun stopSpeaking() {
@@ -280,12 +327,56 @@ class SpeechController(context: Context) {
 
     /**
      * 调整播报语速（0.5~2.0，1.0 为正常）。
-     * TTS 引擎初始化是异步的，未就绪时先记下来，就绪后自动应用。
+     * 即使 TTS 还没就绪也要先记下来，就绪后会自动应用。
      */
     fun setSpeechRate(rate: Float) {
         speechRate = rate.coerceIn(0.5f, 2.0f)
-        tts?.setSpeechRate(speechRate)
+        tts?.let { applyVoiceParams(it) }
     }
+
+    /** 调整播报音调（0.7~1.6，1.0 为正常） */
+    fun setSpeechPitch(pitch: Float) {
+        speechPitch = pitch.coerceIn(0.7f, 1.6f)
+        tts?.let { applyVoiceParams(it) }
+    }
+
+    /** 机器上安装的所有语音合成引擎，设置页据此列出可选项 */
+    fun availableEngines(): List<EngineInfo> {
+        val probe = TextToSpeech(appContext, null)
+        return runCatching {
+            probe.engines.orEmpty().map { info ->
+                EngineInfo(
+                    label = info.label.ifBlank { info.name },
+                    packageName = info.name
+                )
+            }
+        }.onFailure { Log.w(TAG, "读取语音引擎列表失败", it) }
+            .getOrDefault(emptyList())
+            .also {
+                runCatching { probe.shutdown() }
+            }
+    }
+
+    /** 当前生效的引擎安装包名（空串表示系统默认） */
+    fun currentEngine(): String = enginePackage
+
+    /**
+     * 切换到指定语音引擎。
+     * 换引擎必须重建 TextToSpeech 实例，否则设置不会生效。
+     */
+    fun useEngine(packageName: String) {
+        if (packageName == enginePackage) return
+        val old = tts
+        tts = null
+        ttsReady = false
+        isSpeaking = false
+        runCatching { old?.stop(); old?.shutdown() }
+        enginePackage = packageName
+        createTts(packageName)
+    }
+
+    /** 一个可选的语音合成引擎 */
+    data class EngineInfo(val label: String, val packageName: String)
 
     /** Activity 销毁时释放资源 */
     fun release() {

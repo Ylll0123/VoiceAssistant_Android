@@ -32,16 +32,38 @@ object SmallTalk {
         return candidates[context.chatTurns % candidates.size]
     }
 
-    /** 组装回复：主体 +（可选）反问，反问只在主体不是问句时追加 */
+    /**
+     * 组装回复：主体 +（可选）展开 +（可选）反问。
+     *
+     * 具体加什么由设置页的「回答风格 / 主动追问」决定（[AssistantConfig]）：
+     * - 简洁：只说主体一句
+     * - 标准：主体，隔轮递一个反问
+     * - 详细：主体 + 一句展开，再递反问
+     *
+     * 反问只在主体不是问句时追加，否则会变成「…吗？你呢？」这种连环问。
+     */
     fun assemble(topic: ChatTopic, body: String, context: DialogContext, switched: Boolean): String {
-        val wantFollowUp = switched || context.chatTurns % 2 == 1
-        val followUp = if (wantFollowUp && topic.followUps.isNotEmpty()) {
+        var text = body
+
+        if (AssistantConfig.replyStyle == AssistantConfig.ReplyStyle.DETAILED) {
+            val extra = pickReply(topic.more, context)
+            if (extra != null && extra != body) text = "$text $extra"
+        }
+
+        val followUp = if (wantFollowUp(switched, context) && topic.followUps.isNotEmpty()) {
             pickReply(topic.followUps, context)
         } else {
             null
         }
-        val asks = body.contains("？") || body.contains("?")
-        return if (followUp != null && !asks) "$body $followUp" else body
+        val asks = text.contains("？") || text.contains("?")
+        return if (followUp != null && !asks) "$text $followUp" else text
+    }
+
+    /** 这一轮要不要递一个反问：关掉开关、或简洁模式就不递 */
+    private fun wantFollowUp(switched: Boolean, context: DialogContext): Boolean {
+        if (!AssistantConfig.proactiveFollowUp) return false
+        if (AssistantConfig.replyStyle == AssistantConfig.ReplyStyle.CONCISE) return false
+        return switched || context.chatTurns % 2 == 1
     }
 
     /**
@@ -113,7 +135,7 @@ object SmallTalk {
         // 「我也是 / 确实 / 有道理 / 嗯嗯」→ 简短接住，再递一个话头
         if (containsAnyFuzzy(text, *ECHO_CUES)) {
             val body = pickReply(ECHO_REPLIES, context) ?: return null
-            val followUp = pickReply(topic.followUps, context)
+            val followUp = if (wantFollowUp(false, context)) pickReply(topic.followUps, context) else null
             val full = if (followUp != null && !body.contains("？")) "$body $followUp" else body
             return RuleReply(
                 text = full,

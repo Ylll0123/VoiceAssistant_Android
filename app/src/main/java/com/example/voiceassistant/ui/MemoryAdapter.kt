@@ -41,10 +41,10 @@ class MemoryAdapter(
         fun bind(entry: MemoryEntry) {
             tvQuestion.text = entry.question
             tvAnswer.text = entry.answer
-            tvSource.text = if (entry.isTaught) {
-                itemView.context.getString(R.string.memory_source_taught)
-            } else {
-                itemView.context.getString(R.string.memory_source_seed)
+            tvSource.text = when {
+                entry.isTaught -> itemView.context.getString(R.string.memory_source_taught)
+                entry.isLearned -> itemView.context.getString(R.string.memory_source_learned)
+                else -> itemView.context.getString(R.string.memory_source_seed)
             }
             btnDelete.setOnClickListener { onDelete(entry) }
         }

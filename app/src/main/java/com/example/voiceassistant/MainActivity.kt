@@ -20,7 +20,10 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
+import com.example.voiceassistant.assistant.AssistantConfig
 import com.example.voiceassistant.assistant.AssistantEngine
+import com.example.voiceassistant.assistant.CloudLlm
+import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatSession
 import com.example.voiceassistant.memory.SqliteMemoryRepository
 import com.example.voiceassistant.speech.SpeechController
@@ -47,6 +50,9 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         fun setMicActive(active: Boolean)
     }
 
+    /** 设置持久化：改完立刻写盘，下次打开还是上次的样子 */
+    private lateinit var settings: AppSettings
+
     /** 会话状态（消息 + 引擎 + 本地记忆库），整个应用共享一份 */
     val session: ChatSession by lazy {
         ChatSession(AssistantEngine(memory = SqliteMemoryRepository(applicationContext)))
@@ -62,6 +68,21 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         private set
 
     var speechRate: Float = 1.0f
+        private set
+
+    var speechPitch: Float = 1.0f
+        private set
+
+    var ttsEngine: String = ""
+        private set
+
+    var replyStyle: Int = 1
+        private set
+
+    var proactiveFollowUp: Boolean = true
+        private set
+
+    var autoLearn: Boolean = true
         private set
 
     private lateinit var ivTabChat: ImageView
@@ -113,9 +134,17 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
         session.ensureWelcome(getString(R.string.welcome))
 
+        settings = AppSettings(this)
+
         speech = SpeechController(this)
         speech.listener = this
-        speech.speakEnabled = speakEnabled
+
+        // 先把持久化下来的设置整体灌回去，再创建界面，
+        // 否则设置页会先按默认值画一遍，再被覆盖，看着像闪一下
+        restoreSettings()
+
+        // 答不上来的话 → 收进待学习列表（记忆页可以一键教会）
+        session.engine.onUnanswered = { question -> settings.addPending(question) }
 
         // 重建（旋转 / 分屏 / 被系统回收后恢复）时回到原来那一页，
         // 否则每次重建都跳回对话页，看起来像是「页面丢了」
@@ -214,6 +243,102 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         if (chatUi === ui) chatUi = null
     }
 
+    // ------------------------------------------------------------------ 设置
+
+    /** 设置页要直接读写云端配置和待学习列表，把持久化对象给它 */
+    fun appSettings(): AppSettings = settings
+
+    /** 启动时把上次保存的全部设置灌回引擎和语音控制器 */
+    private fun restoreSettings() {
+        speakEnabled = settings.speakEnabled
+        continuousMode = settings.continuousMode
+        speech.speakEnabled = speakEnabled
+
+        speechRate = settings.speechRate
+        speechPitch = settings.speechPitch
+        speech.setSpeechRate(speechRate)
+        speech.setSpeechPitch(speechPitch)
+
+        // 指定引擎必须在首次播报前切好，否则这一次还是用旧引擎的声音
+        ttsEngine = settings.ttsEngine
+        if (ttsEngine.isNotEmpty()) speech.useEngine(ttsEngine)
+
+        replyStyle = settings.replyStyle
+        proactiveFollowUp = settings.proactiveFollowUp
+        autoLearn = settings.autoLearn
+        syncAssistantConfig()
+    }
+
+    /** 把三个对话行为开关同步给纯逻辑层（规则 / 语料 / 引擎都读它） */
+    private fun syncAssistantConfig() {
+        AssistantConfig.replyStyle = when (replyStyle) {
+            0 -> AssistantConfig.ReplyStyle.CONCISE
+            2 -> AssistantConfig.ReplyStyle.DETAILED
+            else -> AssistantConfig.ReplyStyle.STANDARD
+        }
+        AssistantConfig.proactiveFollowUp = proactiveFollowUp
+        AssistantConfig.autoLearn = autoLearn
+    }
+
+    fun setSpeakEnabled(enabled: Boolean) {
+        speakEnabled = enabled
+        settings.speakEnabled = enabled
+        speech.speakEnabled = enabled
+        if (!enabled) speech.stopSpeaking()
+    }
+
+    fun setContinuousMode(enabled: Boolean) {
+        continuousMode = enabled
+        settings.continuousMode = enabled
+        if (!enabled) {
+            speech.cancelListening()
+            chatUi?.setMicActive(false)
+        }
+    }
+
+    fun setSpeechRate(rate: Float) {
+        speechRate = rate
+        settings.speechRate = rate
+        speech.setSpeechRate(rate)
+    }
+
+    fun setSpeechPitch(pitch: Float) {
+        speechPitch = pitch
+        settings.speechPitch = pitch
+        speech.setSpeechPitch(pitch)
+    }
+
+    /** 切换语音合成引擎；有些手机自带引擎不支持变速，换一个语速才生效 */
+    fun setTtsEngine(packageName: String) {
+        ttsEngine = packageName
+        settings.ttsEngine = packageName
+        speech.useEngine(packageName)
+    }
+
+    fun setReplyStyle(style: Int) {
+        replyStyle = style
+        settings.replyStyle = style
+        syncAssistantConfig()
+    }
+
+    fun setProactiveFollowUp(enabled: Boolean) {
+        proactiveFollowUp = enabled
+        settings.proactiveFollowUp = enabled
+        syncAssistantConfig()
+    }
+
+    fun setAutoLearn(enabled: Boolean) {
+        autoLearn = enabled
+        settings.autoLearn = enabled
+        syncAssistantConfig()
+    }
+
+    /** 恢复默认设置（不动记忆库），并立刻生效 */
+    fun resetSettings() {
+        settings.reset()
+        restoreSettings()
+    }
+
     // ------------------------------------------------------------------ 对话页交互
 
     fun onMicClicked() {
@@ -256,6 +381,12 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
             }, 2500)
         }
 
+        // 本地实在答不上来、且用户开了云端增强，才去联网问一次
+        if (response.intent == AssistantEngine.INTENT_FALLBACK && settings.isCloudUsable()) {
+            askCloud(cleaned.first())
+            return
+        }
+
         if (speakEnabled) {
             if (heard == null || heard == cleaned.first()) {
                 chatUi?.showStatus(getString(R.string.status_speaking))
@@ -265,6 +396,54 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
             if (heard == null || heard == cleaned.first()) {
                 chatUi?.showStatus(getString(R.string.status_idle))
             }
+            maybeRestartListening(400)
+        }
+    }
+
+    /**
+     * 云端兜底：本地答不上来时联网问一次大模型。
+     *
+     * 全程异步：先把界面上那条兜底提示换成「让我想想」，
+     * 拿到结果再替换成真正的回答，网络再慢也不会卡住对话。
+     * 失败（无网 / Key 错 / 超时）就换回本地提示，用户感知不到这一层。
+     */
+    private fun askCloud(question: String) {
+        chatUi?.showStatus(getString(R.string.status_cloud), highlight = true)
+        session.updateLastAssistant(
+            getString(R.string.cloud_thinking),
+            AssistantEngine.INTENT_CLOUD_PENDING
+        )
+
+        val history = session.recentPairs(3)
+        val endpoint = settings.cloudEndpoint
+        val apiKey = settings.cloudApiKey
+        val model = settings.cloudModel
+
+        Thread {
+            val answer = CloudLlm.ask(endpoint, apiKey, model, question, history)
+            mainHandler.post {
+                val text = answer?.takeIf { it.isNotBlank() }
+                if (text == null) {
+                    session.updateLastAssistant(
+                        AssistantEngine.FALLBACK,
+                        AssistantEngine.INTENT_FALLBACK
+                    )
+                    finishTurn(AssistantEngine.FALLBACK)
+                } else {
+                    session.updateLastAssistant(text, AssistantEngine.INTENT_CLOUD)
+                    finishTurn(text)
+                }
+            }
+        }.start()
+    }
+
+    /** 一轮结束：决定是直接出声，还是（关了播报时）立刻续听 */
+    private fun finishTurn(text: String) {
+        if (speakEnabled) {
+            chatUi?.showStatus(getString(R.string.status_speaking))
+            speech.speak(text)
+        } else {
+            chatUi?.showStatus(getString(R.string.status_idle))
             maybeRestartListening(400)
         }
     }
@@ -280,33 +459,13 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     }
 
     fun toggleSpeak(): Boolean {
-        speakEnabled = !speakEnabled
-        speech.speakEnabled = speakEnabled
-        if (!speakEnabled) speech.stopSpeaking()
+        setSpeakEnabled(!speakEnabled)
         return speakEnabled
     }
 
-    /** 设置页的开关直接给目标值，避免出现「点了没变」的状态错位 */
-    fun setSpeakEnabled(enabled: Boolean) {
-        if (speakEnabled != enabled) toggleSpeak()
-    }
-
     fun toggleContinuous(): Boolean {
-        continuousMode = !continuousMode
-        if (!continuousMode) {
-            speech.cancelListening()
-            chatUi?.setMicActive(false)
-        }
+        setContinuousMode(!continuousMode)
         return continuousMode
-    }
-
-    fun setContinuousMode(enabled: Boolean) {
-        if (continuousMode != enabled) toggleContinuous()
-    }
-
-    fun setSpeechRate(rate: Float) {
-        speechRate = rate
-        speech.setSpeechRate(rate)
     }
 
     fun clearChat() {

@@ -6,7 +6,7 @@ package com.example.voiceassistant.memory
  * @param question 展示用的原始问法（保留用户当时的说法）
  * @param normalized 归一化后的问法，检索匹配用它（去标点、去客套前缀、同义词归一）
  * @param answer 回答
- * @param source 来源：内置 [SOURCE_SEED] / 用户教的 [SOURCE_TAUGHT]
+ * @param source 来源：内置 [SOURCE_SEED] / 用户教的 [SOURCE_TAUGHT] / 自学的 [SOURCE_LEARNED]
  * @param hits 被命中几次，用于排序「最常用的记忆」
  */
 data class MemoryEntry(
@@ -19,6 +19,9 @@ data class MemoryEntry(
     val updatedAt: Long = 0L
 ) {
     val isTaught: Boolean get() = source == MemoryRepository.SOURCE_TAUGHT
+
+    /** 自学习自动记下的说法：用户从没正式教过，是它自己从相似问法里推出来的 */
+    val isLearned: Boolean get() = source == MemoryRepository.SOURCE_LEARNED
 }
 
 /** 记忆检索结果 */
@@ -51,5 +54,8 @@ interface MemoryRepository {
     companion object {
         const val SOURCE_SEED = "seed"
         const val SOURCE_TAUGHT = "taught"
+
+        /** 自学习写入：用户没教过，引擎从相似说法自动推导并记住的 */
+        const val SOURCE_LEARNED = "learned"
     }
 }
