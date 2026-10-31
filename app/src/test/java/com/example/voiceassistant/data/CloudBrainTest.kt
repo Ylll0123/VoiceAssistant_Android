@@ -27,6 +27,15 @@ class CloudBrainTest {
     // ------------------------------------------------------------ 地址与请求体
 
     @Test
+    fun `方舟地址写带不带 chat completions 都一样`() {
+        val full = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+        assertEquals(full, CloudBrain.chatUrl("https://ark.cn-beijing.volces.com/api/v3"))
+        assertEquals(full, CloudBrain.chatUrl("https://ark.cn-beijing.volces.com/api/v3/"))
+        assertEquals(full, CloudBrain.chatUrl(full))
+        assertEquals(full, CloudBrain.chatUrl("  $full  "))
+    }
+
+    @Test
     fun `地址只补一次 chat completions`() {
         assertEquals(
             "https://api.deepseek.com/v1/chat/completions",
