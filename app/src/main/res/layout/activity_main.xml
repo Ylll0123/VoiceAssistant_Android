@@ -91,6 +91,38 @@
                 android:textSize="11sp" />
         </LinearLayout>
 
+
+        <LinearLayout
+            android:id="@+id/tabMemory"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp">
+
+            <ImageView
+                android:id="@+id/ivTabMemory"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="@string/tab_memory"
+                android:src="@drawable/ic_tab_memory"
+                app:tint="@color/text_secondary" />
+
+            <TextView
+                android:id="@+id/tvTabMemory"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/tab_memory"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
         <LinearLayout
             android:id="@+id/tabSettings"
             android:layout_width="0dp"

@@ -125,6 +125,13 @@ object SkillCatalog {
             examples = listOf("来句名言", "背句诗")
         ),
         Skill(
+            id = "teach",
+            title = "教我说话",
+            description = "教我一句新说法，记进本地记忆库，以后换个问法也能答上来",
+            category = CATEGORY_DIALOG,
+            examples = listOf("我教你", "记住：下班了 = 早点回家")
+        ),
+        Skill(
             id = "follow_up",
             title = "多轮追问",
             description = "60 秒内可以用「那后天呢」「再来一个」这种省略说法接着聊",

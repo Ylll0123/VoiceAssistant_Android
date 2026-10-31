@@ -4,6 +4,7 @@
     <!-- 底部导航 -->
     <string name="tab_chat">对话</string>
     <string name="tab_skills">技能</string>
+    <string name="tab_memory">记忆</string>
     <string name="tab_settings">设置</string>
 
     <!-- 状态栏文案 -->
@@ -58,5 +59,26 @@
     <string name="settings_message_count">当前对话消息数：%1$d</string>
     <string name="settings_recognizer_ok">语音识别服务：可用</string>
     <string name="settings_recognizer_missing">语音识别服务：不可用（只能文字输入）</string>
-    <string name="settings_version">版本：%1$s（%2$d 条规则 / %3$d 个技能）</string>
+    <string name="settings_version">版本：%1$s（%2$d 条规则 / %3$d 个技能 / %4$d 条记忆）</string>
+
+    <!-- 本地记忆（学习）页 -->
+    <string name="memory_title">本地记忆</string>
+    <string name="memory_subtitle">教过我的话都存在手机本地，越多越会聊。点「教一句」可以随时补一条。</string>
+    <string name="memory_count">共 %1$d 条记忆（其中 %2$d 条是你教的）</string>
+    <string name="memory_teach">教一句</string>
+    <string name="memory_empty">还没有记忆。点右上角「教一句」，告诉助手「这句话该怎么回答」。</string>
+    <string name="memory_source_taught">我教的</string>
+    <string name="memory_source_seed">内置</string>
+    <string name="memory_delete_title">删除这条记忆？</string>
+    <string name="memory_delete_message">删除后助手就答不上这个说法了，可以再教一遍。</string>
+    <string name="memory_clear">清空我教的</string>
+    <string name="memory_unavailable">本地记忆库打开失败，本次运行使用临时记忆（重启后清空）。</string>
+    <string name="memory_teach_dialog_title">教助手一句话</string>
+    <string name="memory_teach_question_hint">我说什么（例如：下班了）</string>
+    <string name="memory_teach_answer_hint">它该怎么回答（例如：早点回家）</string>
+    <string name="memory_teach_saved">已记住：%1$s → %2$s</string>
+    <string name="memory_teach_incomplete">问法和回答都要填。</string>
+    <string name="action_ok">确定</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_delete">删除</string>
 </resources>

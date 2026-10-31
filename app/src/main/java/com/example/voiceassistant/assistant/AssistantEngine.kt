@@ -1,28 +1,43 @@
 package com.example.voiceassistant.assistant
 
+import com.example.voiceassistant.memory.MemoryRepository
+import com.example.voiceassistant.memory.MemorySearch
+
 /**
- * 本地对话引擎（规则引擎）。
+ * 本地对话引擎。
  *
  * 一次请求的处理流程：
  * 1. 归一化输入（[FuzzyMatcher.normalize]：去标点空格、同义词归一、剥离客套前缀）
- * 2. 如果上一轮是「你是不是想问…」的确认轮，先按用户的回答处理（是 / 不是 / 换话题）
- * 3. 剥掉纠错前缀（「不对，我是说…」）后重新理解
- * 4. 按顺序询问每条规则，第一条命中的采用其回复；规则可以要求「重讲一遍」（[RuleReply.rerun]）
- * 5. 命中后把意图和槽位写回 [context]，供下一轮的多轮追问使用
- * 6. 一条都没命中时，用相似度找最接近的示例说法，反过来问用户「你是不是想问…」
+ * 2. 如果上一轮在等「教我说」的答案，这句就是答案，写进本地记忆库
+ * 3. 显式教学指令（「记住：下班了 = 早点回家」）直接入库
+ * 4. 如果上一轮是「你是不是想问…」的确认轮，先按用户的回答处理（是 / 不是 / 换话题）
+ * 5. 剥掉纠错前缀（「不对，我是说…」）后重新理解
+ * 6. 按顺序询问每条规则，第一条命中的采用其回复；规则可以要求「重讲一遍」（[RuleReply.rerun]）
+ * 7. 规则都不命中时，**查本地记忆库**：以前教过或预置过的说法，用相似度检索作答
+ * 8. 记忆里也没有，才提示「你可以教我」，并把这句话记下来等答案
  *
- * ## 关于「听得清」
- * 语音识别结果不止一条：系统会按置信度给出若干候选。
- * [respond] 接受整组候选，逐个尝试理解，取第一条能命中的。
- * 这样首选结果识别歪了（「打开日立」）时，第二条「打开日历」还能救回来。
+ * ## 越聊越会的原因
+ * 规则是写死的，记忆库是长出来的：每教一条就多一条问法，
+ * 之后用户换个语序、带点口音（归一化 + 二元组相似度）也能命中。
+ * 这部分完全离线，数据存在本地 SQLite，不依赖任何模型。
  */
 class AssistantEngine(
     private val dialogContext: DialogContext = DialogContext(),
-    private val rules: List<IntentRule> = AssistantRules.all()
+    private val rules: List<IntentRule> = AssistantRules.all(),
+    private val memory: MemoryRepository? = null
 ) {
+
+    /** 正在等用户给答案的那句问题 */
+    private var pendingTeachQuestion: String? = null
+
+    /** 上一句没答上来的话，用户说「我教你」时用它当问题 */
+    private var lastUnanswered: String? = null
 
     /** 当前会话的上下文（上一轮意图 + 槽位），设置页里会用它做调试展示 */
     fun context(): DialogContext = dialogContext
+
+    /** 记忆库，界面（记忆页 / 设置页）读它 */
+    fun memoryRepository(): MemoryRepository? = memory
 
     /** 只关心回复文本时的简化入口 */
     fun reply(rawInput: String): String = respond(rawInput).text
@@ -38,7 +53,41 @@ class AssistantEngine(
         val cleaned = candidates.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (cleaned.isEmpty()) return AssistantResponse(LISTENING, INTENT_EMPTY)
 
-        // ① 上一轮问过「你是不是想问…」：先看这句是不是在回答那个问题
+        val first = cleaned.first()
+
+        // ⓪ 正在等「这句话该怎么回答」：用户这句就是答案
+        pendingTeachQuestion?.let { question ->
+            if (TeachCommand.isCancel(first)) {
+                pendingTeachQuestion = null
+                return AssistantResponse("好，那先不教了。", INTENT_TEACH_CANCEL)
+            }
+            return teach(question, first)
+        }
+
+        // ① 显式教学：「记住：下班了 = 早点回家」
+        TeachCommand.parse(first)?.let { command ->
+            return teach(command.question, command.answer)
+        }
+
+        // ② 只说了「我教你」：拿上一句没答上来的话当问题，追问答案
+        if (memory != null && TeachCommand.isBareRequest(first)) {
+            val target = lastUnanswered
+            return if (target != null) {
+                pendingTeachQuestion = target
+                AssistantResponse(
+                    "好，那我问你「$target」的时候，该怎么回答？直接说答案就行。",
+                    INTENT_TEACH_PROMPT,
+                    first
+                )
+            } else {
+                AssistantResponse(
+                    "好呀。你可以直接说「记住：下班了 = 早点回家」这种格式，我一学就会。",
+                    INTENT_TEACH_PROMPT
+                )
+            }
+        }
+
+        // ③ 上一轮问过「你是不是想问…」：先看这句是不是在回答那个问题
         val pending = dialogContext.consumePending()
         if (pending != null) {
             when (classifyConfirm(cleaned.first())) {
@@ -48,13 +97,13 @@ class AssistantEngine(
             }
         }
 
-        // ② 纠错说法：「不对，我是说讲个笑话」→ 只用后半句重新理解
+        // ④ 纠错说法：「不对，我是说讲个笑话」→ 只用后半句重新理解
         val corrected = stripCorrection(cleaned.first())
         if (corrected != null) {
             return respondInternal(corrected, depth = 0)
         }
 
-        // ③ 多候选择优：按识别置信度顺序，第一条能命中的就用它
+        // ⑤ 多候选择优：按识别置信度顺序，第一条能命中的就用它
         var firstMatched: Pair<String, RuleReply>? = null
         for (candidate in cleaned) {
             val reply = matchOnce(candidate)
@@ -65,7 +114,17 @@ class AssistantEngine(
         }
 
         if (firstMatched == null) {
-            // ④ 谁都没命中：找最像的示例说法，反过来向用户确认（多轮的开端）
+            // ⑥ 规则答不上来：查本地记忆库（教过的 + 预置的）
+            val hit = memory?.let { MemorySearch.best(cleaned.first(), it.entries()) }
+            if (hit != null) {
+                memory.bumpHit(hit.entry.id)
+                return commit(hit.entry.question, RuleReply(hit.entry.answer, INTENT_MEMORY))
+            }
+
+            // ⑦ 记忆里也没有：记下这句话，等用户决定要不要教
+            lastUnanswered = cleaned.first()
+
+            // ⑧ 找最像的示例说法，反过来向用户确认（多轮的开端）
             val suggestion = suggest(cleaned.first())
             return if (suggestion != null) {
                 dialogContext.setPending(suggestion)
@@ -79,10 +138,27 @@ class AssistantEngine(
         }
 
         val (heard, reply) = firstMatched
+        lastUnanswered = null
         return commit(heard, reply)
     }
 
-    fun resetContext() = dialogContext.clear()
+    fun resetContext() {
+        dialogContext.clear()
+        pendingTeachQuestion = null
+        lastUnanswered = null
+    }
+
+    /** 把一条问答写进本地记忆库 */
+    private fun teach(question: String, answer: String): AssistantResponse {
+        val repo = memory ?: return AssistantResponse(FALLBACK, INTENT_FALLBACK)
+        val entry = repo.remember(question, answer, MemoryRepository.SOURCE_TAUGHT)
+        pendingTeachQuestion = null
+        lastUnanswered = null
+        return AssistantResponse(
+            "记住了。以后你说「${entry.question}」，我就回答：${entry.answer}",
+            INTENT_TAUGHT
+        )
+    }
 
     // ------------------------------------------------------------------ 内部实现
 
@@ -164,7 +240,8 @@ class AssistantEngine(
         const val LISTENING = "我在听，你说吧。"
 
         const val FALLBACK =
-            "这句我还答不上来。可以试试：现在几点、今天几号、帮我算 12*8、讲个笑话，或者去「技能」页看看所有能做的事。"
+            "这句我还答不上来。想让我记住的话，说「我教你」，然后把答案告诉我；" +
+                "也可以试试：现在几点、帮我算 12*8、讲个笑话。"
 
         const val CLARIFY_REJECTED =
             "好，那我们换个说法。你可以说：现在几点、讲个笑话，或者点底部的「技能」页看全部功能。"
@@ -173,6 +250,18 @@ class AssistantEngine(
         const val INTENT_FALLBACK = "fallback"
         const val INTENT_CLARIFY = DialogContext.INTENT_CLARIFY
         const val INTENT_CLARIFY_REJECTED = "clarify_rejected"
+
+        /** 从本地记忆库答出来的 */
+        const val INTENT_MEMORY = "memory"
+
+        /** 刚学会一条 */
+        const val INTENT_TAUGHT = "taught"
+
+        /** 正在等用户给答案 */
+        const val INTENT_TEACH_PROMPT = "teach_prompt"
+
+        /** 用户取消教学 */
+        const val INTENT_TEACH_CANCEL = "teach_cancel"
 
         /** 建议的相似度门槛：太低会瞎猜，太高又救不回来 */
         private const val SUGGEST_THRESHOLD = 0.72

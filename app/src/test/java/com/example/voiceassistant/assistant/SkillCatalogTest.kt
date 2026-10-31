@@ -1,5 +1,6 @@
 package com.example.voiceassistant.assistant
 
+import com.example.voiceassistant.memory.InMemoryMemoryRepository
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
@@ -15,13 +16,16 @@ class SkillCatalogTest {
 
     private val contextDependent = setOf("calc_continue", "follow_up")
 
+    /** 和真机一致的引擎：带一个本地记忆库（测试用内存实现） */
+    private fun newEngine() = AssistantEngine(memory = InMemoryMemoryRepository())
+
     @Test
     fun `技能页的每个示例都能被引擎执行`() {
         SkillCatalog.skills
             .filterNot { it.id in contextDependent }
             .forEach { skill ->
                 skill.examples.forEach { example ->
-                    val reply = AssistantEngine().reply(example)
+                    val reply = newEngine().reply(example)
                     assertNotEquals(
                         "技能「${skill.title}」的示例「$example」没命中任何规则",
                         AssistantEngine.FALLBACK,
@@ -33,7 +37,7 @@ class SkillCatalogTest {
 
     @Test
     fun `接着算的示例在上下文存在时可以执行`() {
-        val engine = AssistantEngine()
+        val engine = newEngine()
         engine.reply("帮我算 12*8")
 
         val example = SkillCatalog.find("calc_continue")!!.examples.first()

@@ -20,9 +20,12 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
+import com.example.voiceassistant.assistant.AssistantEngine
 import com.example.voiceassistant.data.ChatSession
+import com.example.voiceassistant.memory.SqliteMemoryRepository
 import com.example.voiceassistant.speech.SpeechController
 import com.example.voiceassistant.ui.ChatFragment
+import com.example.voiceassistant.ui.MemoryFragment
 import com.example.voiceassistant.ui.SettingsFragment
 import com.example.voiceassistant.ui.SkillsFragment
 
@@ -36,7 +39,7 @@ import com.example.voiceassistant.ui.SkillsFragment
  */
 class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
-    enum class Tab { CHAT, SKILLS, SETTINGS }
+    enum class Tab { CHAT, SKILLS, MEMORY, SETTINGS }
 
     /** 对话页对外暴露的回调，Activity 收到语音事件后转给它 */
     interface ChatUi {
@@ -44,8 +47,10 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         fun setMicActive(active: Boolean)
     }
 
-    /** 会话状态（消息 + 引擎上下文），整个应用共享一份 */
-    val session: ChatSession = ChatSession()
+    /** 会话状态（消息 + 引擎 + 本地记忆库），整个应用共享一份 */
+    val session: ChatSession by lazy {
+        ChatSession(AssistantEngine(memory = SqliteMemoryRepository(applicationContext)))
+    }
 
     lateinit var speech: SpeechController
         private set
@@ -61,9 +66,11 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
     private lateinit var ivTabChat: ImageView
     private lateinit var ivTabSkills: ImageView
+    private lateinit var ivTabMemory: ImageView
     private lateinit var ivTabSettings: ImageView
     private lateinit var tvTabChat: TextView
     private lateinit var tvTabSkills: TextView
+    private lateinit var tvTabMemory: TextView
     private lateinit var tvTabSettings: TextView
 
     private var chatUi: ChatUi? = null
@@ -148,13 +155,16 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     private fun setupTabs() {
         ivTabChat = findViewById(R.id.ivTabChat)
         ivTabSkills = findViewById(R.id.ivTabSkills)
+        ivTabMemory = findViewById(R.id.ivTabMemory)
         ivTabSettings = findViewById(R.id.ivTabSettings)
         tvTabChat = findViewById(R.id.tvTabChat)
         tvTabSkills = findViewById(R.id.tvTabSkills)
+        tvTabMemory = findViewById(R.id.tvTabMemory)
         tvTabSettings = findViewById(R.id.tvTabSettings)
 
         findViewById<View>(R.id.tabChat).setOnClickListener { selectTab(Tab.CHAT) }
         findViewById<View>(R.id.tabSkills).setOnClickListener { selectTab(Tab.SKILLS) }
+        findViewById<View>(R.id.tabMemory).setOnClickListener { selectTab(Tab.MEMORY) }
         findViewById<View>(R.id.tabSettings).setOnClickListener { selectTab(Tab.SETTINGS) }
     }
 
@@ -172,6 +182,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         val fragment: Fragment = when (tab) {
             Tab.CHAT -> ChatFragment()
             Tab.SKILLS -> SkillsFragment()
+            Tab.MEMORY -> MemoryFragment()
             Tab.SETTINGS -> SettingsFragment()
         }
         supportFragmentManager.beginTransaction()
@@ -186,10 +197,12 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
         ivTabChat.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.CHAT) active else inactive)
         ivTabSkills.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.SKILLS) active else inactive)
+        ivTabMemory.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.MEMORY) active else inactive)
         ivTabSettings.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.SETTINGS) active else inactive)
 
         tvTabChat.setTextColor(if (currentTab == Tab.CHAT) active else inactive)
         tvTabSkills.setTextColor(if (currentTab == Tab.SKILLS) active else inactive)
+        tvTabMemory.setTextColor(if (currentTab == Tab.MEMORY) active else inactive)
         tvTabSettings.setTextColor(if (currentTab == Tab.SETTINGS) active else inactive)
     }
 

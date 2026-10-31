@@ -146,7 +146,8 @@ class SettingsFragment : Fragment() {
             R.string.settings_version,
             appVersionName(),
             AssistantRules.all().size,
-            SkillCatalog.skills.size
+            SkillCatalog.skills.size,
+            host.session.engine.memoryRepository()?.count() ?: 0
         )
     }
 
