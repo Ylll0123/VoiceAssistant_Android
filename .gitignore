@@ -13,3 +13,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# 构建产物：APK 不进版本库（体积大且可由源码重新构建），
+# 需要分发时用 GitHub Release 附件上传
+*.apk
+*.aab
+/*.apk
