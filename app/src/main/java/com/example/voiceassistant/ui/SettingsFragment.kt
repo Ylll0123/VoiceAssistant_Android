@@ -37,6 +37,7 @@ class SettingsFragment : Fragment() {
     private lateinit var switchContinuous: SwitchMaterial
     private lateinit var switchSpeak: SwitchMaterial
     private lateinit var switchFollowUp: SwitchMaterial
+    private lateinit var switchThinking: SwitchMaterial
     private lateinit var switchAutoLearn: SwitchMaterial
     private lateinit var switchLocalModel: SwitchMaterial
     private lateinit var switchOnline: SwitchMaterial
@@ -76,6 +77,7 @@ class SettingsFragment : Fragment() {
         switchContinuous = view.findViewById(R.id.switchContinuous)
         switchSpeak = view.findViewById(R.id.switchSpeak)
         switchFollowUp = view.findViewById(R.id.switchFollowUp)
+        switchThinking = view.findViewById(R.id.switchThinking)
         switchAutoLearn = view.findViewById(R.id.switchAutoLearn)
         switchLocalModel = view.findViewById(R.id.switchLocalModel)
         switchOnline = view.findViewById(R.id.switchOnline)
@@ -180,6 +182,11 @@ class SettingsFragment : Fragment() {
         switchFollowUp.isChecked = host.proactiveFollowUp
         switchFollowUp.setOnCheckedChangeListener { _, checked ->
             if (host.proactiveFollowUp != checked) host.setProactiveFollowUp(checked)
+        }
+
+        switchThinking.isChecked = host.showThinking
+        switchThinking.setOnCheckedChangeListener { _, checked ->
+            if (host.showThinking != checked) host.setShowThinking(checked)
         }
 
         // 先设到当前值，再挂监听，避免初始化时反手把设置改掉

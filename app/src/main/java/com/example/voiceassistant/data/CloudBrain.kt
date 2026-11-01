@@ -295,7 +295,10 @@ object CloudBrain {
         }
         val messages = buildList {
             add(ChatTurn.system(system))
-            addAll(history.takeLast(MAX_HISTORY_TURNS))
+            addAll(
+                history.takeLast(MAX_HISTORY_TURNS * 2)
+                    .map { it.copy(content = clip(it.content)) }
+            )
             add(ChatTurn.user(input))
         }
 
@@ -456,10 +459,37 @@ object CloudBrain {
      * 最多带几轮历史上去（超出最早的会被丢掉）。
      *
      * 历史是每一轮都要重复发送的，轮数翻倍 = 成本翻倍。
-     * 语音助手的对话上下文很短，超过 4 轮前的旧内容对回答的影响已经可以忽略，
-     * 与其全量累加，不如直接丢掉。
+     * 本地的「逻辑分析」会回看 6 条（QueryUnderstanding.LOCAL_MEMORY_TURNS），
+     * 但真正发给云端的只有最近 2 轮——指代消解和背景补全已经在本地做完，
+     * 云端拿到的是一句完整、自足的问题，不需要靠长历史去猜上下文。
      */
-    const val MAX_HISTORY_TURNS = 4
+    const val MAX_HISTORY_TURNS = 2
+
+    /** 单条历史最多保留多少字：历史每轮重发，长回答是纯浪费 */
+    const val MAX_TURN_CHARS = 40
+
+    /** 历史过长时截断（末尾加省略号，避免模型以为话说到一半） */
+    fun clip(text: String, max: Int = MAX_TURN_CHARS): String {
+        val value = text.trim()
+        if (value.length <= max) return value
+        return value.substring(0, max) + "…"
+    }
+
+    /**
+     * 发给云端的问题：优先用本地归纳出的简要问题。
+     *
+     * 原始长句里的背景铺垫（「明天我要去上海出差」）和附带问句（「要不要带伞」）
+     * 对答案没有额外贡献，却要按 token 计费；本地已经把它压成一句核心问句。
+     * 归纳失败（简要问题为空或反而更长）就退回原话，不冒语义丢失的风险。
+     */
+    fun pickInput(raw: String, brief: String): String {
+        val value = brief.trim()
+        val source = raw.trim()
+        if (value.isEmpty()) return source
+        // 留 4 个字的余量：指代消解后往往略长一点（「它怎么样」→「上海怎么样」），
+        // 但那句才是云端能看懂的，不能因为长了两个字就退回带代词的原话。
+        return if (value.length > source.length + 4) source else value
+    }
 }
 
 /**

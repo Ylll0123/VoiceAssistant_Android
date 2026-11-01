@@ -12,6 +12,8 @@
     <color name="surface">#FFFFFFFF</color>
     <color name="text_primary">#1B1F24</color>
     <color name="text_secondary">#6B7280</color>
+    <!-- 理解过程：比次要文字更淡，一眼能看出不是正式回答 -->
+    <color name="text_thinking">#9AA3AF</color>
 
     <!-- 气泡与输入框 -->
     <color name="bubble_user">#2F6FED</color>

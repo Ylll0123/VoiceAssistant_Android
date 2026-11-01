@@ -69,6 +69,8 @@
     <string name="settings_style_detailed">详细</string>
     <string name="settings_follow_up">主动追问</string>
     <string name="settings_follow_up_desc">回答完递一句反问，让对话能继续</string>
+    <string name="settings_thinking">显示理解过程</string>
+    <string name="settings_thinking_desc">回答前用淡色小字展示本地如何拆分与归纳，答案出现即隐藏</string>
 
     <string name="settings_group_learn">自学习与本地模型</string>
     <string name="settings_auto_learn">自学习</string>

@@ -15,14 +15,20 @@ class ChatAdapter : RecyclerView.Adapter<ChatAdapter.MessageViewHolder>() {
 
     override fun getItemCount(): Int = items.size
 
-    override fun getItemViewType(position: Int): Int =
-        if (items[position].isUser) TYPE_USER else TYPE_BOT
+    override fun getItemViewType(position: Int): Int {
+        val item = items[position]
+        return when {
+            item.kind == ChatMessage.KIND_THINKING -> TYPE_THINKING
+            item.isUser -> TYPE_USER
+            else -> TYPE_BOT
+        }
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MessageViewHolder {
-        val layoutRes = if (viewType == TYPE_USER) {
-            R.layout.item_message_user
-        } else {
-            R.layout.item_message_bot
+        val layoutRes = when (viewType) {
+            TYPE_USER -> R.layout.item_message_user
+            TYPE_THINKING -> R.layout.item_message_thinking
+            else -> R.layout.item_message_bot
         }
         val view = LayoutInflater.from(parent.context).inflate(layoutRes, parent, false)
         return MessageViewHolder(view)
@@ -53,5 +59,6 @@ class ChatAdapter : RecyclerView.Adapter<ChatAdapter.MessageViewHolder>() {
     private companion object {
         const val TYPE_USER = 1
         const val TYPE_BOT = 2
+        const val TYPE_THINKING = 3
     }
 }

@@ -1,6 +1,7 @@
 package com.example.voiceassistant.data
 
 import com.example.voiceassistant.assistant.AssistantEngine
+import com.example.voiceassistant.assistant.QueryUnderstanding
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -311,8 +312,29 @@ class CloudBrainTest {
     }
 
     @Test
-    fun `上下文只带最近 4 轮而不是全部历史`() {
-        assertEquals("历史每轮都要重发，轮数必须受限", 4, CloudBrain.MAX_HISTORY_TURNS)
+    fun `上下文只带最近几轮而不是全部历史`() {
+        // 指代消解已在本地做完，云端只需要最近 2 轮就能接得上话
+        assertEquals("历史每轮都要重发，轮数必须受限", 2, CloudBrain.MAX_HISTORY_TURNS)
+        assertTrue(CloudBrain.MAX_HISTORY_TURNS <= QueryUnderstanding.LOCAL_MEMORY_TURNS)
+    }
+
+    @Test
+    fun `简要问题比原句短才发给云端`() {
+        val raw = "明天我要去上海出差，那边天气怎么样，要不要带伞"
+        val brief = QueryUnderstanding.analyze(raw).brief
+        assertTrue(brief.length < raw.length)
+        assertEquals(brief, CloudBrain.pickInput(raw, brief))
+    }
+
+    @Test
+    fun `历史里的长回答会被截断`() {
+        val turns = listOf(
+            CloudBrain.ChatTurn.user("你好"),
+            CloudBrain.ChatTurn.assistant("一".repeat(200))
+        )
+        val clipped = turns.map { it.copy(content = CloudBrain.clip(it.content)) }
+        assertEquals("你好", clipped[0].content)
+        assertTrue(clipped[1].content.length <= CloudBrain.MAX_TURN_CHARS + 1)
     }
 
     @Test

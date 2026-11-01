@@ -50,6 +50,16 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_FOLLOW_UP, true)
         set(value) = prefs.edit().putBoolean(KEY_FOLLOW_UP, value).apply()
 
+    /**
+     * 是否显示「理解过程」：回答出来之前，先用淡色小字展示本地是怎么拆分、
+     * 识别和归纳这句话的，答案出现时整条移除。
+     *
+     * 关掉后回复更快（少了展示用的停顿），功能完全不受影响。
+     */
+    var showThinking: Boolean
+        get() = prefs.getBoolean(KEY_THINKING, true)
+        set(value) = prefs.edit().putBoolean(KEY_THINKING, value).apply()
+
     // ---------------------------------------------------------------- 自学习
 
     /** 是否开启自学习：相似说法自动迁移答案，并自动记住新说法 */
@@ -167,6 +177,7 @@ class AppSettings(context: Context) {
         private const val KEY_TTS_ENGINE = "tts_engine"
         private const val KEY_STYLE = "reply_style"
         private const val KEY_FOLLOW_UP = "proactive_follow_up"
+        private const val KEY_THINKING = "show_thinking"
         private const val KEY_AUTO_LEARN = "auto_learn"
         private const val KEY_LOCAL_MODEL = "local_model"
         private const val KEY_ONLINE = "online_search"

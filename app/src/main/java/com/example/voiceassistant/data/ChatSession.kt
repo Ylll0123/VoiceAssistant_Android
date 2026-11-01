@@ -53,8 +53,52 @@ class ChatSession(
         return response
     }
 
+    /**
+     * 只让引擎出回答，不把回答写进消息列表。
+     *
+     * 「理解过程」要先于答案显示在屏幕上，所以由调用方决定何时插入助手消息。
+     */
+    fun respondOnly(candidates: List<String>): AssistantResponse {
+        val primary = candidates.firstOrNull()?.trim().orEmpty()
+        addUser(primary)
+        return engine.respond(candidates)
+    }
+
+    // ------------------------------------------------------------ 理解过程（淡色小字）
+
+    /** 起一条新的理解过程（会先清掉上一条残留的） */
+    fun startThinking(firstLine: String) {
+        clearThinking()
+        items.add(ChatMessage.thinking(firstLine))
+        notifyChanged()
+    }
+
+    /** 往当前这条理解过程里追加一行（没有就新建） */
+    fun appendThinking(line: String) {
+        val index = items.indexOfLast { it.kind == ChatMessage.KIND_THINKING }
+        if (index < 0) {
+            items.add(ChatMessage.thinking(line))
+        } else {
+            val old = items[index]
+            items[index] = old.copy(text = "${old.text}\n$line")
+        }
+        notifyChanged()
+    }
+
+    /** 答案出来后把理解过程整条移除——用户只看到最终回答 */
+    fun clearThinking() {
+        if (items.removeAll { it.kind == ChatMessage.KIND_THINKING }) notifyChanged()
+    }
+
+    /** 最近若干条用户说过的话（本地逻辑分析 / 指代消解用） */
+    fun recentUserLines(max: Int): List<String> {
+        if (max <= 0) return emptyList()
+        return items.filter { it.isUser }.map { it.text }.takeLast(max)
+    }
+
     /** 最后一条助手消息的下标；联网结果回来后要改的就是它 */
-    fun lastAssistantIndex(): Int = items.indexOfLast { !it.isUser }
+    fun lastAssistantIndex(): Int =
+        items.indexOfLast { !it.isUser && it.kind != ChatMessage.KIND_THINKING }
 
     /**
      * 最近若干轮对话，给云端大模型当上下文（保证回答接得上前面的话）。
@@ -71,6 +115,11 @@ class ChatSession(
         while (index >= 1 && turns.size < maxTurns * 2) {
             val assistant = items[index]
             val user = items.getOrNull(index - 1)
+            // 理解过程条目不参与上下文，直接跳过
+            if (assistant.kind == ChatMessage.KIND_THINKING) {
+                index -= 1
+                continue
+            }
             if (assistant.isUser || user == null || !user.isUser) {
                 index -= 1
                 continue
