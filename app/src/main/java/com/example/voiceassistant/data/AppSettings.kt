@@ -112,7 +112,11 @@ class AppSettings(context: Context) {
         baseUrl = cloudEndpoint,
         apiKey = cloudKey,
         model = cloudModel,
-        systemPrompt = cloudPrompt.ifBlank { CloudBrain.DEFAULT_SYSTEM_PROMPT }
+        // 人设保存过就写死在本机了，老版本那份长人设要靠 migratePrompt 换成极简版，
+        // 否则改常量对已经保存过配置的用户完全不生效
+        systemPrompt = CloudBrain.migratePrompt(
+            cloudPrompt.ifBlank { CloudBrain.DEFAULT_SYSTEM_PROMPT }
+        )
     )
 
     /** 保存一份完整配置对象（设置页点保存时调用） */

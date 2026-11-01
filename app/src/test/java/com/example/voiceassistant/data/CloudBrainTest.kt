@@ -183,11 +183,26 @@ class CloudBrainTest {
     }
 
     @Test
-    fun `默认人设要求口语和四句以内`() {
+    fun `默认人设极简但保留 TTS 必需约束`() {
         val prompt = CloudBrain.DEFAULT_SYSTEM_PROMPT
-        assertTrue(prompt.contains("四句话以内"))
-        assertTrue(prompt.contains("Markdown"))
-        assertTrue(prompt.contains("连贯"))
+        assertTrue("要口语化：$prompt", prompt.contains("口语化"))
+        assertTrue("仍须禁止 Markdown（会被 TTS 原样念出）：$prompt", prompt.contains("Markdown"))
+        assertTrue("人设每轮都要发送，必须短，当前 ${prompt.length} 字：$prompt", prompt.length <= 60)
+        assertFalse("不该再写长篇套话：$prompt", prompt.contains("四句话以内"))
+    }
+
+    @Test
+    fun `旧版长人设自动迁移成极简版`() {
+        val migrated = CloudBrain.migratePrompt(CloudBrain.LEGACY_SYSTEM_PROMPT)
+        assertEquals(CloudBrain.DEFAULT_SYSTEM_PROMPT, migrated)
+        assertTrue("迁移后必须变短", migrated.length < CloudBrain.LEGACY_SYSTEM_PROMPT.length)
+    }
+
+    @Test
+    fun `用户自己写的人设不会被迁移覆盖`() {
+        val custom = "你是我的私人助理，每次都要先报时间"
+        assertEquals(custom, CloudBrain.migratePrompt(custom))
+        assertEquals("", CloudBrain.migratePrompt(""))
     }
 
     // ------------------------------------------------------------ 上下文
@@ -279,7 +294,13 @@ class CloudBrainTest {
     }
 
     @Test
-    fun `输出上限放宽时可到 1024`() {
+    fun `默认输出上限是 128`() {
+        val body = CloudBrain.buildBody("m", listOf(CloudBrain.ChatTurn.user("你好")))
+        assertTrue("输出 token 也要省，默认应为 128：$body", body.contains("\"max_tokens\":128"))
+    }
+
+    @Test
+    fun `输出上限可被显式覆盖`() {
         val body = CloudBrain.buildBody(
             "kimi-k3-1-pro-261024",
             listOf(CloudBrain.ChatTurn.user("你好")),
@@ -287,6 +308,11 @@ class CloudBrainTest {
         )
         assertTrue(body.contains("\"max_tokens\":1024"))
         assertTrue(body.contains("\"temperature\":1.0"))
+    }
+
+    @Test
+    fun `上下文只带最近 4 轮而不是全部历史`() {
+        assertEquals("历史每轮都要重发，轮数必须受限", 4, CloudBrain.MAX_HISTORY_TURNS)
     }
 
     @Test

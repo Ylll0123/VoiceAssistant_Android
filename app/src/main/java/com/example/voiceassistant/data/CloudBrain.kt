@@ -82,8 +82,8 @@ object CloudBrain {
         data class Ok(val text: String, val model: String) : CloudResult()
 
         /**
-         * @param retryable 是否值得重试：`true` 表示服务端有响应（网络是通的），
-         *   失败原因可能靠调整参数解决；`false` 表示网络层就断了，重试只是多等一个超时。
+         * @param retryable 失败来源：`true` 表示服务端有响应（网络是通的，是参数/内容问题）；
+         *   `false` 表示网络层就断了。当前不做自动重试，仅用于把原因说清楚。
          */
         data class Fail(val reason: String, val retryable: Boolean = false) : CloudResult()
     }
@@ -114,32 +114,55 @@ object CloudBrain {
     )
 
     /**
-     * 默认人设。
+     * 默认人设——**极简版**。
      *
-     * 特意写进这几条：
-     * - **口语化**：回答要被 TTS 念出来，「首先/其次/综上所述」这种书面语念着很怪；
-     * - **不要 Markdown**：`**加粗**`、`- 列表` 会被原样念出来；
-     * - **控制在四句以内**：手机上的语音对话，长篇大论没人听得下去。
+     * system 的内容每一轮都会随请求发出去，是纯成本：写得越详细，
+     * 每轮多花的 token 越多，而语音助手根本用不上长指令。
+     * 这里只留最短的两条约束：简短 + 口语。
+     *
+     * 唯一额外保留的是「别用 Markdown」：回答要交给 TTS 念出来，
+     * `**加粗**`、`- 列表` 会被原样念出声，属于功能性必需，不是修饰。
      */
     const val DEFAULT_SYSTEM_PROMPT =
+        "你是语音助手，简短回答用户问题，口语化，不主动延伸、不追问。不要使用 Markdown 或列表符号。"
+
+    /**
+     * 2.8.1 及更早版本的默认人设原文。
+     *
+     * 人设一旦保存过就写进了本地配置，光改 [DEFAULT_SYSTEM_PROMPT] 对老用户不生效——
+     * 这里留一份旧原文，用来在读取配置时识别并自动迁移到极简版。
+     */
+    const val LEGACY_SYSTEM_PROMPT =
         "你是手机里的中文语音助手，用简洁、自然、有逻辑的口语回答。" +
             "每次回答控制在四句话以内，像真人聊天而不是写文章。" +
             "不要使用 Markdown、列表符号、emoji 或任何特殊格式。" +
             "和上文保持连贯：用户提到的事物或省略指代要按前文理解。" +
             "不确定的事情要说明不确定，不要编造事实。"
 
+    /**
+     * 旧人设自动迁移成极简版。
+     *
+     * 只有「正好等于旧默认原文」才替换——用户自己写的人设原样保留，不覆盖。
+     */
+    fun migratePrompt(saved: String): String =
+        if (saved.trim() == LEGACY_SYSTEM_PROMPT) DEFAULT_SYSTEM_PROMPT else saved
+
     private const val UA = "VoiceAssistant/2.8 (Android; OpenAI-compatible)"
     private const val DEFAULT_TIMEOUT_MS = 20000
-    private const val DEFAULT_MAX_TOKENS = 320
+
+    /**
+     * 输出上限 128。
+     *
+     * 语音助手的回答是要念出来的，128 token（约 80 字以内）足够说完两三句，
+     * 而输出 token 通常比输入贵。设上限既能控制成本，也顺带避免长篇大论。
+     */
+    private const val DEFAULT_MAX_TOKENS = 128
     /**
      * 默认温度为 1——这是 OpenAI `/chat/completions` 自身的默认值，
      * 也是兼容性最好的选择：方舟上的思考型模型（kimi-k3 / doubao-seed）只允许这个值，
      * 用 0.7 会被 400 拒绝。语音助手场景里 1.0 与 0.7 的回答质量差别很小。
      */
     private const val DEFAULT_TEMPERATURE = 1.0
-
-    /** 重试时的输出上限：思考型模型会先把 token 花在内部推理上，320 常常不够把正文吐出来 */
-    private const val RETRY_MAX_TOKENS = 1024
 
     // ------------------------------------------------------------------ 请求
 
@@ -276,16 +299,11 @@ object CloudBrain {
             add(ChatTurn.user(input))
         }
 
-        val first = attempt(config, url, messages, config.maxTokens, DEFAULT_TEMPERATURE)
-        if (first is CloudResult.Ok) return first
-
-        // 拿到了服务端响应却没内容：多半是思考型模型把 token 花在内部推理上，
-        // 正文没输出完。这种情况把上限放宽重试一次。网络异常不重试（只會多等一个超时）。
-        val fail = first as CloudResult.Fail
-        if (!fail.retryable) return first
-        val retryTokens = maxOf(config.maxTokens, RETRY_MAX_TOKENS)
-        if (retryTokens == config.maxTokens) return first
-        return attempt(config, url, messages, retryTokens, DEFAULT_TEMPERATURE)
+        // 只发一次，不重试。
+        // 自动重试看起来是「更稳」，实际是双倍账单：网络抖动、识别失败、
+        // 服务端偶发错误都会让同一句话被计费两次，而语音助手的下一句本来就会重新问。
+        // 失败一律退回本地答案，离线可用性不受影响。
+        return attempt(config, url, messages, config.maxTokens, DEFAULT_TEMPERATURE)
     }
 
     /** 发一次请求并解析结果（不含重试逻辑） */
@@ -434,8 +452,14 @@ object CloudBrain {
         return trimmed.take(6) + "****" + trimmed.takeLast(4)
     }
 
-    /** 最多带几轮历史上去（超出最早的会被丢掉，省 token 也降低延迟） */
-    const val MAX_HISTORY_TURNS = 8
+    /**
+     * 最多带几轮历史上去（超出最早的会被丢掉）。
+     *
+     * 历史是每一轮都要重复发送的，轮数翻倍 = 成本翻倍。
+     * 语音助手的对话上下文很短，超过 4 轮前的旧内容对回答的影响已经可以忽略，
+     * 与其全量累加，不如直接丢掉。
+     */
+    const val MAX_HISTORY_TURNS = 4
 }
 
 /**

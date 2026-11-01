@@ -167,7 +167,7 @@
     <string name="settings_cloud_model_label">模型名</string>
     <string name="settings_cloud_model_hint">例如 deepseek-flash</string>
     <string name="settings_cloud_prompt_label">人设（可选）</string>
-    <string name="settings_cloud_prompt_hint">留空用默认：简洁口语、四句以内、不用 Markdown</string>
+    <string name="settings_cloud_prompt_hint">留空用默认：简短、口语化、不主动延伸。写太长会每轮多花 token</string>
     <string name="settings_cloud_testing">正在测试连接…</string>
     <string name="settings_cloud_saved">已保存：%1$s</string>
 </resources>

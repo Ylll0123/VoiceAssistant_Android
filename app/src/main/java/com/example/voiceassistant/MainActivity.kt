@@ -646,15 +646,19 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         sb.append("现在是 ${now.year} 年 ${now.monthValue} 月 ${now.dayOfMonth} 日，")
             .append("${now.hour} 点 ${String.format("%02d", now.minute)} 分左右。")
 
+        // 教过的说法每轮都要跟着请求发出去，是 system 里最贵的一段：
+        // 原来 5 条带引导套话约 150 字，现在砍到 2 条并去掉套话，约 60 字。
+        // 之所以不整个去掉，是因为它能防止云端和用户亲手教的内容唱反调——
+        // 这是功能性需要，不是装饰性的上下文。
         val taught = session.engine.memoryRepository()?.entries()
             ?.filter { it.isTaught }
-            ?.take(5)
+            ?.take(2)
             .orEmpty()
         if (taught.isNotEmpty()) {
-            sb.append("\n用户亲手教过你这些说法，回答时必须照做：")
+            sb.append("\n教过：")
             for (entry in taught) {
                 val answer = entry.answer.split('|', '｜').first().trim()
-                sb.append("\n· 用户说「${entry.question}」时，要回答「$answer」")
+                sb.append("\n「${entry.question}」→「$answer」")
             }
         }
         return sb.toString()
