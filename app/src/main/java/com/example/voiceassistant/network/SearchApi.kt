@@ -1,10 +1,9 @@
-package com.example.voiceassistant.data
+package com.example.voiceassistant.network
 
 import com.example.voiceassistant.assistant.CityClimate
-import java.io.ByteArrayOutputStream
-import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import com.example.voiceassistant.data.JsonLite
 
 /**
  * 联网查询：实时天气 + 百科搜索。
@@ -21,10 +20,10 @@ import java.net.URLEncoder
  * | 百科知识 | 中文维基 summary | 中文维基搜索 → 英文维基 summary |
  *
  * ## 线程约定
- * [httpGet] 会阻塞，只能在子线程调用；
+ * [Http.get] 会阻塞，只能在子线程调用；
  * 解析函数（[parseOpenMeteo] / [parseWikiSummary] …）是纯函数，可以直接在单测里断言。
  */
-object WebSearch {
+object SearchApi {
 
     /** 一次实时天气查询结果 */
     data class WeatherSnapshot(
@@ -52,37 +51,9 @@ object WebSearch {
         val source: String
     )
 
-    private const val TIMEOUT_MS = 7000
-    private const val UA = "VoiceAssistant/2.6 (Android; offline-first)"
 
     // ------------------------------------------------------------------ 网络
 
-    /** 阻塞式 GET，失败返回 null（不要在 UI 线程调用） */
-    fun httpGet(url: String, timeoutMs: Int = TIMEOUT_MS): String? = runCatching {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        try {
-            conn.requestMethod = "GET"
-            conn.connectTimeout = timeoutMs
-            conn.readTimeout = timeoutMs
-            conn.instanceFollowRedirects = true
-            conn.setRequestProperty("User-Agent", UA)
-            conn.setRequestProperty("Accept", "application/json")
-            conn.setRequestProperty("Accept-Language", "zh-CN,zh")
-            if (conn.responseCode !in 200..299) return@runCatching null
-            conn.inputStream.use { input ->
-                val buffer = ByteArrayOutputStream()
-                val chunk = ByteArray(4096)
-                while (true) {
-                    val read = input.read(chunk)
-                    if (read <= 0) break
-                    buffer.write(chunk, 0, read)
-                }
-                String(buffer.toByteArray(), Charsets.UTF_8)
-            }
-        } finally {
-            conn.disconnect()
-        }
-    }.getOrNull()?.takeIf { it.isNotBlank() }
 
     private fun enc(text: String): String = URLEncoder.encode(text, "UTF-8")
 
@@ -121,21 +92,21 @@ object WebSearch {
     fun fetchWeather(city: CityClimate.CityClimate, dayOffset: Int = 0): WeatherSnapshot? {
         val days = (dayOffset + 1).coerceIn(1, 7)
         if (city.lat != 0.0 && city.lon != 0.0) {
-            parseOpenMeteo(httpGet(forecastUrl(city.lat, city.lon, days)), city.city, dayOffset)
+            parseOpenMeteo(Http.get(forecastUrl(city.lat, city.lon, days)), city.city, dayOffset)
                 ?.let { return it }
         }
-        val coords = parseGeocode(httpGet(geocodeUrl(city.city)))
+        val coords = parseGeocode(Http.get(geocodeUrl(city.city)))
         if (coords != null) {
-            parseOpenMeteo(httpGet(forecastUrl(coords.first, coords.second, days)), city.city, dayOffset)
+            parseOpenMeteo(Http.get(forecastUrl(coords.first, coords.second, days)), city.city, dayOffset)
                 ?.let { return it }
         }
-        parseWttr(httpGet(wttrUrl(city.city)), city.city, dayOffset)?.let { return it }
+        parseWttr(Http.get(wttrUrl(city.city)), city.city, dayOffset)?.let { return it }
         return null
     }
 
     /** 按定位查「我这里」的天气；失败返回 null */
     fun fetchWeatherHere(dayOffset: Int = 0): WeatherSnapshot? {
-        val raw = httpGet(locationUrl()) ?: return null
+        val raw = Http.get(locationUrl()) ?: return null
         val name = parseWttrCity(raw).orEmpty()
         return parseWttr(raw, name.ifBlank { "你那里" }, dayOffset, fromLocation = true)
     }
@@ -290,12 +261,12 @@ object WebSearch {
         val query = topic.trim()
         if (query.isEmpty()) return null
 
-        searchRssUrl(query)?.let { parseBingResult(httpGet(it)) }?.let { return it }
+        searchRssUrl(query)?.let { parseBingResult(Http.get(it)) }?.let { return it }
         if (query.length in 2..20) {
-            parseWikiSummary(httpGet("https://zh.wikipedia.org/api/rest_v1/page/summary/${enc(query)}"))
+            parseWikiSummary(Http.get("https://zh.wikipedia.org/api/rest_v1/page/summary/${enc(query)}"))
                 ?.let { return it }
         }
-        parseWikiSummary(httpGet("https://en.wikipedia.org/api/rest_v1/page/summary/${enc(query)}"))
+        parseWikiSummary(Http.get("https://en.wikipedia.org/api/rest_v1/page/summary/${enc(query)}"))
             ?.let { return it.copy(source = "英文维基百科") }
         return null
     }

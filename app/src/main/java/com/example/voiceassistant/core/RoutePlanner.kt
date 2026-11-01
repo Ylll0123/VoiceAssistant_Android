@@ -1,40 +1,35 @@
-package com.example.voiceassistant.assistant
+package com.example.voiceassistant.core
+
+import com.example.voiceassistant.assistant.AssistantEngine
+import com.example.voiceassistant.assistant.CityClimate
+import com.example.voiceassistant.assistant.DialogContext
+import com.example.voiceassistant.assistant.OnlineQuery
+import com.example.voiceassistant.assistant.QueryUnderstanding
 
 /**
- * 串行调度：**先本地，再联网，最后才问云端**。
+ * 核心层：**路由决策表**（纯函数）。
  *
- * ## 它解决三个问题
- * 1. **本地和云端抢回答**：以前是「本地答案先上屏，云端回来再顶掉」，
- *    用户看到同一条气泡被改两次。现在由这里先定好唯一的路线，
- *    后台按路线跑完，**只上屏一次**（见 MainActivity 的 runChain）。
- * 2. **该联网的没联网**：天气、实时数据、本地查不到的事实，一律先联网查；
- *    没有城市名时按定位查（[OnlineQuery.weatherPlan]）。
- * 3. **token 花得太快**：联网搜索是免费的、云端是按 token 付费的，
- *    所以顺序固定为「免费搜索 → 付费生成」，搜到了就不再问云端
- *    （[Decision.cloudFallback] 为 false 时连降级都不会发生）。
+ * 只回答一个问题——这一句话该走哪条路；不碰网络、不碰界面、不产生副作用，
+ * 所以整张决策表都能在单元测试里逐条断言（见 RoutePlannerTest）。
  *
- * ## 路线
+ * ## 短路顺序（顺序本身就是省 token 的手段，不能乱）
  * ```
- * 本地规则/知识库 ──答得好──▶ LOCAL（0 次请求，0 token）
- *       │答不好 / 是实时问题
- *       ▼
- *   联网搜索（天气 / 百科）──查到──▶ WEB（0 token）
- *       │没查到 且 配了云端
- *       ▼
- *   云端大模型 ──▶ CLOUD（唯一花钱的一步）
- *       │失败
- *       ▼
- *   本地答案（常年气候 / 思维模式）
+ * ① 本机功能（教学/槽位/记忆）    -> TOOL     0 请求
+ * ② 实时天气                     -> WEB      0 token（公开数据源免费）
+ * ③ 用户明确说「帮我查/搜一下」   -> WEB      0 token
+ * ④ 本地答得很好（知识库/闲聊…）  -> LOCAL    0 请求
+ * ⑤ 本地没答好 且 是事实类问题    -> WEB      0 token（先免费搜，搜到就不问云端）
+ * ⑥ 剩下的（情绪/主观/没搜到）    -> CLOUD   <- 唯一花钱的一步
  * ```
  *
- * 纯函数，不碰网络、不引 data 层的类型（云端是否可用只通过布尔参数传入），
- * 所以整张决策表都能在单元测试里断言。
+ * 每一步命中就返回，不再往下走。⑤ 是「按需搜索」的核心：
+ * 联网搜索免费、云端按 token 付费，能搜到就绝不多花一次调用。
  */
-object AnswerRouter {
+object RoutePlanner {
 
     /** 三条路线 */
     enum class Route {
-        /** 本地答，直接上屏 */
+        /** 本地工具 / 本地知识，直接上屏 */
         LOCAL,
 
         /** 先联网查（免费） */
@@ -53,14 +48,14 @@ object AnswerRouter {
         val plan: OnlineQuery.Plan? = null,
         /** 发给云端的问题（本地归纳后的简要问句） */
         val cloudInput: String = "",
-        /** 联网/云端都失败时，是否还能降级到云端（WEB 路线的兜底） */
+        /** 联网失败后，是否还能降级到云端（WEB 路线的兜底） */
         val cloudFallback: Boolean = false,
         /** 最终兜底答案（本地那条） */
         val fallbackText: String = "",
         val fallbackIntent: String = "",
         /** 云端请求要不要带历史上下文（只有追问 / 有指代时才带，省 token） */
         val useHistory: Boolean = false,
-        /** 思考过程里要显示的这一步（"联网查实时天气" / "问问 AI"） */
+        /** 思考过程里要显示的这一步（"联网查上海的实时天气" / "问问 AI"） */
         val note: String = ""
     ) {
         /** 这条路线会不会产生网络请求 */
@@ -71,7 +66,9 @@ object AnswerRouter {
 
     /**
      * 本机功能：**任何时候都不交给联网或云端**。
-     * 教学、槽位追问这类一旦被大模型接手，用户就再也教不会本地助手了。
+     *
+     * 教学、槽位追问这类一旦被大模型接手，用户就再也教不会本地助手了；
+     * 记忆命中同理——那是用户亲手教的内容，必须原样答。
      */
     private val LOCAL_ONLY = setOf(
         AssistantEngine.INTENT_EMPTY,
@@ -89,19 +86,19 @@ object AnswerRouter {
      * 走这条路 = 0 次网络请求 = 0 token。
      */
     private val LOCAL_GOOD = setOf(
-        "time", "date", "weekday_calc", "timezone",           // 时间日期
-        "arithmetic", "calc_continue", "unit_convert",        // 计算换算
-        "translate",                                          // 内置词典
-        "joke", "quote", "random", "story",                   // 娱乐
-        "greeting", "farewell", "thanks", "support", "identity", // 寒暄 / 身份
-        DialogContext.INTENT_CHAT,                            // 闲聊（语料 + 情感）
-        AssistantEngine.INTENT_KNOWLEDGE                      // 内置常识知识库命中
+        "time", "date", "weekday_calc", "timezone",               // 时间日期
+        "arithmetic", "calc_continue", "unit_convert",            // 计算换算
+        "translate",                                              // 内置词典
+        "joke", "quote", "random", "story",                       // 娱乐
+        "greeting", "farewell", "thanks", "support", "identity",  // 寒暄 / 身份
+        DialogContext.INTENT_CHAT,                                // 闲聊（语料 + 情感）
+        AssistantEngine.INTENT_KNOWLEDGE                          // 内置常识知识库命中
     )
 
     /**
      * 本地答不好、值得**先搜再问**的意图。
      *
-     * 只有问「事实 / 原因 / 比较 / 办法」才值得联网搜——
+     * 只有问「事实 / 原因 / 比较 / 办法 / 天气」才值得联网搜——
      * 情绪倾诉（「最近好累啊」）和求看法（「我该不该考研」）
      * 搜索也搜不出答案，直接交给云端更合适。
      */
@@ -119,7 +116,7 @@ object AnswerRouter {
      * 决定这一句走哪条路线。
      *
      * @param raw 用户原话
-     * @param intent 本地命中的意图（[AssistantResponse.intent]）
+     * @param intent 本地命中的意图
      * @param localText 本地答案（联网和云端都失败时的兜底）
      * @param understanding 本地语义理解结果（意图类别 + 归纳后的简要问题）
      * @param onlineEnabled 设置里的「联网查询」开关
@@ -149,7 +146,7 @@ object AnswerRouter {
             )
         }
 
-        // ① 本机功能：教学 / 槽位 / 空输入 → 永远本地
+        // ① 本机功能：教学 / 槽位 / 记忆命中 → 永远本地
         if (intent in LOCAL_ONLY) return local("本地功能")
 
         // ② 实时天气：本地只有常年平均值，这条必须联网。
@@ -157,14 +154,12 @@ object AnswerRouter {
         if (intent != AssistantEngine.INTENT_KNOWLEDGE && isWeatherRequest(text, intent, understanding)) {
             val plan = OnlineQuery.weatherPlan(text, fallbackCity)
             if (onlineEnabled && plan != null) {
-                return Decision(
-                    route = Route.WEB,
+                return webDecision(
                     raw = text,
                     plan = plan,
                     cloudFallback = false, // 天气是数据问题，不是生成问题，没必要再问大模型
                     fallbackText = localText,
-                    fallbackIntent = intent,
-                    note = if (plan.city == null) "按定位查实时天气" else "联网查${plan.city.city}的实时天气"
+                    fallbackIntent = intent
                 )
             }
             return local("联网已关闭")
@@ -174,18 +169,9 @@ object AnswerRouter {
         if (OnlineQuery.wantsWeb(text)) {
             val plan = OnlineQuery.searchPlan(brief)
             if (onlineEnabled && plan != null) {
-                return Decision(
-                    route = Route.WEB,
-                    raw = text,
-                    plan = plan,
-                    cloudFallback = cloudReady,
-                    fallbackText = localText,
-                    fallbackIntent = intent,
-                    useHistory = needsHistory(understanding),
-                    note = "上网查「${plan.query}」"
-                )
+                return webDecision(text, plan, cloudReady, localText, intent)
             }
-            if (cloudReady) return cloudDecision(text, brief, localText, intent, understanding, "问问 AI")
+            if (cloudReady) return cloudDecision(text, brief, localText, intent, "问问 AI")
             return local("联网已关闭")
         }
 
@@ -196,25 +182,15 @@ object AnswerRouter {
 
         // ⑤ 本地没答好：**先免费搜**
         if (onlineEnabled && understanding.intent in SEARCHABLE) {
-            val plan = OnlineQuery.searchPlan(brief)
-            if (plan != null) {
-                return Decision(
-                    route = Route.WEB,
-                    raw = text,
-                    plan = plan,
-                    cloudFallback = cloudReady,
-                    fallbackText = localText,
-                    fallbackIntent = intent,
-                    useHistory = needsHistory(understanding),
-                    note = "上网查「${plan.query}」"
-                )
+            OnlineQuery.searchPlan(brief)?.let {
+                return webDecision(text, it, cloudReady, localText, intent)
             }
         }
 
         // ⑥ 搜索不适用（情绪 / 主观）或没搜到：交给云端
-        if (cloudReady) return cloudDecision(text, brief, localText, intent, understanding, "问问 AI")
+        if (cloudReady) return cloudDecision(text, brief, localText, intent, "问问 AI")
 
-        // ⑦ 没配云端：AI 优先也只能是本地答案
+        // ⑦ 没配云端：AI 优先也只能用本地答案
         return local(if (cloudFirst) "没配 AI 接口" else "本地兜底")
     }
 
@@ -234,21 +210,24 @@ object AnswerRouter {
         return understanding.intent == QueryUnderstanding.Intent.WEATHER
     }
 
-    /**
-     * 云端请求要不要带历史上下文。
-     *
-     * 历史每轮都要重发，是纯成本。本地的指代消解已经把「它怎么样」
-     * 改写成「上海怎么样」，这种情况下模型拿一句自足的问题就够了；
-     * 只有确实存在指代（或明显的追问词）时才把历史带上。
-     */
-    fun needsHistory(understanding: QueryUnderstanding.Understanding): Boolean {
-        if (understanding.resolved != understanding.raw) return true
-        val text = understanding.raw
-        return FOLLOW_UP_CUES.any { text.contains(it) }
-    }
-
-    private val FOLLOW_UP_CUES = listOf(
-        "它", "他", "她", "这个", "那个", "那里", "这边", "上面", "刚才", "为什么", "然后呢", "还有吗"
+    private fun webDecision(
+        raw: String,
+        plan: OnlineQuery.Plan,
+        cloudFallback: Boolean,
+        fallbackText: String = "",
+        fallbackIntent: String = ""
+    ): Decision = Decision(
+        route = Route.WEB,
+        raw = raw,
+        plan = plan,
+        cloudFallback = cloudFallback,
+        fallbackText = fallbackText,
+        fallbackIntent = fallbackIntent,
+        note = if (plan.kind == OnlineQuery.Kind.WEATHER) {
+            if (plan.city == null) "按定位查实时天气" else "联网查${plan.city.city}的实时天气"
+        } else {
+            "上网查「${plan.query}」"
+        }
     )
 
     private fun cloudDecision(
@@ -256,7 +235,6 @@ object AnswerRouter {
         brief: String,
         localText: String,
         intent: String,
-        understanding: QueryUnderstanding.Understanding,
         note: String
     ): Decision = Decision(
         route = Route.CLOUD,
@@ -265,7 +243,6 @@ object AnswerRouter {
         cloudFallback = false,
         fallbackText = localText,
         fallbackIntent = intent,
-        useHistory = needsHistory(understanding),
         note = note
     )
 }

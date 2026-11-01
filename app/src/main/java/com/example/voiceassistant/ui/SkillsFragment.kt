@@ -9,7 +9,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import com.example.voiceassistant.MainActivity
 import com.example.voiceassistant.R
 import com.example.voiceassistant.assistant.SkillCatalog
 
@@ -81,7 +80,7 @@ class SkillsFragment : Fragment() {
                         (chip.layoutParams as ViewGroup.MarginLayoutParams).marginStart = dp(8)
                     }
                     chip.setOnClickListener {
-                        (requireActivity() as MainActivity).runFromSkill(example)
+                        (requireActivity() as VoiceAssistantActivity).runFromSkill(example)
                     }
                     examples.addView(chip)
                 }

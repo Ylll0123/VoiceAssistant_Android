@@ -14,7 +14,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.voiceassistant.MainActivity
 import com.example.voiceassistant.R
 import com.example.voiceassistant.data.ChatMessage
 import com.example.voiceassistant.data.ChatSession
@@ -26,7 +25,7 @@ import android.content.res.ColorStateList
  * 不持有语音资源（那在 Activity 里），只把用户操作转发给 Activity，
  * 再接收 Activity 的状态回调更新顶栏。
  */
-class ChatFragment : Fragment(), MainActivity.ChatUi, ChatSession.Listener {
+class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.Listener {
 
     private lateinit var rvMessages: RecyclerView
     private lateinit var etInput: EditText
@@ -41,8 +40,8 @@ class ChatFragment : Fragment(), MainActivity.ChatUi, ChatSession.Listener {
 
     private lateinit var adapter: ChatAdapter
 
-    private val host: MainActivity
-        get() = requireActivity() as MainActivity
+    private val host: VoiceAssistantActivity
+        get() = requireActivity() as VoiceAssistantActivity
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -77,7 +76,7 @@ class ChatFragment : Fragment(), MainActivity.ChatUi, ChatSession.Listener {
     }
 
     /**
-     * 键盘 inset 的补偿统一由 Activity 的根布局做（见 MainActivity.applyInsets），
+     * 键盘 inset 的补偿统一由 Activity 的根布局做（见 VoiceAssistantActivity.applyInsets），
      * 这里只负责一件补充的事：键盘弹起时把消息列表滚到最后一条，
      * 保证「最后一条聊天记录显示在输入行上方」（微信 / QQ 的行为）。
      */

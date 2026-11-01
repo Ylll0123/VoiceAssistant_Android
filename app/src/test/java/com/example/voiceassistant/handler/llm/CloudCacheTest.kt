@@ -1,4 +1,4 @@
-package com.example.voiceassistant.data
+package com.example.voiceassistant.handler.llm
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals

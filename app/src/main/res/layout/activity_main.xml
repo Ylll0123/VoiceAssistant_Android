@@ -7,7 +7,7 @@
     android:layout_height="match_parent"
     android:background="@color/bg_app"
     android:orientation="vertical"
-    tools:context=".MainActivity">
+    tools:context=".ui.VoiceAssistantActivity">
 
     <!-- 页面容器：对话 / 技能 / 设置 三个 Fragment 轮流放进来 -->
     <FrameLayout

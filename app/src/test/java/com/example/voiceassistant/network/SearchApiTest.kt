@@ -1,4 +1,4 @@
-package com.example.voiceassistant.data
+package com.example.voiceassistant.network
 
 import com.example.voiceassistant.assistant.CityClimate
 import org.junit.Assert.assertEquals
@@ -12,7 +12,7 @@ import org.junit.Test
  * 之所以把这些拆成纯函数：联网部分在单元测试里跑不动，
  * 单独把解析和模板拆出来之后，即使不联网也能验证逻辑是对的。
  */
-class WebSearchTest {
+class SearchApiTest {
 
     private val OPEN_METEO =
         "{\"current\":{\"temperature_2m\":12.4,\"relative_humidity_2m\":55," +
@@ -28,7 +28,7 @@ class WebSearchTest {
 
     @Test
     fun `解析 Open-Meteo 的实时天气`() {
-        val snap = WebSearch.parseOpenMeteo(OPEN_METEO, "北京")!!
+        val snap = SearchApi.parseOpenMeteo(OPEN_METEO, "北京")!!
         assertEquals("北京", snap.city)
         assertEquals(12.4, snap.temp, 0.001)
         assertEquals(10.2, snap.feelsLike!!, 0.001)
@@ -41,7 +41,7 @@ class WebSearchTest {
 
     @Test
     fun `解析 wttr 的降级数据并把英文描述翻成中文`() {
-        val snap = WebSearch.parseWttr(WTTR, "上海")!!
+        val snap = SearchApi.parseWttr(WTTR, "上海")!!
         assertEquals(12.0, snap.temp, 0.001)
         assertEquals("有雨", snap.desc)
         assertEquals(22.0, snap.high!!, 0.001)
@@ -50,25 +50,25 @@ class WebSearchTest {
 
     @Test
     fun `坏数据返回 null 而不是崩溃`() {
-        assertNull(WebSearch.parseOpenMeteo(null, "北京"))
-        assertNull(WebSearch.parseOpenMeteo("", "北京"))
-        assertNull(WebSearch.parseOpenMeteo("不是 json", "北京"))
-        assertNull(WebSearch.parseOpenMeteo("{\"daily\":{}}", "北京"))
-        assertNull(WebSearch.parseWttr(" broken", "北京"))
+        assertNull(SearchApi.parseOpenMeteo(null, "北京"))
+        assertNull(SearchApi.parseOpenMeteo("", "北京"))
+        assertNull(SearchApi.parseOpenMeteo("不是 json", "北京"))
+        assertNull(SearchApi.parseOpenMeteo("{\"daily\":{}}", "北京"))
+        assertNull(SearchApi.parseWttr(" broken", "北京"))
     }
 
     @Test
     fun `地名反查能拿到经纬度`() {
         val raw = "{\"results\":[{\"name\":\"Beijing\",\"latitude\":39.9,\"longitude\":116.4}]}"
-        assertEquals(39.9 to 116.4, WebSearch.parseGeocode(raw))
-        assertNull(WebSearch.parseGeocode("{\"results\":[]}"))
+        assertEquals(39.9 to 116.4, SearchApi.parseGeocode(raw))
+        assertNull(SearchApi.parseGeocode("{\"results\":[]}"))
     }
 
     @Test
     fun `解析维基摘要并取到正文链接`() {
         val raw = "{\"title\":\"人工智能\",\"extract\":\"人工智能是计算机科学的一个分支。\"," +
             "\"content_urls\":{\"desktop\":{\"page\":\"https://zh.wikipedia.org/wiki/ai\"}}}"
-        val result = WebSearch.parseWikiSummary(raw)!!
+        val result = SearchApi.parseWikiSummary(raw)!!
         assertEquals("人工智能", result.title)
         assertEquals("维基百科", result.source)
         assertTrue(result.url.startsWith("https://"))
@@ -83,7 +83,7 @@ class WebSearchTest {
             "已综合成为整体性质，则称这现象为量子纠缠。</description>" +
             "</item><item><title>别的</title><link>https://x</link><description>略</description></item>" +
             "</channel></rss>"
-        val result = WebSearch.parseBingResult(raw)!!
+        val result = SearchApi.parseBingResult(raw)!!
         // 来源后缀和括号解释都去掉，念出来才顺
         assertEquals("量子纠缠", result.title)
         assertTrue("实际：${result.snippet}", result.snippet.startsWith("在量子力学里"))
@@ -93,36 +93,36 @@ class WebSearchTest {
 
     @Test
     fun `RSS 里的 HTML 实体要还原`() {
-        assertEquals("巴黎 & London", WebSearch.decodeEntities("巴黎 &amp; London"))
-        assertEquals("温度18°C", WebSearch.decodeEntities("温度18&#176;C"))
-        assertTrue(WebSearch.decodeEntities("a&nbsp;b") == "a b")
+        assertEquals("巴黎 & London", SearchApi.decodeEntities("巴黎 &amp; London"))
+        assertEquals("温度18°C", SearchApi.decodeEntities("温度18&#176;C"))
+        assertTrue(SearchApi.decodeEntities("a&nbsp;b") == "a b")
     }
 
     @Test
     fun `RSS 为空或没结果时不认领`() {
-        assertNull(WebSearch.parseBingResult(null))
-        assertNull(WebSearch.parseBingResult(""))
-        assertNull(WebSearch.parseBingResult("<rss><channel></channel></rss>"))
+        assertNull(SearchApi.parseBingResult(null))
+        assertNull(SearchApi.parseBingResult(""))
+        assertNull(SearchApi.parseBingResult("<rss><channel></channel></rss>"))
     }
 
     @Test
     fun `搜索 URL 用必应 RSS 并且做了编码`() {
-        val url = WebSearch.searchRssUrl("量子纠缠")!!
+        val url = SearchApi.searchRssUrl("量子纠缠")!!
         assertTrue("实际：$url", url.startsWith("https://cn.bing.com/search?q="))
         assertTrue("实际：$url", url.endsWith("&format=rss"))
-        assertNull(WebSearch.searchRssUrl("  "))
+        assertNull(SearchApi.searchRssUrl("  "))
     }
 
     @Test
     fun `搜索结果里第一条候选标题要能取出来`() {
         val raw = "{\"query\":{\"search\":[{\"title\":\"量子纠缠\"},{\"title\":\"量子力学\"}]}}"
-        assertEquals("量子纠缠", WebSearch.firstTitle(raw))
-        assertNull(WebSearch.firstTitle("{\"query\":{\"search\":[]}}"))
+        assertEquals("量子纠缠", SearchApi.firstTitle(raw))
+        assertNull(SearchApi.firstTitle("{\"query\":{\"search\":[]}}"))
     }
 
     @Test
     fun `摘要清洗：去括号音标并截断到句子边界`() {
-        val cleaned = WebSearch.cleanSnippet(
+        val cleaned = SearchApi.cleanSnippet(
             "人工智能（英语：AI）是计算机科学的分支。它研究智能行为。第三句不应该出现在这么短的结果里。",
             maxLength = 40
         )
@@ -132,8 +132,8 @@ class WebSearchTest {
 
     @Test
     fun `实时天气整理成有结构的一句话 包含数据和来源`() {
-        val text = WebSearch.composeWeather(
-            WebSearch.WeatherSnapshot(
+        val text = SearchApi.composeWeather(
+            SearchApi.WeatherSnapshot(
                 city = "北京", temp = 12.4, feelsLike = 10.2, humidity = 55,
                 wind = 9.3, desc = "小雨", high = 22.1, low = 8.4, rainChance = 30
             )
@@ -147,8 +147,8 @@ class WebSearchTest {
 
     @Test
     fun `搜索结果整理成「标题 + 摘要 + 来源」`() {
-        val text = WebSearch.composeSearch(
-            WebSearch.SearchResult("人工智能", "是计算机科学的分支。", "https://x", "维基百科")
+        val text = SearchApi.composeSearch(
+            SearchApi.SearchResult("人工智能", "是计算机科学的分支。", "https://x", "维基百科")
         )
         assertTrue("实际：$text", text.contains("我上网查了「人工智能」"))
         assertTrue("实际：$text", text.contains("来源：维基百科"))
@@ -158,13 +158,13 @@ class WebSearchTest {
     fun `内置城市都带了联网用的经纬度`() {
         val beijing = CityClimate.find("北京天气")!!
         assertTrue(beijing.lat > 30 && beijing.lon > 100)
-        assertTrue(WebSearch.forecastUrl(beijing.lat, beijing.lon).contains("latitude=39.9"))
+        assertTrue(SearchApi.forecastUrl(beijing.lat, beijing.lon).contains("latitude=39.9"))
     }
 
     @Test
     fun `WMO 天气代码认得全`() {
-        assertEquals("晴", WebSearch.weatherText(0))
-        assertEquals("雷阵雨伴冰雹", WebSearch.weatherText(96))
-        assertEquals("天气状况未知", WebSearch.weatherText(null))
+        assertEquals("晴", SearchApi.weatherText(0))
+        assertEquals("雷阵雨伴冰雹", SearchApi.weatherText(96))
+        assertEquals("天气状况未知", SearchApi.weatherText(null))
     }
 }

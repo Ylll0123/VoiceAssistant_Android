@@ -14,7 +14,7 @@ package com.example.voiceassistant.assistant
  * 联网是按顺序串行的：**先免费搜索，再付费问云端**，
  * 所以搜索命中就根本不会花 token（见 [AnswerRouter]）。
  *
- * 纯逻辑，不碰网络本身（真正上网在 [com.example.voiceassistant.data.WebSearch]），
+ * 纯逻辑，不碰网络本身（真正上网在 [com.example.voiceassistant.network.SearchApi]），
  * 所以决定"该不该联网"这件事可以在单元测试里断言。
  */
 object OnlineQuery {

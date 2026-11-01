@@ -2,6 +2,8 @@ package com.example.voiceassistant.data
 
 import com.example.voiceassistant.assistant.AssistantEngine
 import com.example.voiceassistant.assistant.AssistantResponse
+import com.example.voiceassistant.handler.llm.CloudLlmHandler
+import com.example.voiceassistant.network.LlmMessage
 
 /**
  * 会话状态：消息列表 + 对话引擎（含多轮上下文）。
@@ -108,9 +110,9 @@ class ChatSession(
      *
      * @param maxTurns 最多几轮（一轮 = 用户 + 助手各一句）
      */
-    fun recentTurns(maxTurns: Int): List<CloudBrain.ChatTurn> {
+    fun recentTurns(maxTurns: Int): List<LlmMessage> {
         if (maxTurns <= 0) return emptyList()
-        val turns = mutableListOf<CloudBrain.ChatTurn>()
+        val turns = mutableListOf<LlmMessage>()
         var index = items.lastIndex
         while (index >= 1 && turns.size < maxTurns * 2) {
             val assistant = items[index]
@@ -124,8 +126,8 @@ class ChatSession(
                 index -= 1
                 continue
             }
-            turns += CloudBrain.ChatTurn.assistant(assistant.text)
-            turns += CloudBrain.ChatTurn.user(user.text)
+            turns += LlmMessage.assistant(assistant.text)
+            turns += LlmMessage.user(user.text)
             index -= 2
         }
         return turns.asReversed()

@@ -2,12 +2,13 @@ package com.example.voiceassistant.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.voiceassistant.handler.llm.CloudLlmHandler
 
 /**
  * 应用设置的本地持久化（SharedPreferences，零新增依赖）。
  *
  * 之前设置页里改完语速，下次打开又回到 1.0，就是因为没有这一层。
- * 现在所有开关和滑块都会立刻写盘，启动时 [MainActivity] 再整体灌回引擎和语音控制器。
+ * 现在所有开关和滑块都会立刻写盘，启动时 [com.example.voiceassistant.ui.VoiceAssistantActivity] 再整体灌回引擎和语音控制器。
  *
  * 「待学习问题」也放在这里：它最多 40 条短文本，没必要单独建表。
  */
@@ -89,7 +90,7 @@ class AppSettings(context: Context) {
 
     /**
      * 工作方式：0 不用云端 / 1 本地优先 / 2 AI 优先。
-     * 存的是 [CloudBrain.CloudMode.code]，读出来时用 [CloudBrain.CloudMode.of] 还原。
+     * 存的是 [CloudLlmHandler.CloudMode.code]，读出来时用 [CloudLlmHandler.CloudMode.of] 还原。
      */
     var cloudMode: Int
         get() = prefs.getInt(KEY_CLOUD_MODE, 0)
@@ -110,27 +111,27 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_CLOUD_MODEL, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_CLOUD_MODEL, value.trim()).apply()
 
-    /** 人设（system prompt）：留空表示用 [CloudBrain.DEFAULT_SYSTEM_PROMPT] */
+    /** 人设（system prompt）：留空表示用 [CloudLlmHandler.DEFAULT_SYSTEM_PROMPT] */
     var cloudPrompt: String
         get() = prefs.getString(KEY_CLOUD_PROMPT, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_CLOUD_PROMPT, value).apply()
 
-    /** 读成一份完整配置对象，交给 [CloudBrain] 使用 */
-    fun cloudConfig(): CloudBrain.CloudConfig = CloudBrain.CloudConfig(
+    /** 读成一份完整配置对象，交给 [CloudLlmHandler] 使用 */
+    fun cloudConfig(): CloudLlmHandler.CloudConfig = CloudLlmHandler.CloudConfig(
         enabled = cloudEnabled,
-        mode = CloudBrain.CloudMode.of(cloudMode),
+        mode = CloudLlmHandler.CloudMode.of(cloudMode),
         baseUrl = cloudEndpoint,
         apiKey = cloudKey,
         model = cloudModel,
         // 人设保存过就写死在本机了，老版本那份长人设要靠 migratePrompt 换成极简版，
         // 否则改常量对已经保存过配置的用户完全不生效
-        systemPrompt = CloudBrain.migratePrompt(
-            cloudPrompt.ifBlank { CloudBrain.DEFAULT_SYSTEM_PROMPT }
+        systemPrompt = CloudLlmHandler.migratePrompt(
+            cloudPrompt.ifBlank { CloudLlmHandler.DEFAULT_SYSTEM_PROMPT }
         )
     )
 
     /** 保存一份完整配置对象（设置页点保存时调用） */
-    fun saveCloud(config: CloudBrain.CloudConfig) {
+    fun saveCloud(config: CloudLlmHandler.CloudConfig) {
         cloudEnabled = config.enabled
         cloudMode = config.mode.code
         cloudEndpoint = config.baseUrl

@@ -12,7 +12,6 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.voiceassistant.MainActivity
 import com.example.voiceassistant.R
 import com.example.voiceassistant.memory.MemoryEntry
 import com.example.voiceassistant.memory.MemoryRepository
@@ -38,8 +37,8 @@ class MemoryFragment : Fragment() {
     private lateinit var tvPendingEmpty: TextView
     private lateinit var pendingContainer: LinearLayout
 
-    private val host: MainActivity
-        get() = requireActivity() as MainActivity
+    private val host: VoiceAssistantActivity
+        get() = requireActivity() as VoiceAssistantActivity
 
     private val repository: MemoryRepository?
         get() = host.session.engine.memoryRepository()

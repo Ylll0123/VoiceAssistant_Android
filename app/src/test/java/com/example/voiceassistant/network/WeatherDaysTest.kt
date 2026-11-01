@@ -1,4 +1,4 @@
-package com.example.voiceassistant.data
+package com.example.voiceassistant.network
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -28,7 +28,7 @@ class WeatherDaysTest {
 
     @Test
     fun `今天用实测值`() {
-        val today = WebSearch.parseOpenMeteo(forecastJson, "上海")!!
+        val today = SearchApi.parseOpenMeteo(forecastJson, "上海")!!
         assertEquals(21.5, today.temp, 0.01)
         assertEquals("晴间多云", today.desc)
         assertEquals(60, today.humidity)
@@ -37,7 +37,7 @@ class WeatherDaysTest {
 
     @Test
     fun `明天用预报里的第二天`() {
-        val tomorrow = WebSearch.parseOpenMeteo(forecastJson, "上海", dayOffset = 1)!!
+        val tomorrow = SearchApi.parseOpenMeteo(forecastJson, "上海", dayOffset = 1)!!
         assertEquals(19.5, tomorrow.temp, 0.01)
         assertEquals(12.0, tomorrow.low!!, 0.01)
         assertEquals("小雨", tomorrow.desc)
@@ -47,29 +47,29 @@ class WeatherDaysTest {
 
     @Test
     fun `后天也能取到`() {
-        val day = WebSearch.parseOpenMeteo(forecastJson, "上海", dayOffset = 2)!!
+        val day = SearchApi.parseOpenMeteo(forecastJson, "上海", dayOffset = 2)!!
         assertEquals(17.0, tomorrowHigh(day), 0.01)
         assertEquals("中雨", day.desc)
         assertEquals(2, day.dayOffset)
     }
 
-    private fun tomorrowHigh(snapshot: WebSearch.WeatherSnapshot): Double = snapshot.temp
+    private fun tomorrowHigh(snapshot: SearchApi.WeatherSnapshot): Double = snapshot.temp
 
     @Test
     fun `预报天数写进请求地址`() {
-        assertTrue(WebSearch.forecastUrl(31.2, 121.4).contains("forecast_days=1"))
-        assertTrue(WebSearch.forecastUrl(31.2, 121.4, 2).contains("forecast_days=2"))
+        assertTrue(SearchApi.forecastUrl(31.2, 121.4).contains("forecast_days=1"))
+        assertTrue(SearchApi.forecastUrl(31.2, 121.4, 2).contains("forecast_days=2"))
         // 天气代码也要一起要，否则预报日没有"小雨 / 阴"这种描述
-        assertTrue(WebSearch.forecastUrl(31.2, 121.4, 2).contains("daily=weather_code"))
+        assertTrue(SearchApi.forecastUrl(31.2, 121.4, 2).contains("daily=weather_code"))
     }
 
     @Test
     fun `回答里要说清是哪一天`() {
-        val snapshot = WebSearch.WeatherSnapshot(
+        val snapshot = SearchApi.WeatherSnapshot(
             city = "上海", temp = 19.0, desc = "小雨", high = 19.5, low = 12.0,
             rainChance = 80, dayOffset = 1
         )
-        val text = WebSearch.composeWeather(snapshot, "明天")
+        val text = SearchApi.composeWeather(snapshot, "明天")
         assertTrue("实际：$text", text.contains("明天"))
         assertTrue("实际：$text", text.contains("12℃~19.5℃"))
         assertTrue("实际：$text", text.contains("带把伞"))
@@ -77,10 +77,10 @@ class WeatherDaysTest {
 
     @Test
     fun `按定位查到的天气说「你那里」而不是城市名`() {
-        val snapshot = WebSearch.WeatherSnapshot(
+        val snapshot = SearchApi.WeatherSnapshot(
             city = "Shanghai", temp = 20.0, desc = "晴", fromLocation = true
         )
-        val text = WebSearch.composeWeather(snapshot, "今天")
+        val text = SearchApi.composeWeather(snapshot, "今天")
         assertTrue("实际：$text", text.contains("你那里"))
         assertTrue("实际：$text", !text.contains("Shanghai"))
     }
@@ -91,15 +91,15 @@ class WeatherDaysTest {
             {"nearest_area":[{"areaName":[{"value":"Shanghai"}],
              "country":[{"value":"China"}]}]}
         """.trimIndent()
-        assertEquals("Shanghai（China）", WebSearch.parseWttrCity(raw))
-        assertNull(WebSearch.parseWttrCity(""))
-        assertNull(WebSearch.parseWttrCity("{"))
+        assertEquals("Shanghai（China）", SearchApi.parseWttrCity(raw))
+        assertNull(SearchApi.parseWttrCity(""))
+        assertNull(SearchApi.parseWttrCity("{"))
     }
 
     @Test
     fun `坏数据不会崩`() {
-        assertNull(WebSearch.parseOpenMeteo("", "上海"))
-        assertNull(WebSearch.parseOpenMeteo("{}", "上海"))
-        assertNull(WebSearch.parseOpenMeteo("{", "上海", 1))
+        assertNull(SearchApi.parseOpenMeteo("", "上海"))
+        assertNull(SearchApi.parseOpenMeteo("{}", "上海"))
+        assertNull(SearchApi.parseOpenMeteo("{", "上海", 1))
     }
 }

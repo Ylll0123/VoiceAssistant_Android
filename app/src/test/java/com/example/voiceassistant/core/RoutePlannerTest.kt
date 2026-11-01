@@ -1,5 +1,10 @@
-package com.example.voiceassistant.assistant
+package com.example.voiceassistant.core
 
+import com.example.voiceassistant.assistant.AssistantEngine
+import com.example.voiceassistant.assistant.CityClimate
+import com.example.voiceassistant.assistant.DialogContext
+import com.example.voiceassistant.assistant.OnlineQuery
+import com.example.voiceassistant.assistant.QueryUnderstanding
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -14,7 +19,7 @@ import org.junit.Test
  * - 该联网的没联网（天气 / 事实）；
  * - token 花得快（能搜到的就不问云端，联网路线不带云端兜底）。
  */
-class AnswerRouterTest {
+class RoutePlannerTest {
 
     private fun understand(text: String, memory: List<String> = emptyList()) =
         QueryUnderstanding.analyze(text, memory)
@@ -27,7 +32,7 @@ class AnswerRouterTest {
         cloudFirst: Boolean = false,
         city: CityClimate.CityClimate? = null,
         localText: String = "本地答案"
-    ) = AnswerRouter.decide(
+    ) = RoutePlanner.decide(
         raw = raw,
         intent = intent,
         localText = localText,
@@ -49,7 +54,7 @@ class AnswerRouterTest {
         )
         for ((raw, intent) in cases) {
             val d = decide(raw, intent)
-            assertEquals("$raw 应走本地", AnswerRouter.Route.LOCAL, d.route)
+            assertEquals("$raw 应走本地", RoutePlanner.Route.LOCAL, d.route)
             assertFalse("$raw 不该联网", d.needsNetwork)
         }
     }
@@ -57,20 +62,20 @@ class AnswerRouterTest {
     @Test
     fun `天气必须联网，没说城市就按定位查`() {
         val withCity = decide("北京天气怎么样", "weather")
-        assertEquals(AnswerRouter.Route.WEB, withCity.route)
+        assertEquals(RoutePlanner.Route.WEB, withCity.route)
         assertEquals(OnlineQuery.Kind.WEATHER, withCity.plan!!.kind)
         assertEquals("北京", withCity.plan!!.city!!.city)
         // 天气是数据问题，不需要再问大模型兜底（省 token）
         assertFalse(withCity.cloudFallback)
 
         val noCity = decide("今天天气怎么样", "weather")
-        assertEquals(AnswerRouter.Route.WEB, noCity.route)
+        assertEquals(RoutePlanner.Route.WEB, noCity.route)
         assertNull(noCity.plan!!.city)
     }
 
     @Test
     fun `上一句聊过城市时，「那里」也能查`() {
-        val d = AnswerRouter.decide(
+        val d = RoutePlanner.decide(
             raw = "那里多少度",
             intent = "weather",
             localText = "常年…",
@@ -80,7 +85,7 @@ class AnswerRouterTest {
             cloudFirst = false,
             fallbackCity = CityClimate.find("上海")
         )
-        assertEquals(AnswerRouter.Route.WEB, d.route)
+        assertEquals(RoutePlanner.Route.WEB, d.route)
         assertEquals("上海", d.plan!!.city!!.city)
     }
 
@@ -94,14 +99,14 @@ class AnswerRouterTest {
     @Test
     fun `出门带伞这类也要实时天气`() {
         val d = decide("今天出门要带伞吗", "outing")
-        assertEquals(AnswerRouter.Route.WEB, d.route)
+        assertEquals(RoutePlanner.Route.WEB, d.route)
         assertEquals(OnlineQuery.Kind.WEATHER, d.plan!!.kind)
     }
 
     @Test
     fun `用户明确说帮我查：先联网搜，搜不到才问云端`() {
         val d = decide("帮我查一下量子纠缠", AssistantEngine.INTENT_FALLBACK)
-        assertEquals(AnswerRouter.Route.WEB, d.route)
+        assertEquals(RoutePlanner.Route.WEB, d.route)
         assertEquals(OnlineQuery.Kind.SEARCH, d.plan!!.kind)
         assertTrue(d.cloudFallback)
     }
@@ -110,7 +115,7 @@ class AnswerRouterTest {
     fun `本地答不上来的事实问题：先免费搜，再付费问云端`() {
         val raw = "量子纠缠到底是什么"
         val d = decide(raw, AssistantEngine.INTENT_FALLBACK)
-        assertEquals(AnswerRouter.Route.WEB, d.route)
+        assertEquals(RoutePlanner.Route.WEB, d.route)
         assertEquals(OnlineQuery.Kind.SEARCH, d.plan!!.kind)
         assertTrue("搜不到时应该还能降级到云端", d.cloudFallback)
         assertFalse("搜索词不该是整句话：${d.plan!!.query}", d.plan!!.query.contains("到底"))
@@ -119,7 +124,7 @@ class AnswerRouterTest {
     @Test
     fun `主观和情绪问题不搜索：直接问云端`() {
         val opinion = decide("我到底该不该换个环境", AssistantEngine.INTENT_THOUGHT)
-        assertEquals(AnswerRouter.Route.CLOUD, opinion.route)
+        assertEquals(RoutePlanner.Route.CLOUD, opinion.route)
         assertNull(opinion.plan)
     }
 
@@ -127,42 +132,33 @@ class AnswerRouterTest {
     fun `没配云端也不联网时：本地兜底`() {
         val raw = "量子纠缠到底是什么"
         val d = decide(raw, AssistantEngine.INTENT_FALLBACK, online = false, cloud = false)
-        assertEquals(AnswerRouter.Route.LOCAL, d.route)
+        assertEquals(RoutePlanner.Route.LOCAL, d.route)
         assertEquals("本地答案", d.fallbackText)
     }
 
     @Test
     fun `联网关了但配了云端：直接问云端`() {
         val d = decide("量子纠缠到底是什么", AssistantEngine.INTENT_FALLBACK, online = false, cloud = true)
-        assertEquals(AnswerRouter.Route.CLOUD, d.route)
+        assertEquals(RoutePlanner.Route.CLOUD, d.route)
     }
 
     @Test
     fun `教学流程永远不联网不问云端`() {
         val raw = "记住：下班了 = 早点回家"
         val d = decide(raw, AssistantEngine.INTENT_TAUGHT, cloudFirst = true)
-        assertEquals(AnswerRouter.Route.LOCAL, d.route)
+        assertEquals(RoutePlanner.Route.LOCAL, d.route)
     }
 
     @Test
     fun `AI 优先时本地答好的也过一遍大模型，但天气仍然先联网`() {
         assertEquals(
-            AnswerRouter.Route.CLOUD,
+            RoutePlanner.Route.CLOUD,
             decide("现在几点了", "time", cloudFirst = true).route
         )
         assertEquals(
-            AnswerRouter.Route.WEB,
+            RoutePlanner.Route.WEB,
             decide("北京天气怎么样", "weather", cloudFirst = true).route
         )
-    }
-
-    @Test
-    fun `只有存在指代或追问时才带历史，省 token`() {
-        val followUp = understand("它怎么样", listOf("上海天气怎么样"))
-        assertTrue(AnswerRouter.needsHistory(followUp))
-
-        val standalone = understand("量子纠缠到底是什么")
-        assertFalse(AnswerRouter.needsHistory(standalone))
     }
 
     @Test

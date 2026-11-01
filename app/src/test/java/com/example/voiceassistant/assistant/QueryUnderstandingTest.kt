@@ -1,6 +1,7 @@
 package com.example.voiceassistant.assistant
 
-import com.example.voiceassistant.data.CloudBrain
+import com.example.voiceassistant.handler.llm.CloudLlmHandler
+import com.example.voiceassistant.core.TextCleaner
 import com.example.voiceassistant.data.ChatMessage
 import com.example.voiceassistant.data.ChatSession
 import org.junit.Assert.assertEquals
@@ -168,13 +169,13 @@ class QueryUnderstandingTest {
     fun `发给云端的是简要问题`() {
         val raw = "明天我要去上海出差，那边天气怎么样，要不要带伞"
         val brief = QueryUnderstanding.analyze(raw).brief
-        assertEquals(brief, CloudBrain.pickInput(raw, brief))
+        assertEquals(brief, CloudLlmHandler.pickInput(raw, brief))
     }
 
     @Test
     fun `归纳失败时退回原话`() {
-        assertEquals("原话", CloudBrain.pickInput("原话", ""))
-        assertEquals("原话", CloudBrain.pickInput("原话", "这句归纳得比原话还长很多"))
+        assertEquals("原话", CloudLlmHandler.pickInput("原话", ""))
+        assertEquals("原话", CloudLlmHandler.pickInput("原话", "这句归纳得比原话还长很多"))
     }
 
     @Test
@@ -182,16 +183,16 @@ class QueryUnderstandingTest {
         // 「它怎么样」云端看不懂，必须发「上海怎么样」
         val result = QueryUnderstanding.analyze("它怎么样", memory = listOf("上海天气怎么样"))
         assertEquals("上海怎么样", result.brief)
-        assertEquals("上海怎么样", CloudBrain.pickInput("它怎么样", result.brief))
+        assertEquals("上海怎么样", CloudLlmHandler.pickInput("它怎么样", result.brief))
     }
 
     @Test
     fun `历史过长会被截断`() {
         val long = "一二三四五六七八九十".repeat(10)
-        val clipped = CloudBrain.clip(long)
-        assertTrue(clipped.length <= CloudBrain.MAX_TURN_CHARS + 1)
+        val clipped = TextCleaner.clip(long)
+        assertTrue(clipped.length <= TextCleaner.DEFAULT_CLIP_CHARS + 1)
         assertTrue(clipped.endsWith("…"))
-        assertEquals("短的", CloudBrain.clip("短的"))
+        assertEquals("短的", TextCleaner.clip("短的"))
     }
 
     // ------------------------------------------------------------ ⑧ 思考气泡

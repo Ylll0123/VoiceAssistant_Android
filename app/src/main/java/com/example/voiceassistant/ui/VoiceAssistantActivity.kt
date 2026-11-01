@@ -1,4 +1,4 @@
-package com.example.voiceassistant
+package com.example.voiceassistant.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -20,41 +20,49 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
-import com.example.voiceassistant.assistant.AnswerRouter
+import com.example.voiceassistant.R
+import com.example.voiceassistant.handler.llm.CloudCache
+import com.example.voiceassistant.handler.llm.CloudLlmHandler
+import com.example.voiceassistant.tool.ToolIntent
 import com.example.voiceassistant.assistant.AssistantConfig
 import com.example.voiceassistant.assistant.AssistantEngine
 import com.example.voiceassistant.assistant.CityClimate
 import com.example.voiceassistant.assistant.DialogCorpus
 import com.example.voiceassistant.assistant.KnowledgeBase
 import com.example.voiceassistant.assistant.NgramModel
+import com.example.voiceassistant.assistant.QueryUnderstanding
 import com.example.voiceassistant.assistant.ReplyCrafter
 import com.example.voiceassistant.assistant.ThoughtBank
-import com.example.voiceassistant.assistant.AssistantResponse
-import com.example.voiceassistant.assistant.OnlineQuery
-import com.example.voiceassistant.assistant.QueryUnderstanding
+import com.example.voiceassistant.core.AssistantRouter
+import com.example.voiceassistant.core.HistoryManager
+import com.example.voiceassistant.core.RoutePlanner
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatSession
-import com.example.voiceassistant.data.CloudBrain
-import com.example.voiceassistant.data.CloudCache
-import com.example.voiceassistant.data.WebSearch
+import com.example.voiceassistant.handler.qa.QaLib
+import com.example.voiceassistant.handler.qa.QaLocalHandler
+import com.example.voiceassistant.handler.web.WebHandler
 import com.example.voiceassistant.memory.MemorySeed
+import com.example.voiceassistant.network.LlmResult
 import com.example.voiceassistant.memory.SqliteMemoryRepository
-import com.example.voiceassistant.speech.SpeechController
-import com.example.voiceassistant.ui.ChatFragment
-import com.example.voiceassistant.ui.MemoryFragment
-import com.example.voiceassistant.ui.SettingsFragment
-import com.example.voiceassistant.ui.SkillsFragment
+import com.example.voiceassistant.service.AndroidAudioController
+import com.example.voiceassistant.service.AsrManager
+import com.example.voiceassistant.service.TtsManager
+import com.example.voiceassistant.tool.ToolHandler
 import java.io.File
 
 /**
- * 应用外壳：底部导航 + 三个页面 + 全局语音控制。
+ * UI 层：**应用外壳 + 语音入口**。
  *
- * 分工：
- * - Activity：语音识别 / 播报、会话状态、页面切换
- * - Fragment：只负责本页的展示与交互
- * - [ChatSession]：消息列表 + 引擎上下文，跨页面共享，所以切页不丢对话
+ * 这一层只做四件事，不写任何业务判断：
+ * 1. 唤起录音（[AsrManager]）/ 播放语音（[TtsManager]）/ 申请麦克风权限；
+ * 2. 把识别出来的一串候选文本交给调度核心（[AssistantRouter]）；
+ * 3. 把调度结果交给 [HistoryManager] 落盘，并显示在界面上；
+ * 4. 底部导航切换页面。
+ *
+ * 「这句话该本地答还是联网还是问云端」不在这一层——全在 core 与 handler 里。
+ * 所以这一层很薄，改业务逻辑时基本不用碰它。
  */
-class MainActivity : AppCompatActivity(), SpeechController.Listener {
+class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsManager.Listener {
 
     enum class Tab { CHAT, SKILLS, MEMORY, SETTINGS }
 
@@ -83,22 +91,15 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
      */
     private var lastWeatherCity: CityClimate.CityClimate? = null
 
-    /** 联网 runner：串行执行，避免同时打出去好几个请求 */
+    /** 联网 runner：单线程串行执行，保证同一时刻只有一个请求在飞 */
     private val netExecutor = java.util.concurrent.Executors.newSingleThreadExecutor {
-        Thread(it, "web-search").apply { isDaemon = true }
+        Thread(it, "assistant-net").apply { isDaemon = true }
     }
 
-    /** 会话状态（消息 + 引擎 + 本地记忆库 + 小模型），整个应用共享一份 */
-    val session: ChatSession by lazy {
-        ChatSession(
-            AssistantEngine(
-                memory = SqliteMemoryRepository(applicationContext),
-                model = localModel
-            )
-        )
-    }
+    lateinit var asr: AsrManager
+        private set
 
-    lateinit var speech: SpeechController
+    lateinit var tts: TtsManager
         private set
 
     var speakEnabled: Boolean = true
@@ -132,11 +133,11 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     /**
      * 云端大模型（AI 大脑）配置。
      *
-     * 默认全部关闭：没填 Key 就是一个纯粹的离线助手，行为与之前完全一致。
+     * 默认全部关闭：没填 Key 就是一个纯粹的离线助手。
      * 用户在设置页填了接口和 Key 之后，本地答不好的问题会交给它，
      * 失败（超时 / Key 错 / 没网）时自动用本地答案兜底。
      */
-    var cloudConfig: CloudBrain.CloudConfig = CloudBrain.CloudConfig()
+    var cloudConfig: CloudLlmHandler.CloudConfig = CloudLlmHandler.CloudConfig()
         private set
 
     private lateinit var ivTabChat: ImageView
@@ -163,6 +164,36 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
                 Toast.makeText(this, R.string.error_no_permission, Toast.LENGTH_SHORT).show()
             }
         }
+
+    /** 会话状态（消息 + 引擎），整个应用共享一份 */
+    val session: ChatSession by lazy {
+        ChatSession(
+            AssistantEngine(
+                memory = SqliteMemoryRepository(applicationContext),
+                model = localModel
+            )
+        )
+    }
+
+    /** 对话历史：只负责"记几轮、给云端时截多长" */
+    private val history: HistoryManager by lazy { HistoryManager(session) }
+
+    /**
+     * 调度核心：本地工具 → 本地问答 → 按需联网 → 云端大模型 → 本地兜底。
+     *
+     * Activity 只管把输入丢进去、把结果拿出来，中间怎么走完全由它决定。
+     */
+    private val router: AssistantRouter by lazy {
+        AssistantRouter(
+            history = history,
+            toolHandler = ToolHandler(
+                AndroidAudioController(applicationContext)
+            ),
+            qaHandler = QaLocalHandler(session.engine, QaLib.load(applicationContext)),
+            webHandler = WebHandler,
+            llmHandler = CloudLlmHandler
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -193,8 +224,10 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
         session.ensureWelcome(getString(R.string.welcome))
 
-        speech = SpeechController(this)
-        speech.listener = this
+        asr = AsrManager(this)
+        asr.listener = this
+        tts = TtsManager(this)
+        tts.listener = this
 
         // 先把持久化下来的设置整体灌回去，再创建界面，
         // 否则设置页会先按默认值画一遍，再被覆盖，看着像闪一下
@@ -269,8 +302,8 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
         // 离开对话页时，停掉麦克风和播报，避免在别的页面后台抢音频
         if (tab != Tab.CHAT) {
-            speech.cancelListening()
-            speech.stopSpeaking()
+            asr.cancel()
+            tts.stop()
             chatUi?.setMicActive(false)
         }
 
@@ -319,11 +352,11 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     private fun restoreSettings() {
         speakEnabled = settings.speakEnabled
         continuousMode = settings.continuousMode
-        speech.speakEnabled = speakEnabled
+        tts.speakEnabled = speakEnabled
 
         // 指定引擎必须在首次播报前切好，否则这一次还是用旧引擎的声音
         ttsEngine = settings.ttsEngine
-        if (ttsEngine.isNotEmpty()) speech.useEngine(ttsEngine)
+        if (ttsEngine.isNotEmpty()) tts.useEngine(ttsEngine)
 
         replyStyle = settings.replyStyle
         proactiveFollowUp = settings.proactiveFollowUp
@@ -367,13 +400,12 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
             // 模型才学得到「问句的尾巴接答案的开头」，续写才有因果
             model.observePairs(MemorySeed.pairs)
             model.observePairs(KnowledgeBase.trainingPairs())
-            // 思维模式语料：让模型学到这种「接住 + 给路径 + 抛回来」的说话方式，
-            // 代价是模型文件变大（用户允许适当增加占用空间）
+            // 思维模式语料：让模型学到这种「接住 + 给路径 + 抛回来」的说话方式
             model.observeAll(ThoughtBank.allSentences())
             model.observePairs(ReplyCrafter.trainingPairs())
             saveLocalModel()
         } else if (model.pairCount() == 0) {
-            // 旧存档（v2.4 之前）没有问答对，补齐再存一次
+            // 旧存档没有问答对，补齐再存一次
             model.observePairs(MemorySeed.pairs)
             model.observePairs(KnowledgeBase.trainingPairs())
             model.observeAll(ThoughtBank.allSentences())
@@ -394,15 +426,15 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     fun setSpeakEnabled(enabled: Boolean) {
         speakEnabled = enabled
         settings.speakEnabled = enabled
-        speech.speakEnabled = enabled
-        if (!enabled) speech.stopSpeaking()
+        tts.speakEnabled = enabled
+        if (!enabled) tts.stop()
     }
 
     fun setContinuousMode(enabled: Boolean) {
         continuousMode = enabled
         settings.continuousMode = enabled
         if (!enabled) {
-            speech.cancelListening()
+            asr.cancel()
             chatUi?.setMicActive(false)
         }
     }
@@ -411,7 +443,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     fun setTtsEngine(packageName: String) {
         ttsEngine = packageName
         settings.ttsEngine = packageName
-        speech.useEngine(packageName)
+        tts.useEngine(packageName)
     }
 
     fun setReplyStyle(style: Int) {
@@ -451,7 +483,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     }
 
     /** 设置页保存云端配置：立刻写盘并生效 */
-    fun setCloudConfig(config: CloudBrain.CloudConfig) {
+    fun setCloudConfig(config: CloudLlmHandler.CloudConfig) {
         cloudConfig = config
         settings.saveCloud(config)
         // 换了服务商 / 模型，之前缓存的答案不能再复用
@@ -459,14 +491,13 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     }
 
     /** 设置页「测试连接」：在子线程打一次最小请求，结果回调到主线程 */
-    fun testCloud(config: CloudBrain.CloudConfig, onResult: (String) -> Unit) {
+    fun testCloud(config: CloudLlmHandler.CloudConfig, onResult: (String) -> Unit) {
         netExecutor.execute {
-            val result = runCatching { CloudBrain.ping(config) }
-                .getOrElse { CloudBrain.CloudResult.Fail("请求失败：${it.message.orEmpty()}") }
+            val result = runCatching { CloudLlmHandler.ping(config) }
+                .getOrElse { LlmResult.Fail("请求失败：${it.message.orEmpty()}") }
             val text = when (result) {
-                is CloudBrain.CloudResult.Ok ->
-                    "连上了。模型 ${result.model} 回复：${result.text}"
-                is CloudBrain.CloudResult.Fail -> "没连上：${result.reason}"
+                is LlmResult.Ok -> "连上了。模型 ${result.model} 回复：${result.text}"
+                is LlmResult.Fail -> "没连上：${result.reason}"
             }
             mainHandler.post { if (!isFinishing && !isDestroyed) onResult(text) }
         }
@@ -478,16 +509,30 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         restoreSettings()
     }
 
-    // ------------------------------------------------------------------ 对话页交互
+    // ------------------------------------------------------------------ 对话
 
+    /**
+     * 轮次序号。
+     *
+     * 后台那条串行链（联网 → 云端）回来时，如果序号已经不是最新，
+     * 说明用户又说了新的一句——旧结果直接丢弃，绝不上屏。
+     */
+    private var turnSeq = 0
+
+    /** 思考过程小字是否还在显示（答案已上屏后不再追加，免得又冒出一行） */
+    @Volatile
+    private var thinkingActive = false
+
+    /** 麦克风按钮 */
     fun onMicClicked() {
-        if (speech.isListening) {
-            speech.stopListening()
+        if (asr.isListening) {
+            asr.stop()
         } else {
             ensurePermissionThenStart()
         }
     }
 
+    /** 输入框发送 */
     fun onSendClicked(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) {
@@ -497,33 +542,14 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         sendText(trimmed)
     }
 
-    /** 处理一条用户输入（文字或识别结果）：写入会话 → 播报 */
+    /** 处理一条用户输入（文字或识别结果） */
     fun sendText(text: String) = sendCandidates(listOf(text))
-
-    /**
-     * 轮次序号。
-     *
-     * 后台那条串行链（联网 → 云端）回来时，如果序号已经不是最新，
-     * 说明用户又说了新的一句——旧结果直接丢弃，绝不上屏。
-     * 这是「本地答案和云端答案互相打架」的根治办法：**一次只认最新那一轮**。
-     */
-    private var turnSeq = 0
-
-    /** 思考过程小字是否还在显示（答案已上屏后不再追加，免得又冒出一行） */
-    @Volatile
-    private var thinkingActive = false
 
     /**
      * 处理一次识别（可能有多条候选）。
      *
-     * 流程是「先算清楚，再一次性呈现」：
-     * 1. 本地先出答案并做语义理解（切分 / 识别 / 指代消解 / 归纳成简要问题）；
-     * 2. [AnswerRouter] 决定路线：本地 / 联网 / 云端；
-     * 3. 本地路线直接上屏；联网或云端路线**在后台串行跑完**，
-     *    中途只在淡色小字里显示进度，**答案只上屏一次**。
-     *
-     * 引擎会挑一条能理解的说法，如果挑中的不是首选，
-     * 状态栏会显示「听到：xxx」，让用户知道助手是怎么理解的。
+     * 这里只做三件事：显示进度、把输入交给调度核心、把结果上屏播报。
+     * 「该问谁」的判断全部在 [AssistantRouter] 里。
      */
     fun sendCandidates(candidates: List<String>) {
         val cleaned = candidates.map { it.trim() }.filter { it.isNotEmpty() }
@@ -532,50 +558,32 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         turnSeq++
         val seq = turnSeq
 
-        // 本地逻辑分析回看最近 6 条，用于指代消解（「那边」「它」指的是什么）
-        val memory = session.recentUserLines(QueryUnderstanding.LOCAL_MEMORY_TURNS)
-        val raw = cleaned.first()
-        val understanding = QueryUnderstanding.analyze(raw, memory)
-        val response = session.respondOnly(cleaned)
-
-        val decision = AnswerRouter.decide(
-            raw = raw,
-            intent = response.intent,
-            localText = response.text,
-            understanding = understanding,
-            onlineEnabled = AssistantConfig.onlineSearch,
-            cloudReady = cloudConfig.isReady(),
-            cloudFirst = cloudConfig.mode == CloudBrain.CloudMode.CLOUD_FIRST,
-            fallbackCity = lastWeatherCity
-        )
-
-        // 本地路线：零请求，立刻上屏播报
-        if (!decision.needsNetwork) {
-            finishTurn(seq, response.text, response.intent, response.heard, raw)
+        // 本地阶段：理解 + 本地答案 + 路线决策（不碰网络，可主线程执行）
+        val plan = router.plan(cleaned, config())
+        if (!plan.needsNetwork) {
+            // 本地就能答：直接上屏播报，零等待
+            finishTurn(seq, router.replyOf(plan), cleaned.first())
             return
         }
 
-        // 后台串行：联网（免费）→ 云端（付费）→ 本地兜底，跑完才上屏
-        showThinking(seq, understanding, decision)
-        if (!showThinking) {
-            chatUi?.showStatus(
-                if (decision.route == AnswerRouter.Route.WEB) {
-                    getString(R.string.status_online)
-                } else {
-                    getString(R.string.status_cloud_thinking)
-                },
-                highlight = true
-            )
-        }
-        // 历史只有在确有指代 / 追问时才带（每轮都要重发，是纯成本）
-        val history = if (decision.useHistory) {
-            session.recentTurns(CloudBrain.MAX_HISTORY_TURNS)
-                .map { it.copy(content = CloudBrain.clip(it.content)) }
-        } else {
-            emptyList()
-        }
-        netExecutor.execute { runChain(seq, decision, response, understanding, history, raw) }
+        // 需要联网 / 问云端：先显示思考过程，后台跑完再一次性上屏
+        showThinking(seq, plan)
+        router.processAsync(
+            executor = netExecutor,
+            main = mainHandler,
+            input = cleaned,
+            config = config(),
+            onPlan = {},
+            onResult = { reply -> finishTurn(seq, reply, cleaned.first()) }
+        )
     }
+
+    /** 当前生效的运行期配置 */
+    private fun config(): AssistantRouter.Config = AssistantRouter.Config(
+        onlineEnabled = onlineSearchEnabled,
+        cloud = cloudConfig,
+        fallbackCity = lastWeatherCity
+    )
 
     /**
      * 把「理解过程 + 接下来要做什么」以淡色小字逐行显示出来。
@@ -583,13 +591,18 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
      * 每一步间隔一点点，用户能看到它在想什么、正在联网还是正在问 AI，
      * 而不是一闪而过——这也是豆包 / DeepSeek 那种思考过程给人的信任感来源。
      */
-    private fun showThinking(
-        seq: Int,
-        understanding: QueryUnderstanding.Understanding,
-        decision: AnswerRouter.Decision
-    ) {
-        if (!showThinking) return
-        thinkingActive = true
+    private fun showThinking(seq: Int, plan: AssistantRouter.TurnPlan) {
+        thinkingActive = showThinking
+        if (!showThinking) {
+            val waitingText = if (plan.decision.route == RoutePlanner.Route.WEB) {
+                getString(R.string.status_online)
+            } else {
+                getString(R.string.status_cloud_thinking)
+            }
+            chatUi?.showStatus(waitingText, highlight = true)
+            return
+        }
+
         session.startThinking("正在理解…")
         val post = { index: Int, line: String ->
             mainHandler.postDelayed(
@@ -597,174 +610,48 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
                 QueryUnderstanding.STEP_MS * index
             )
         }
-        understanding.steps.forEachIndexed { index, step -> post(index + 1, step) }
-        post(understanding.steps.size + 1, "${decision.note}…")
+        plan.understanding.steps.forEachIndexed { index, step -> post(index + 1, step) }
+        post(plan.understanding.steps.size + 1, "${plan.decision.note}…")
     }
-
-    /**
-     * 串行调度链（**子线程**）：联网 → 云端 → 本地兜底，取第一个成功的结果。
-     *
-     * 顺序是有意为之：联网搜索免费、云端按 token 付费，
-     * 所以能搜到就绝不多花一次调用；[AnswerRouter] 已经把这条路线定好了，
-     * 这里只负责执行，并且**只回传一个结果**（没有"先上屏再替换"这回事）。
-     */
-    private fun runChain(
-        seq: Int,
-        decision: AnswerRouter.Decision,
-        local: AssistantResponse,
-        understanding: QueryUnderstanding.Understanding,
-        history: List<CloudBrain.ChatTurn>,
-        primary: String
-    ) {
-        // ① 联网查询（天气 / 百科），免费
-        val plan = decision.plan
-        if (decision.route == AnswerRouter.Route.WEB && plan != null) {
-            val web = runCatching { executeWeb(plan) }.getOrNull()
-            if (web != null) {
-                if (plan.kind == OnlineQuery.Kind.WEATHER) lastWeatherCity = plan.city
-                finishTurn(seq, web.second, web.first, local.heard, primary)
-                return
-            }
-        }
-
-        // ② 云端大模型（这一步才花钱）
-        val askCloud = decision.route == AnswerRouter.Route.CLOUD ||
-            (decision.cloudFallback && cloudConfig.isReady())
-        if (askCloud) {
-            val input = CloudBrain.pickInput(decision.raw, decision.cloudInput.ifBlank { understanding.brief })
-            val result = runCatching { CloudBrain.call(cloudConfig, history, input, extraSystemForCloud()) }
-                .getOrElse { CloudBrain.CloudResult.Fail("请求失败：${it.message.orEmpty()}") }
-            if (result is CloudBrain.CloudResult.Ok) {
-                // 云端的好答案也喂给本地小模型：要学的是「人怎么问」，所以用原话
-                localModel.observePair(decision.raw, result.text)
-                finishTurn(seq, result.text, AssistantEngine.INTENT_CLOUD, local.heard, primary)
-                return
-            }
-            val reason = (result as CloudBrain.CloudResult.Fail).reason
-            finishTurn(
-                seq,
-                fallbackText(decision, local.text),
-                decision.fallbackIntent,
-                local.heard,
-                primary,
-                statusNote = getString(R.string.status_cloud_fail, reason),
-                speakText = local.text
-            )
-            return
-        }
-
-        // ③ 联网没查到、也没配云端：本地答案 + 一句说明
-        finishTurn(
-            seq,
-            fallbackText(decision, local.text),
-            decision.fallbackIntent,
-            local.heard,
-            primary,
-            statusNote = getString(R.string.status_offline_fail),
-            speakText = local.text
-        )
-    }
-
-    /** 执行一条联网计划；失败返回 null（调用方继续降级） */
-    private fun executeWeb(plan: OnlineQuery.Plan): Pair<String, String>? = when (plan.kind) {
-        OnlineQuery.Kind.WEATHER -> {
-            val offset = plan.dayOffset
-            // 没说城市就按网络定位查，让「天气怎么样」这种问题也有实时答案
-            val snapshot = if (plan.city != null) {
-                WebSearch.fetchWeather(plan.city, offset)
-            } else {
-                WebSearch.fetchWeatherHere(offset)
-            }
-            snapshot?.let { AssistantEngine.INTENT_WEB to WebSearch.composeWeather(it, plan.dayLabel) }
-        }
-        OnlineQuery.Kind.SEARCH -> WebSearch.fetchSummary(plan.query)
-            ?.let { AssistantEngine.INTENT_WEB to WebSearch.composeSearch(it) }
-    }
-
-    /** 兜底文案：说清"没查到"的原因，但不把责任推给用户 */
-    private fun fallbackText(decision: AnswerRouter.Decision, localText: String): String =
-        when (decision.plan?.kind) {
-            OnlineQuery.Kind.WEATHER ->
-                "$localText\n（我想联网查实时天气，这次没连上，上面是本地的常年气候参考。）"
-            OnlineQuery.Kind.SEARCH ->
-                "$localText\n（联网这次没查到，上面是我本地给的分析。）"
-            else -> localText
-        }
 
     /**
      * 结果落地（主线程）：清掉思考过程 → 上屏一次 → 播报。
      *
-     * @param statusNote 状态栏要额外说明的原因（云端失败原因等）
-     * @param speakText 播报用的文本（兜底时只念正文，不念括号里的说明）
+     * @param seq 这一轮的序号；不是最新就丢弃，防止旧答案插回来
      */
-    private fun finishTurn(
-        seq: Int,
-        text: String,
-        intent: String?,
-        heard: String?,
-        primary: String,
-        statusNote: String? = null,
-        speakText: String = text
-    ) {
-        mainHandler.post {
-            if (seq != turnSeq) return@post
-            thinkingActive = false
-            if (isFinishing || isDestroyed) return@post
+    private fun finishTurn(seq: Int, reply: AssistantRouter.Reply, primary: String) {
+        if (seq != turnSeq) return
+        thinkingActive = false
+        if (isFinishing || isDestroyed) return
 
-            session.clearThinking()
-            session.addAssistant(text, intent)
+        history.recordAssistant(reply.text, reply.intent)
 
-            if (heard != null && heard != primary) {
-                chatUi?.showStatus(getString(R.string.status_heard, heard), highlight = true)
-                mainHandler.postDelayed({
-                    if (!speech.isSpeaking) chatUi?.showStatus(getString(R.string.status_idle))
-                }, 2500)
-            } else if (statusNote != null) {
-                chatUi?.showStatus(statusNote)
-            }
-
-            if (speakEnabled) {
-                if (heard == null || heard == primary) {
-                    chatUi?.showStatus(getString(R.string.status_speaking))
-                }
-                speech.speak(speakText)
-            } else {
-                if (heard == null || heard == primary) {
-                    chatUi?.showStatus(statusNote ?: getString(R.string.status_idle))
-                }
-                maybeRestartListening(400)
-            }
+        val heard = reply.heard
+        if (heard != null && heard != primary) {
+            chatUi?.showStatus(getString(R.string.status_heard, heard), highlight = true)
+            mainHandler.postDelayed({
+                if (!tts.isSpeaking) chatUi?.showStatus(getString(R.string.status_idle))
+            }, 2500)
+            return
         }
-    }
 
-    /**
-     * 附加到 system 提示里的上下文：当前时间 + 用户教过的说法。
-     *
-     * 时间让模型答得出「今天」「明天」指的是哪一天；
-     * 教过的说法保证云端不会和用户亲手教的内容唱反调。
-     */
-    private fun extraSystemForCloud(): String {
-        val now = java.time.LocalDateTime.now()
-        val sb = StringBuilder()
-        sb.append("现在是 ${now.year} 年 ${now.monthValue} 月 ${now.dayOfMonth} 日，")
-            .append("${now.hour} 点 ${String.format("%02d", now.minute)} 分左右。")
-
-        // 教过的说法每轮都要跟着请求发出去，是 system 里最贵的一段：
-        // 原来 5 条带引导套话约 150 字，现在砍到 2 条并去掉套话，约 60 字。
-        // 之所以不整个去掉，是因为它能防止云端和用户亲手教的内容唱反调——
-        // 这是功能性需要，不是装饰性的上下文。
-        val taught = session.engine.memoryRepository()?.entries()
-            ?.filter { it.isTaught }
-            ?.take(2)
-            .orEmpty()
-        if (taught.isNotEmpty()) {
-            sb.append("\n教过：")
-            for (entry in taught) {
-                val answer = entry.answer.split('|', '｜').first().trim()
-                sb.append("\n「${entry.question}」→「$answer」")
-            }
+        // 工具让助手闭嘴（静音 / 停止播报）时不再念出来
+        if (reply.intent == ToolIntent.TTS_STOP) {
+            tts.stop()
         }
-        return sb.toString()
+
+        if (reply.error != null) {
+            chatUi?.showStatus(getString(R.string.status_cloud_fail, reply.error))
+        }
+
+        if (speakEnabled) {
+            chatUi?.showStatus(getString(R.string.status_speaking))
+            tts.speak(reply.speakText)
+        } else {
+            chatUi?.showStatus(reply.error?.let { getString(R.string.status_cloud_fail, it) }
+                ?: getString(R.string.status_idle))
+            maybeRestartListening(400)
+        }
     }
 
     /** 顶栏「技能」按钮：即使底部导航被系统栏遮住，也能进技能页 */
@@ -788,17 +675,17 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     }
 
     fun clearChat() {
-        speech.cancelListening()
-        speech.stopSpeaking()
+        asr.cancel()
+        tts.stop()
         // 作废还在后台跑的那一条：序号一变，它的结果就不会再上屏
         turnSeq++
         thinkingActive = false
-        session.clear()
-        session.addAssistant(getString(R.string.welcome))
+        history.clear()
+        session.ensureWelcome(getString(R.string.welcome))
         chatUi?.showStatus(getString(R.string.status_idle))
     }
 
-    // ------------------------------------------------------------------ 语音
+    // ------------------------------------------------------------------ 语音事件
 
     private fun ensurePermissionThenStart() {
         val granted = ContextCompat.checkSelfPermission(
@@ -814,12 +701,12 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     }
 
     private fun startVoiceInput() {
-        if (!speech.isRecognitionAvailable()) {
+        if (!asr.isAvailable()) {
             chatUi?.showStatus(getString(R.string.error_no_recognizer))
             return
         }
-        speech.stopSpeaking()
-        speech.startListening()
+        tts.stop()
+        asr.start()
     }
 
     override fun onReady() {
@@ -861,7 +748,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
      */
     private fun maybeRestartListening(delayMs: Long) {
         if (!continuousMode || !isForeground || currentTab != Tab.CHAT) return
-        if (!speech.isRecognitionAvailable()) return
+        if (!asr.isAvailable()) return
         if (!hasMicPermission()) {
             // 自动续听不能绕过权限申请（那是用户点麦克风时的路径），
             // 静默停在这里，等用户下一次手动点麦克风
@@ -870,7 +757,7 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         }
         mainHandler.postDelayed({
             if (continuousMode && isForeground && currentTab == Tab.CHAT &&
-                !speech.isSpeaking && !speech.isListening
+                !tts.isSpeaking && !asr.isListening
             ) {
                 startVoiceInput()
             }
@@ -893,8 +780,8 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         isForeground = false
         // 退到后台就停掉识别和播报，避免连续对话在后台一直抢占麦克风
         mainHandler.removeCallbacksAndMessages(null)
-        speech.cancelListening()
-        speech.stopSpeaking()
+        asr.cancel()
+        tts.stop()
         chatUi?.setMicActive(false)
         if (::localModel.isInitialized) saveLocalModel()
         super.onPause()
@@ -902,11 +789,10 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
-        speech.release()
+        asr.release()
+        tts.release()
         super.onDestroy()
     }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private companion object {
         const val KEY_TAB = "current_tab"

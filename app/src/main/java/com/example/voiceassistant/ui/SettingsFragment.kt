@@ -10,7 +10,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import com.example.voiceassistant.MainActivity
 import com.example.voiceassistant.R
 import com.example.voiceassistant.assistant.AssistantRules
 import com.example.voiceassistant.assistant.CityClimate
@@ -19,7 +18,7 @@ import com.example.voiceassistant.assistant.Dictionary
 import com.example.voiceassistant.assistant.KnowledgeBase
 import com.example.voiceassistant.assistant.ReplyCrafter
 import com.example.voiceassistant.assistant.SkillCatalog
-import com.example.voiceassistant.data.CloudBrain
+import com.example.voiceassistant.handler.llm.CloudLlmHandler
 import com.example.voiceassistant.memory.MemoryRepository
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
@@ -62,8 +61,8 @@ class SettingsFragment : Fragment() {
     private lateinit var tvCloudModel: TextView
     private lateinit var tvCloudKey: TextView
 
-    private val host: MainActivity
-        get() = requireActivity() as MainActivity
+    private val host: VoiceAssistantActivity
+        get() = requireActivity() as VoiceAssistantActivity
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -137,11 +136,11 @@ class SettingsFragment : Fragment() {
     }
 
     private fun updateEngineLabel() {
-        val current = host.speech.currentEngine()
+        val current = host.tts.currentEngine()
         val label = if (current.isEmpty()) {
             getString(R.string.settings_engine_default)
         } else {
-            host.speech.availableEngines()
+            host.tts.availableEngines()
                 .firstOrNull { it.packageName == current }?.label ?: current
         }
         tvEngine.text = getString(R.string.settings_engine, label)
@@ -153,7 +152,7 @@ class SettingsFragment : Fragment() {
      * 换成 Google 语音服务或其它引擎后语速才真正生效。
      */
     private fun showEnginePicker() {
-        val engines = host.speech.availableEngines()
+        val engines = host.tts.availableEngines()
         if (engines.isEmpty()) {
             toast(getString(R.string.settings_engine_default))
             return
@@ -161,7 +160,7 @@ class SettingsFragment : Fragment() {
         val labels = (listOf(getString(R.string.settings_engine_default)) + engines.map { it.label })
             .toTypedArray()
         val packages = (listOf("") + engines.map { it.packageName })
-        val currentIndex = packages.indexOf(host.speech.currentEngine()).coerceAtLeast(0)
+        val currentIndex = packages.indexOf(host.tts.currentEngine()).coerceAtLeast(0)
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.settings_engine_title)
@@ -170,7 +169,7 @@ class SettingsFragment : Fragment() {
                 updateEngineLabel()
                 dialog.dismiss()
                 // 换完引擎立刻念一句，用户马上知道换成功了
-                host.speech.preview(getString(R.string.settings_engine_preview))
+                host.tts.preview(getString(R.string.settings_engine_preview))
             }
             .setNegativeButton(R.string.action_cancel, null)
             .show()
@@ -217,7 +216,7 @@ class SettingsFragment : Fragment() {
         }
 
         requireView().findViewById<MaterialButton>(R.id.btnGoTeach).setOnClickListener {
-            host.selectTab(MainActivity.Tab.MEMORY)
+            host.selectTab(VoiceAssistantActivity.Tab.MEMORY)
         }
 
         switchLocalModel.isChecked = host.localModelEnabled
@@ -261,7 +260,7 @@ class SettingsFragment : Fragment() {
      * 云端大模型配置。
      *
      * 默认整块是关的：没填 Key 就完全不联网，App 依旧是纯离线助手。
-     * 用户填好之后有两种用法（见 [CloudBrain.CloudMode]），
+     * 用户填好之后有两种用法（见 [CloudLlmHandler.CloudMode]），
      * 任何一种失败都会自动退回本地答案，不会让界面卡住。
      */
     private fun bindCloud() {
@@ -275,9 +274,9 @@ class SettingsFragment : Fragment() {
         toggleCloudMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked) return@addOnButtonCheckedListener
             val mode = when (checkedId) {
-                R.id.btnCloudLocal -> CloudBrain.CloudMode.LOCAL_FIRST
-                R.id.btnCloudCloud -> CloudBrain.CloudMode.CLOUD_FIRST
-                else -> CloudBrain.CloudMode.OFF
+                R.id.btnCloudLocal -> CloudLlmHandler.CloudMode.LOCAL_FIRST
+                R.id.btnCloudCloud -> CloudLlmHandler.CloudMode.CLOUD_FIRST
+                else -> CloudLlmHandler.CloudMode.OFF
             }
             if (host.cloudConfig.mode != mode) applyCloud(host.cloudConfig.copy(mode = mode))
         }
@@ -292,14 +291,14 @@ class SettingsFragment : Fragment() {
         updateCloudState()
     }
 
-    private fun cloudModeButtonId(mode: CloudBrain.CloudMode): Int = when (mode) {
-        CloudBrain.CloudMode.LOCAL_FIRST -> R.id.btnCloudLocal
-        CloudBrain.CloudMode.CLOUD_FIRST -> R.id.btnCloudCloud
+    private fun cloudModeButtonId(mode: CloudLlmHandler.CloudMode): Int = when (mode) {
+        CloudLlmHandler.CloudMode.LOCAL_FIRST -> R.id.btnCloudLocal
+        CloudLlmHandler.CloudMode.CLOUD_FIRST -> R.id.btnCloudCloud
         else -> R.id.btnCloudOff
     }
 
     /** 改完立刻写盘并刷新展示 */
-    private fun applyCloud(config: CloudBrain.CloudConfig) {
+    private fun applyCloud(config: CloudLlmHandler.CloudConfig) {
         host.setCloudConfig(config)
         updateCloudState()
     }
@@ -326,7 +325,7 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    private fun missingFields(cfg: CloudBrain.CloudConfig): List<String> {
+    private fun missingFields(cfg: CloudLlmHandler.CloudConfig): List<String> {
         val missing = mutableListOf<String>()
         if (cfg.baseUrl.isBlank()) missing += getString(R.string.settings_cloud_missing_url)
         if (cfg.apiKey.isBlank()) missing += getString(R.string.settings_cloud_missing_key)
@@ -335,22 +334,22 @@ class SettingsFragment : Fragment() {
     }
 
     /** 按 Base URL 反查服务商名（自己填的地址显示「自定义」） */
-    private fun providerLabel(cfg: CloudBrain.CloudConfig): String {
+    private fun providerLabel(cfg: CloudLlmHandler.CloudConfig): String {
         val base = cfg.baseUrl.trim().trimEnd('/')
-        val hit = CloudBrain.PROVIDERS.firstOrNull { it.baseUrl.isNotEmpty() && it.baseUrl.trimEnd('/') == base }
-        return hit?.label ?: CloudBrain.PROVIDERS.first().label
+        val hit = CloudLlmHandler.PROVIDERS.firstOrNull { it.baseUrl.isNotEmpty() && it.baseUrl.trimEnd('/') == base }
+        return hit?.label ?: CloudLlmHandler.PROVIDERS.first().label
     }
 
     /** 选服务商：只帮忙填地址和模型名，Key 永远要用户自己粘 */
     private fun showProviderPicker() {
-        val labels = CloudBrain.PROVIDERS.map { it.label }.toTypedArray()
+        val labels = CloudLlmHandler.PROVIDERS.map { it.label }.toTypedArray()
         val current = providerLabel(host.cloudConfig)
-        val currentIndex = CloudBrain.PROVIDERS.indexOfFirst { it.label == current }.coerceAtLeast(0)
+        val currentIndex = CloudLlmHandler.PROVIDERS.indexOfFirst { it.label == current }.coerceAtLeast(0)
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.settings_cloud_provider_label)
             .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
-                val picked = CloudBrain.PROVIDERS[which]
+                val picked = CloudLlmHandler.PROVIDERS[which]
                 if (picked.baseUrl.isEmpty()) {
                     dialog.dismiss()
                     showCloudEditor()
@@ -360,8 +359,8 @@ class SettingsFragment : Fragment() {
                             baseUrl = picked.baseUrl,
                             model = picked.model,
                             enabled = true,
-                            mode = if (host.cloudConfig.mode == CloudBrain.CloudMode.OFF) {
-                                CloudBrain.CloudMode.LOCAL_FIRST
+                            mode = if (host.cloudConfig.mode == CloudLlmHandler.CloudMode.OFF) {
+                                CloudLlmHandler.CloudMode.LOCAL_FIRST
                             } else {
                                 host.cloudConfig.mode
                             }
@@ -402,7 +401,7 @@ class SettingsFragment : Fragment() {
         val inputKey = field(cfg.apiKey, getString(R.string.settings_cloud_key_hint))
         val inputModel = field(cfg.model, getString(R.string.settings_cloud_model_hint))
         val inputPrompt = field(
-            if (cfg.systemPrompt == CloudBrain.DEFAULT_SYSTEM_PROMPT) "" else cfg.systemPrompt,
+            if (cfg.systemPrompt == CloudLlmHandler.DEFAULT_SYSTEM_PROMPT) "" else cfg.systemPrompt,
             getString(R.string.settings_cloud_prompt_hint),
             singleLine = false
         )
@@ -422,10 +421,10 @@ class SettingsFragment : Fragment() {
             .setView(container)
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(R.string.action_save) { _, _ ->
-                val next = CloudBrain.CloudConfig(
+                val next = CloudLlmHandler.CloudConfig(
                     enabled = true,
-                    mode = if (cfg.mode == CloudBrain.CloudMode.OFF) {
-                        CloudBrain.CloudMode.LOCAL_FIRST
+                    mode = if (cfg.mode == CloudLlmHandler.CloudMode.OFF) {
+                        CloudLlmHandler.CloudMode.LOCAL_FIRST
                     } else {
                         cfg.mode
                     },
@@ -433,7 +432,7 @@ class SettingsFragment : Fragment() {
                     apiKey = inputKey.text.toString(),
                     model = inputModel.text.toString(),
                     systemPrompt = inputPrompt.text.toString().trim()
-                        .ifBlank { CloudBrain.DEFAULT_SYSTEM_PROMPT }
+                        .ifBlank { CloudLlmHandler.DEFAULT_SYSTEM_PROMPT }
                 )
                 applyCloud(next)
                 switchCloud.isChecked = next.enabled
@@ -506,7 +505,7 @@ class SettingsFragment : Fragment() {
         )
 
         tvRecognizerStatus.text = getString(
-            if (host.speech.isRecognitionAvailable()) R.string.settings_recognizer_ok
+            if (host.asr.isAvailable()) R.string.settings_recognizer_ok
             else R.string.settings_recognizer_missing
         )
 
