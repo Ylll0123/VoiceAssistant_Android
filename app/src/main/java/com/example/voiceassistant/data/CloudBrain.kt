@@ -287,6 +287,8 @@ object CloudBrain {
         if (!config.isReady()) return CloudResult.Fail("还没有配置 AI 接口")
         val url = chatUrl(config.baseUrl)
         if (url.isEmpty()) return CloudResult.Fail("接口地址是空的")
+        // 同一个问题刚问过：直接用上次的答案，不再计费
+        CloudCache.get(input)?.let { return CloudResult.Ok(it, "${config.model}（缓存）") }
 
         val system = if (extraSystem.isBlank()) {
             config.systemPrompt
@@ -306,7 +308,9 @@ object CloudBrain {
         // 自动重试看起来是「更稳」，实际是双倍账单：网络抖动、识别失败、
         // 服务端偶发错误都会让同一句话被计费两次，而语音助手的下一句本来就会重新问。
         // 失败一律退回本地答案，离线可用性不受影响。
-        return attempt(config, url, messages, config.maxTokens, DEFAULT_TEMPERATURE)
+        return attempt(config, url, messages, config.maxTokens, DEFAULT_TEMPERATURE).also {
+            if (it is CloudResult.Ok) CloudCache.put(input, it.text)
+        }
     }
 
     /** 发一次请求并解析结果（不含重试逻辑） */
@@ -490,6 +494,54 @@ object CloudBrain {
         // 但那句才是云端能看懂的，不能因为长了两个字就退回带代词的原话。
         return if (value.length > source.length + 4) source else value
     }
+}
+
+/**
+ * 云端答案的**会话内缓存**。
+ *
+ * ## 为什么需要
+ * 语音助手的对话里，同一句话被问第二次是很常见的：
+ * 用户没听清再问一遍、换个说法问同一件事、连续对话时反复确认。
+ * 每一次都要重新计费，而答案其实是一样的（这是语音助手，不是需要"每次都不一样"的创作场景）。
+ *
+ * ## 设计取舍
+ * - 只在**内存**里存，进程退出就没了：不做持久化的原因是时效——
+ *   「今天天气怎么样」昨天的答案不能留到今天，缓存宁可短命也别答错；
+ * - 容量 24 条，满了丢最早的：一次会话里真正会重复的也就那么几句；
+ * - key 用归一化后的问句（去标点空格），「上海天气怎么样？」和「上海天气怎么样」算同一句。
+ */
+object CloudCache {
+
+    private const val MAX_ENTRIES = 24
+
+    private val entries = java.util.LinkedHashMap<String, String>(MAX_ENTRIES + 1, 0.75f, true)
+
+    /** 归一化：去标点、空格、大小写，让同一句话的两种写法命中同一条 */
+    fun key(input: String): String = input
+        .trim()
+        .lowercase()
+        .replace(Regex("[\\s，,。.！!？?、；;：:\"'“”‘’（）()【】\\[\\]]"), "")
+
+    /** 命中就返回上次的答案，没命中返回 null */
+    @Synchronized
+    fun get(input: String): String? = entries[key(input)]
+
+    @Synchronized
+    fun put(input: String, answer: String) {
+        if (answer.isBlank()) return
+        entries[key(input)] = answer
+        while (entries.size > MAX_ENTRIES) {
+            val oldest = entries.keys.firstOrNull() ?: break
+            entries.remove(oldest)
+        }
+    }
+
+    /** 设置页「清空」/ 换模型时用：换服务商后旧答案不该继续复用 */
+    @Synchronized
+    fun clear() = entries.clear()
+
+    @Synchronized
+    fun size(): Int = entries.size
 }
 
 /**

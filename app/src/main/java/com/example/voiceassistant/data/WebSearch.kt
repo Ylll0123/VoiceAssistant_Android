@@ -37,7 +37,11 @@ object WebSearch {
         val high: Double? = null,
         val low: Double? = null,
         val rainChance: Int? = null,
-        val source: String = "Open-Meteo"
+        val source: String = "Open-Meteo",
+        /** 查的是第几天（0 今天；>0 时 [temp] 是当天的最高气温） */
+        val dayOffset: Int = 0,
+        /** 城市名是定位得来的（用户没说城市），回答里要说清"你那里" */
+        val fromLocation: Boolean = false
     )
 
     /** 一次搜索结果 */
@@ -84,11 +88,16 @@ object WebSearch {
 
     // ------------------------------------------------------------------ 天气
 
-    fun forecastUrl(lat: Double, lon: Double): String =
+    /**
+     * 天气预报地址。
+     *
+     * @param days 要几天（今天 = 1，问「明天」时要 2 天才能取到第 2 列数据）
+     */
+    fun forecastUrl(lat: Double, lon: Double, days: Int = 1): String =
         "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
             "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m" +
-            "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
-            "&timezone=Asia%2FShanghai&forecast_days=1"
+            "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
+            "&timezone=Asia%2FShanghai&forecast_days=${days.coerceIn(1, 7)}"
 
     fun geocodeUrl(name: String): String =
         "https://geocoding-api.open-meteo.com/v1/search?name=${enc(name)}&count=1&language=zh&format=json"
@@ -96,42 +105,101 @@ object WebSearch {
     fun wttrUrl(name: String): String = "https://wttr.in/${enc(name)}?format=j1"
 
     /**
+     * 按**网络定位**查天气：用户没说城市时用（「天气怎么样」「要带伞吗」）。
+     *
+     * wttr.in 不带路径时按请求来源 IP 判断位置，返回 `nearest_area` 里的地名，
+     * 这是唯一一个不用申请 Key、也不用 Android 定位权限就能拿到"我在哪"的办法。
+     */
+    fun locationUrl(): String = "https://wttr.in/?format=j1"
+
+    /**
      * 查某城市的实时天气，多源降级。
+     *
+     * @param dayOffset 0 今天、1 明天、2 后天
      * @return 全部失败返回 null —— 调用方应回落到 [CityClimate.describe] 的常年数据
      */
-    fun fetchWeather(city: CityClimate.CityClimate): WeatherSnapshot? {
+    fun fetchWeather(city: CityClimate.CityClimate, dayOffset: Int = 0): WeatherSnapshot? {
+        val days = (dayOffset + 1).coerceIn(1, 7)
         if (city.lat != 0.0 && city.lon != 0.0) {
-            parseOpenMeteo(httpGet(forecastUrl(city.lat, city.lon)), city.city)?.let { return it }
+            parseOpenMeteo(httpGet(forecastUrl(city.lat, city.lon, days)), city.city, dayOffset)
+                ?.let { return it }
         }
         val coords = parseGeocode(httpGet(geocodeUrl(city.city)))
         if (coords != null) {
-            parseOpenMeteo(httpGet(forecastUrl(coords.first, coords.second)), city.city)?.let { return it }
+            parseOpenMeteo(httpGet(forecastUrl(coords.first, coords.second, days)), city.city, dayOffset)
+                ?.let { return it }
         }
-        parseWttr(httpGet(wttrUrl(city.city)), city.city)?.let { return it }
+        parseWttr(httpGet(wttrUrl(city.city)), city.city, dayOffset)?.let { return it }
         return null
     }
 
-    /** 解析 Open-Meteo forecast 响应 */
-    fun parseOpenMeteo(raw: String?, city: String): WeatherSnapshot? {
+    /** 按定位查「我这里」的天气；失败返回 null */
+    fun fetchWeatherHere(dayOffset: Int = 0): WeatherSnapshot? {
+        val raw = httpGet(locationUrl()) ?: return null
+        val name = parseWttrCity(raw).orEmpty()
+        return parseWttr(raw, name.ifBlank { "你那里" }, dayOffset, fromLocation = true)
+    }
+
+    /** 从 wttr.in 的响应里取定位到的地名 */
+    fun parseWttrCity(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
         val root = JsonLite.parseOrNull(raw) ?: return null
-        val current = JsonLite.obj(JsonLite.get(root, "current"))
-        val temp = JsonLite.num(current["temperature_2m"]) ?: return null
+        val area = JsonLite.obj(JsonLite.arr(JsonLite.get(root, "nearest_area")).firstOrNull())
+        val name = JsonLite.str(JsonLite.get(JsonLite.obj(JsonLite.arr(area["areaName"]).firstOrNull()), "value"))
+            ?.trim()
+        val country = JsonLite.str(
+            JsonLite.get(JsonLite.obj(JsonLite.arr(area["country"]).firstOrNull()), "value")
+        )?.trim()
+        // wttr 给的是拼音地名（Shanghai），配上国家名更好认
+        return when {
+            name.isNullOrEmpty() -> null
+            country.isNullOrEmpty() -> name
+            name.equals(country, ignoreCase = true) -> name
+            else -> "$name（$country）"
+        }
+    }
+
+    /**
+     * 解析 Open-Meteo forecast 响应。
+     *
+     * 今天（[dayOffset] = 0）用 `current` 的实时观测值；
+     * 明天及以后没有实测值，只能用 `daily` 那一天的预报：
+     * 最高 / 最低气温 + 天气代码 + 降水概率。
+     */
+    fun parseOpenMeteo(raw: String?, city: String, dayOffset: Int = 0, fromLocation: Boolean = false): WeatherSnapshot? {
+        if (raw.isNullOrBlank()) return null
+        val root = JsonLite.parseOrNull(raw) ?: return null
         val daily = JsonLite.obj(JsonLite.get(root, "daily"))
-        val firstMax = JsonLite.num(JsonLite.arr(daily["temperature_2m_max"]).firstOrNull())
-        val firstMin = JsonLite.num(JsonLite.arr(daily["temperature_2m_min"]).firstOrNull())
-        val rain = JsonLite.int(JsonLite.arr(daily["precipitation_probability_max"]).firstOrNull())
+        val highs = JsonLite.arr(daily["temperature_2m_max"])
+        val lows = JsonLite.arr(daily["temperature_2m_min"])
+        val rains = JsonLite.arr(daily["precipitation_probability_max"])
+        val codes = JsonLite.arr(daily["weather_code"])
+        val index = dayOffset.coerceIn(0, 6)
+        val high = JsonLite.num(highs.getOrNull(index))
+        val low = JsonLite.num(lows.getOrNull(index))
+        val rain = JsonLite.int(rains.getOrNull(index))
+
+        val current = JsonLite.obj(JsonLite.get(root, "current"))
+        val currentTemp = JsonLite.num(current["temperature_2m"])
+        // 预报日没有体感、湿度这类实测项，只保留能拿到的
+        val temp = (if (index == 0) (currentTemp ?: high) else (high ?: currentTemp)) ?: return null
+
         return WeatherSnapshot(
             city = city,
             temp = temp,
-            feelsLike = JsonLite.num(current["apparent_temperature"]),
-            humidity = JsonLite.int(current["relative_humidity_2m"]),
-            wind = JsonLite.num(current["wind_speed_10m"]),
-            desc = weatherText(JsonLite.int(current["weather_code"])),
-            high = firstMax,
-            low = firstMin,
+            feelsLike = if (index == 0) JsonLite.num(current["apparent_temperature"]) else null,
+            humidity = if (index == 0) JsonLite.int(current["relative_humidity_2m"]) else null,
+            wind = if (index == 0) JsonLite.num(current["wind_speed_10m"]) else null,
+            desc = weatherText(
+                if (index == 0) JsonLite.int(current["weather_code"]) ?: JsonLite.int(codes.getOrNull(index))
+                else JsonLite.int(codes.getOrNull(index))
+            ),
+            high = high,
+            low = low,
             rainChance = rain,
-            source = "Open-Meteo"
+            source = "Open-Meteo",
+            dayOffset = index,
+            fromLocation = fromLocation
         )
     }
 
@@ -145,30 +213,64 @@ object WebSearch {
         return lat to lon
     }
 
-    /** 解析 wttr.in 响应 */
-    fun parseWttr(raw: String?, city: String): WeatherSnapshot? {
+    /**
+     * 解析 wttr.in 响应。
+     *
+     * wttr 一次给三天（`weather` 数组），所以「明天 / 后天」也能从这里取：
+     * 当天用 `current_condition` 的实测值，往后几天用对应那天的 `maxtempC/mintempC`。
+     */
+    fun parseWttr(
+        raw: String?,
+        city: String,
+        dayOffset: Int = 0,
+        fromLocation: Boolean = false
+    ): WeatherSnapshot? {
         if (raw.isNullOrBlank()) return null
         val root = JsonLite.parseOrNull(raw) ?: return null
+        val index = dayOffset.coerceIn(0, 2)
         val current = JsonLite.obj(JsonLite.arr(JsonLite.get(root, "current_condition")).firstOrNull())
-        val temp = JsonLite.num(current["temp_C"]) ?: return null
-        val desc = JsonLite.arr(current["weatherDesc"])
-            .firstOrNull()
-            ?.let { JsonLite.str(JsonLite.get(it, "value")) }
-            ?.let { translateDesc(it) } ?: "天气状况未知"
-        val today = JsonLite.obj(JsonLite.arr(JsonLite.get(root, "weather")).firstOrNull())
+        val days = JsonLite.arr(JsonLite.get(root, "weather"))
+        val day = JsonLite.obj(days.getOrNull(index))
+        if (day.isEmpty() && index != 0) return null
+
+        val dayMax = JsonLite.num(day["maxtempC"])
+        val dayMin = JsonLite.num(day["mintempC"])
+        val currentTemp = JsonLite.num(current["temp_C"])
+        val temp = (if (index == 0) (currentTemp ?: dayMax) else (dayMax ?: currentTemp)) ?: return null
+
+        val desc = if (index == 0) {
+            JsonLite.arr(current["weatherDesc"])
+                .firstOrNull()
+                ?.let { JsonLite.str(JsonLite.get(it, "value")) }
+                ?.let { translateDesc(it) } ?: "天气状况未知"
+        } else {
+            JsonLite.arr(day["hourly"])
+                .mapNotNull { hour ->
+                    JsonLite.arr(JsonLite.get(hour, "weatherDesc")).firstOrNull()
+                        ?.let { JsonLite.str(JsonLite.get(it, "value")) }
+                }
+                .groupingBy { it }
+                .eachCount()
+                .maxByOrNull { it.value }
+                ?.key
+                ?.let { translateDesc(it) } ?: "天气状况未知"
+        }
+
         return WeatherSnapshot(
             city = city,
             temp = temp,
-            feelsLike = JsonLite.num(current["FeelsLikeC"]),
-            humidity = JsonLite.int(current["humidity"]),
-            wind = JsonLite.num(current["windspeedKmph"]),
+            feelsLike = if (index == 0) JsonLite.num(current["FeelsLikeC"]) else null,
+            humidity = if (index == 0) JsonLite.int(current["humidity"]) else null,
+            wind = if (index == 0) JsonLite.num(current["windspeedKmph"]) else null,
             desc = desc,
-            high = JsonLite.num(today["maxtempC"]),
-            low = JsonLite.num(today["mintempC"]),
-            rainChance = JsonLite.arr(today["hourly"])
+            high = dayMax,
+            low = dayMin,
+            rainChance = JsonLite.arr(day["hourly"])
                 .mapNotNull { JsonLite.int(JsonLite.get(it, "chanceofrain")) }
                 .maxOrNull(),
-            source = "wttr.in"
+            source = "wttr.in",
+            dayOffset = index,
+            fromLocation = fromLocation
         )
     }
 
@@ -306,23 +408,46 @@ object WebSearch {
 
     // ------------------------------------------------------------------ 回答整理
 
-    /** 把联网的实时天气整理成一段有结构的话：当前数据 → 穿衣建议 → 来源 */
-    fun composeWeather(snapshot: WeatherSnapshot): String {
+    /**
+     * 把联网的实时天气整理成一段有结构的话：数据 → 穿衣建议 → 来源。
+     *
+     * @param dayLabel "今天 / 明天 / 后天"，由调用方（联网计划）给，
+     *                 免得把「明天」的数据说成现在的天气。
+     */
+    fun composeWeather(snapshot: WeatherSnapshot, dayLabel: String = "今天"): String {
         val sb = StringBuilder()
-        val feels = snapshot.feelsLike?.let { "（体感 ${fmt(it)}℃）" }.orEmpty()
-        sb.append("${snapshot.city}现在 ${fmt(snapshot.temp)}℃$feels，${snapshot.desc}")
-        snapshot.humidity?.let { sb.append("，湿度 $it%") }
-        snapshot.wind?.let { sb.append("，风速 ${fmt(it)} km/h") }
-        sb.append("。")
+        val place = if (snapshot.fromLocation) "你那里" else snapshot.city
+        val whenWord = if (snapshot.dayOffset == 0) "现在" else dayLabel
 
-        if (snapshot.high != null && snapshot.low != null) {
+        if (snapshot.dayOffset == 0) {
+            val feels = snapshot.feelsLike?.let { "（体感 ${fmt(it)}℃）" }.orEmpty()
+            sb.append("${place}现在 ${fmt(snapshot.temp)}℃$feels，${snapshot.desc}")
+            snapshot.humidity?.let { sb.append("，湿度 $it%") }
+            snapshot.wind?.let { sb.append("，风速 ${fmt(it)} km/h") }
+            sb.append("。")
+        } else {
+            // 往后几天没有实测值，只能说预报区间
+            val range = if (snapshot.high != null && snapshot.low != null) {
+                " ${fmt(snapshot.low)}℃~${fmt(snapshot.high)}℃"
+            } else {
+                " ${fmt(snapshot.temp)}℃"
+            }
+            sb.append("${place}${whenWord}${range}，${snapshot.desc}")
+            snapshot.rainChance?.let { sb.append("，降水概率 $it%") }
+            sb.append("。")
+        }
+
+        if (snapshot.dayOffset == 0 && snapshot.high != null && snapshot.low != null) {
             sb.append("今天最高 ${fmt(snapshot.high)}℃、最低 ${fmt(snapshot.low)}℃")
             snapshot.rainChance?.let { sb.append("，降水概率 $it%") }
             sb.append("。")
         }
         val reference = snapshot.high ?: snapshot.temp
-        sb.append("按现在的温度看：${CityClimate.dressAdvice(reference.toInt())}。")
-        sb.append("（这是刚联网查到的实时数据，来自 ${snapshot.source}）")
+        sb.append("按这个温度：${CityClimate.dressAdvice(reference.toInt())}。")
+        if (snapshot.rainChance != null && snapshot.rainChance >= 60) {
+            sb.append("降水概率不低，带把伞更稳。")
+        }
+        sb.append("（${whenWord}的数据来自 ${snapshot.source}）")
         return sb.toString()
     }
 

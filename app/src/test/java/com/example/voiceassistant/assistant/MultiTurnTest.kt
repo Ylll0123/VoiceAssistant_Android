@@ -32,6 +32,26 @@ class MultiTurnTest {
     }
 
     @Test
+    fun `翻译之后只报一个词，会接着翻译`() {
+        val engine = AssistantEngine()
+        engine.reply("苹果用英语怎么说")
+
+        val reply = engine.reply("电脑")
+        assertTrue("应该接着翻译这个词，实际：$reply", reply.contains("computer"))
+    }
+
+    @Test
+    fun `翻译之后说一句情绪话，不会被当成单词去翻译`() {
+        val engine = AssistantEngine()
+        engine.reply("北京天气怎么样")
+        engine.reply("苹果用英语怎么说")
+
+        val reply = engine.reply("我好累")
+        assertEquals("这句是情绪表达，不是要翻译的词：实际 $reply", DialogContext.INTENT_CHAT, engine.respond("我好累").intent)
+        assertTrue("不该出现翻译结果，实际：$reply", !reply.contains("英语是"))
+    }
+
+    @Test
     fun `笑话可以再来一个`() {
         val engine = AssistantEngine()
         engine.reply("讲个笑话")

@@ -21,8 +21,8 @@
     <string name="status_online">正在联网查询…</string>
     <string name="status_offline_fail">没连上网络，已用本地内容回答</string>
     <string name="settings_online">联网查询</string>
-    <string name="settings_online_desc">实时天气走 Open-Meteo，答不上来的问题查维基百科；关掉也能离线使用</string>
-    <string name="settings_online_state">联网已开启：实时天气 + 百科搜索，失败自动回落到本地内容</string>
+    <string name="settings_online_desc">实时天气（含明天 / 按定位）走 Open-Meteo，本地答不上来的问题先联网搜；关掉也能离线使用</string>
+    <string name="settings_online_state">联网已开启：先本地、再联网，联网查不到才问云端 AI</string>
     <string name="settings_online_state_off">联网已关闭：只用本地内置的气候数据和知识库</string>
 
     <!-- 输入区 -->

@@ -26,8 +26,23 @@ class OnlineQueryTest {
     }
 
     @Test
-    fun `没有城市信息就不联网`() {
-        assertNull(OnlineQuery.plan("今天天气怎么样", "weather"))
+    fun `没有城市信息就按定位查，照样联网`() {
+        // v3.0：以前这条返回 null，用户只能拿到常年平均数据。
+        // 现在按网络定位查「我这里」的实时天气，所以计划照样成立（城市为空）。
+        val plan = OnlineQuery.plan("今天天气怎么样", "weather")!!
+        assertEquals(OnlineQuery.Kind.WEATHER, plan.kind)
+        assertNull(plan.city)
+    }
+
+    @Test
+    fun `问明天天气要取第二天的数据`() {
+        assertEquals(1, OnlineQuery.dayOffsetOf("明天"))
+        assertEquals(2, OnlineQuery.dayOffsetOf("后天"))
+        assertEquals(0, OnlineQuery.dayOffsetOf("今天"))
+        val plan = OnlineQuery.weatherPlan("明天北京天气怎么样")!!
+        assertEquals(1, plan.dayOffset)
+        assertEquals("明天", plan.dayLabel)
+        assertEquals("北京", plan.city!!.city)
     }
 
     @Test

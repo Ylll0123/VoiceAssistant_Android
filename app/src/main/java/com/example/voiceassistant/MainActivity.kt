@@ -20,6 +20,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
+import com.example.voiceassistant.assistant.AnswerRouter
 import com.example.voiceassistant.assistant.AssistantConfig
 import com.example.voiceassistant.assistant.AssistantEngine
 import com.example.voiceassistant.assistant.CityClimate
@@ -34,6 +35,7 @@ import com.example.voiceassistant.assistant.QueryUnderstanding
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatSession
 import com.example.voiceassistant.data.CloudBrain
+import com.example.voiceassistant.data.CloudCache
 import com.example.voiceassistant.data.WebSearch
 import com.example.voiceassistant.memory.MemorySeed
 import com.example.voiceassistant.memory.SqliteMemoryRepository
@@ -452,6 +454,8 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     fun setCloudConfig(config: CloudBrain.CloudConfig) {
         cloudConfig = config
         settings.saveCloud(config)
+        // 换了服务商 / 模型，之前缓存的答案不能再复用
+        CloudCache.clear()
     }
 
     /** 设置页「测试连接」：在子线程打一次最小请求，结果回调到主线程 */
@@ -496,16 +500,27 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     /** 处理一条用户输入（文字或识别结果）：写入会话 → 播报 */
     fun sendText(text: String) = sendCandidates(listOf(text))
 
-    /** 上一轮「答案还没落地」的延迟任务：用户紧接着又发一句时取消掉，避免两条答案乱序 */
-    private var pendingDeliver: Runnable? = null
+    /**
+     * 轮次序号。
+     *
+     * 后台那条串行链（联网 → 云端）回来时，如果序号已经不是最新，
+     * 说明用户又说了新的一句——旧结果直接丢弃，绝不上屏。
+     * 这是「本地答案和云端答案互相打架」的根治办法：**一次只认最新那一轮**。
+     */
+    private var turnSeq = 0
+
+    /** 思考过程小字是否还在显示（答案已上屏后不再追加，免得又冒出一行） */
+    @Volatile
+    private var thinkingActive = false
 
     /**
      * 处理一次识别（可能有多条候选）。
      *
-     * 流程是「先理解，再回答」：
-     * 1. 本地先对这句话做语义理解（切分 / 识别 / 指代消解 / 归纳成简要问题）；
-     * 2. 理解过程以淡色小字逐行显示出来；
-     * 3. 答案出现时把整条理解过程移除——用户最终只看到回答。
+     * 流程是「先算清楚，再一次性呈现」：
+     * 1. 本地先出答案并做语义理解（切分 / 识别 / 指代消解 / 归纳成简要问题）；
+     * 2. [AnswerRouter] 决定路线：本地 / 联网 / 云端；
+     * 3. 本地路线直接上屏；联网或云端路线**在后台串行跑完**，
+     *    中途只在淡色小字里显示进度，**答案只上屏一次**。
      *
      * 引擎会挑一条能理解的说法，如果挑中的不是首选，
      * 状态栏会显示「听到：xxx」，让用户知道助手是怎么理解的。
@@ -514,197 +529,210 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
         val cleaned = candidates.map { it.trim() }.filter { it.isNotEmpty() }
         if (cleaned.isEmpty()) return
 
-        // 上一轮还没落地就又发了一句：丢掉那条，只处理最新的
-        pendingDeliver?.let { mainHandler.removeCallbacks(it) }
-        pendingDeliver = null
+        turnSeq++
+        val seq = turnSeq
 
-        // 云端要带上下文：先在本轮写进会话之前把历史取好（2 轮、每条已截断）
-        val history = session.recentTurns(CloudBrain.MAX_HISTORY_TURNS)
-            .map { it.copy(content = CloudBrain.clip(it.content)) }
         // 本地逻辑分析回看最近 6 条，用于指代消解（「那边」「它」指的是什么）
         val memory = session.recentUserLines(QueryUnderstanding.LOCAL_MEMORY_TURNS)
-
         val raw = cleaned.first()
         val understanding = QueryUnderstanding.analyze(raw, memory)
         val response = session.respondOnly(cleaned)
 
-        val hold = if (settings.showThinking && understanding.steps.isNotEmpty()) {
-            showUnderstanding(understanding)
-        } else {
-            0L
+        val decision = AnswerRouter.decide(
+            raw = raw,
+            intent = response.intent,
+            localText = response.text,
+            understanding = understanding,
+            onlineEnabled = AssistantConfig.onlineSearch,
+            cloudReady = cloudConfig.isReady(),
+            cloudFirst = cloudConfig.mode == CloudBrain.CloudMode.CLOUD_FIRST,
+            fallbackCity = lastWeatherCity
+        )
+
+        // 本地路线：零请求，立刻上屏播报
+        if (!decision.needsNetwork) {
+            finishTurn(seq, response.text, response.intent, response.heard, raw)
+            return
         }
 
-        val task = Runnable { deliver(cleaned, response, history, understanding) }
-        pendingDeliver = task
-        if (hold > 0L) mainHandler.postDelayed(task, hold) else task.run()
-    }
-
-    /**
-     * 把理解过程逐行显示出来（淡色小字），返回总展示时长。
-     *
-     * 故意让每一步间隔一点点：用户能看到「它在想什么」，
-     * 而不是一闪而过——这也是豆包 / DeepSeek 那种思考过程给人的信任感来源。
-     */
-    private fun showUnderstanding(understanding: QueryUnderstanding.Understanding): Long {
-        session.startThinking("正在理解…")
-        understanding.steps.forEachIndexed { index, step ->
-            mainHandler.postDelayed(
-                { session.appendThinking("· $step") },
-                QueryUnderstanding.STEP_MS * (index + 1)
+        // 后台串行：联网（免费）→ 云端（付费）→ 本地兜底，跑完才上屏
+        showThinking(seq, understanding, decision)
+        if (!showThinking) {
+            chatUi?.showStatus(
+                if (decision.route == AnswerRouter.Route.WEB) {
+                    getString(R.string.status_online)
+                } else {
+                    getString(R.string.status_cloud_thinking)
+                },
+                highlight = true
             )
         }
-        return QueryUnderstanding.holdMs(understanding.steps.size)
-    }
-
-    /** 答案落地：清掉理解过程 → 上屏 → 判断要不要联网 / 问云端 → 播报 */
-    private fun deliver(
-        cleaned: List<String>,
-        response: AssistantResponse,
-        history: List<CloudBrain.ChatTurn>,
-        understanding: QueryUnderstanding.Understanding
-    ) {
-        pendingDeliver = null
-        session.clearThinking()
-        session.addAssistant(response.text, response.intent)
-        val messageIndex = session.lastAssistantIndex()
-
-        val heard = response.heard
-        if (heard != null && heard != cleaned.first()) {
-            chatUi?.showStatus(getString(R.string.status_heard, heard), highlight = true)
-            mainHandler.postDelayed({
-                if (!speech.isSpeaking) chatUi?.showStatus(getString(R.string.status_idle))
-            }, 2500)
-        }
-
-        // 本地答好了，但有些问题值得联网补一句实时 / 更准的内容
-        val plan = if (AssistantConfig.onlineSearch) {
-            OnlineQuery.plan(cleaned.first(), response.intent, lastWeatherCity)
+        // 历史只有在确有指代 / 追问时才带（每轮都要重发，是纯成本）
+        val history = if (decision.useHistory) {
+            session.recentTurns(CloudBrain.MAX_HISTORY_TURNS)
+                .map { it.copy(content = CloudBrain.clip(it.content)) }
         } else {
-            null
+            emptyList()
         }
-        if (plan != null) {
-            searchOnline(plan, messageIndex, response.text)
-            return
-        }
-
-        // 本地答得不够好（或用户选了「AI 优先」）时，交给云端大模型。
-        // 发的是本地归纳后的简要问题，不是原始长句——省 token 也更聚焦。
-        if (CloudBrain.shouldAsk(response.intent, response.text, cloudConfig)) {
-            val cloudInput = CloudBrain.pickInput(cleaned.first(), understanding.brief)
-            askCloud(messageIndex, response.text, cloudInput, history, cleaned.first())
-            return
-        }
-
-        if (speakEnabled) {
-            if (heard == null || heard == cleaned.first()) {
-                chatUi?.showStatus(getString(R.string.status_speaking))
-            }
-            speech.speak(response.text)
-        } else {
-            if (heard == null || heard == cleaned.first()) {
-                chatUi?.showStatus(getString(R.string.status_idle))
-            }
-            maybeRestartListening(400)
-        }
+        netExecutor.execute { runChain(seq, decision, response, understanding, history, raw) }
     }
 
     /**
-     * 异步联网查询。
+     * 把「理解过程 + 接下来要做什么」以淡色小字逐行显示出来。
      *
-     * 本地那条回答先留在屏幕上（常年气候 / "我上网查一下"），
-     * 子线程拿到结果后回主线程**替换同一条气泡**再播报，
-     * 所以用户看到的是"下面在查 → 这条刷新了"，而不是突然多出一条。
-     * 联网失败（没网 / 接口不可达）就保留本地回答补一句说明，离线可用性不受影响。
+     * 每一步间隔一点点，用户能看到它在想什么、正在联网还是正在问 AI，
+     * 而不是一闪而过——这也是豆包 / DeepSeek 那种思考过程给人的信任感来源。
      */
-    private fun searchOnline(plan: OnlineQuery.Plan, messageIndex: Int, localAnswer: String) {
-        if (plan.kind == OnlineQuery.Kind.WEATHER && plan.city != null) {
-            lastWeatherCity = plan.city
+    private fun showThinking(
+        seq: Int,
+        understanding: QueryUnderstanding.Understanding,
+        decision: AnswerRouter.Decision
+    ) {
+        if (!showThinking) return
+        thinkingActive = true
+        session.startThinking("正在理解…")
+        val post = { index: Int, line: String ->
+            mainHandler.postDelayed(
+                { if (seq == turnSeq && thinkingActive) session.appendThinking("· $line") },
+                QueryUnderstanding.STEP_MS * index
+            )
         }
-        chatUi?.showStatus(getString(R.string.status_online), highlight = true)
-
-        netExecutor.execute {
-            val result: Pair<String, String>? = runCatching {
-                when (plan.kind) {
-                    OnlineQuery.Kind.WEATHER -> {
-                        val city = plan.city ?: return@runCatching null
-                        WebSearch.fetchWeather(city)?.let { AssistantEngine.INTENT_WEB to WebSearch.composeWeather(it) }
-                    }
-                    OnlineQuery.Kind.SEARCH -> {
-                        WebSearch.fetchSummary(plan.query)
-                            ?.let { AssistantEngine.INTENT_WEB to WebSearch.composeSearch(it) }
-                    }
-                }
-            }.getOrNull()
-
-            mainHandler.post {
-                if (isFinishing || isDestroyed) return@post
-                if (result != null) {
-                    session.replaceAssistant(messageIndex, result.second, result.first)
-                    chatUi?.showStatus(getString(R.string.status_idle))
-                    if (speakEnabled) {
-                        chatUi?.showStatus(getString(R.string.status_speaking))
-                        speech.speak(result.second)
-                    }
-                } else {
-                    // 没查到：本地答案照旧，只是补一句说明，不让用户空等
-                    session.replaceAssistant(
-                        messageIndex,
-                        "$localAnswer\n（我想联网核实一下，但这次没连上，以上是我本地内置的内容。）",
-                        null
-                    )
-                    chatUi?.showStatus(getString(R.string.status_offline_fail))
-                    if (speakEnabled) speech.speak(localAnswer)
-                }
-            }
-        }
+        understanding.steps.forEachIndexed { index, step -> post(index + 1, step) }
+        post(understanding.steps.size + 1, "${decision.note}…")
     }
 
     /**
-     * 异步问云端大模型。
+     * 串行调度链（**子线程**）：联网 → 云端 → 本地兜底，取第一个成功的结果。
      *
-     * 本地那条回答先留在屏幕上，子线程拿到结果后回主线程**替换同一条气泡**再播报，
-     * 所以用户看到的是「先有一句 → 这条被更好的回答刷新了」。
-     * 失败（没网 / Key 错 / 超时）保留本地答案，只在状态栏说明原因——
-     * 这是设计底线：**配了云端也不能让离线可用性变差**。
-     *
-     * @param history 本轮之前的历史，用来保证模型接得上上下文
+     * 顺序是有意为之：联网搜索免费、云端按 token 付费，
+     * 所以能搜到就绝不多花一次调用；[AnswerRouter] 已经把这条路线定好了，
+     * 这里只负责执行，并且**只回传一个结果**（没有"先上屏再替换"这回事）。
      */
-    private fun askCloud(
-        messageIndex: Int,
-        localAnswer: String,
-        input: String,
+    private fun runChain(
+        seq: Int,
+        decision: AnswerRouter.Decision,
+        local: AssistantResponse,
+        understanding: QueryUnderstanding.Understanding,
         history: List<CloudBrain.ChatTurn>,
-        learnInput: String = input
+        primary: String
     ) {
-        chatUi?.showStatus(getString(R.string.status_cloud_thinking), highlight = true)
+        // ① 联网查询（天气 / 百科），免费
+        val plan = decision.plan
+        if (decision.route == AnswerRouter.Route.WEB && plan != null) {
+            val web = runCatching { executeWeb(plan) }.getOrNull()
+            if (web != null) {
+                if (plan.kind == OnlineQuery.Kind.WEATHER) lastWeatherCity = plan.city
+                finishTurn(seq, web.second, web.first, local.heard, primary)
+                return
+            }
+        }
 
-        netExecutor.execute {
-            val result: CloudBrain.CloudResult = runCatching {
-                CloudBrain.call(cloudConfig, history, input, extraSystemForCloud())
-            }.getOrElse { CloudBrain.CloudResult.Fail("请求失败：${it.message.orEmpty()}") }
+        // ② 云端大模型（这一步才花钱）
+        val askCloud = decision.route == AnswerRouter.Route.CLOUD ||
+            (decision.cloudFallback && cloudConfig.isReady())
+        if (askCloud) {
+            val input = CloudBrain.pickInput(decision.raw, decision.cloudInput.ifBlank { understanding.brief })
+            val result = runCatching { CloudBrain.call(cloudConfig, history, input, extraSystemForCloud()) }
+                .getOrElse { CloudBrain.CloudResult.Fail("请求失败：${it.message.orEmpty()}") }
+            if (result is CloudBrain.CloudResult.Ok) {
+                // 云端的好答案也喂给本地小模型：要学的是「人怎么问」，所以用原话
+                localModel.observePair(decision.raw, result.text)
+                finishTurn(seq, result.text, AssistantEngine.INTENT_CLOUD, local.heard, primary)
+                return
+            }
+            val reason = (result as CloudBrain.CloudResult.Fail).reason
+            finishTurn(
+                seq,
+                fallbackText(decision, local.text),
+                decision.fallbackIntent,
+                local.heard,
+                primary,
+                statusNote = getString(R.string.status_cloud_fail, reason),
+                speakText = local.text
+            )
+            return
+        }
 
-            mainHandler.post {
-                if (isFinishing || isDestroyed) return@post
-                when (result) {
-                    is CloudBrain.CloudResult.Ok -> {
-                        session.replaceAssistant(messageIndex, result.text, AssistantEngine.INTENT_CLOUD)
-                        // 云端的好答案也喂给本地小模型：聊得越多，本地兜底越接近这个水平。
-                        // 这里用用户原话而不是归纳后的简要问题——要学的是「人怎么问」
-                        localModel.observePair(learnInput, result.text)
-                        chatUi?.showStatus(getString(R.string.status_idle))
-                        if (speakEnabled) {
-                            chatUi?.showStatus(getString(R.string.status_speaking))
-                            speech.speak(result.text)
-                        } else {
-                            maybeRestartListening(400)
-                        }
-                    }
-                    is CloudBrain.CloudResult.Fail -> {
-                        session.replaceAssistant(messageIndex, localAnswer, null)
-                        chatUi?.showStatus(getString(R.string.status_cloud_fail, result.reason))
-                        if (speakEnabled) speech.speak(localAnswer) else maybeRestartListening(400)
-                    }
+        // ③ 联网没查到、也没配云端：本地答案 + 一句说明
+        finishTurn(
+            seq,
+            fallbackText(decision, local.text),
+            decision.fallbackIntent,
+            local.heard,
+            primary,
+            statusNote = getString(R.string.status_offline_fail),
+            speakText = local.text
+        )
+    }
+
+    /** 执行一条联网计划；失败返回 null（调用方继续降级） */
+    private fun executeWeb(plan: OnlineQuery.Plan): Pair<String, String>? = when (plan.kind) {
+        OnlineQuery.Kind.WEATHER -> {
+            val offset = plan.dayOffset
+            // 没说城市就按网络定位查，让「天气怎么样」这种问题也有实时答案
+            val snapshot = if (plan.city != null) {
+                WebSearch.fetchWeather(plan.city, offset)
+            } else {
+                WebSearch.fetchWeatherHere(offset)
+            }
+            snapshot?.let { AssistantEngine.INTENT_WEB to WebSearch.composeWeather(it, plan.dayLabel) }
+        }
+        OnlineQuery.Kind.SEARCH -> WebSearch.fetchSummary(plan.query)
+            ?.let { AssistantEngine.INTENT_WEB to WebSearch.composeSearch(it) }
+    }
+
+    /** 兜底文案：说清"没查到"的原因，但不把责任推给用户 */
+    private fun fallbackText(decision: AnswerRouter.Decision, localText: String): String =
+        when (decision.plan?.kind) {
+            OnlineQuery.Kind.WEATHER ->
+                "$localText\n（我想联网查实时天气，这次没连上，上面是本地的常年气候参考。）"
+            OnlineQuery.Kind.SEARCH ->
+                "$localText\n（联网这次没查到，上面是我本地给的分析。）"
+            else -> localText
+        }
+
+    /**
+     * 结果落地（主线程）：清掉思考过程 → 上屏一次 → 播报。
+     *
+     * @param statusNote 状态栏要额外说明的原因（云端失败原因等）
+     * @param speakText 播报用的文本（兜底时只念正文，不念括号里的说明）
+     */
+    private fun finishTurn(
+        seq: Int,
+        text: String,
+        intent: String?,
+        heard: String?,
+        primary: String,
+        statusNote: String? = null,
+        speakText: String = text
+    ) {
+        mainHandler.post {
+            if (seq != turnSeq) return@post
+            thinkingActive = false
+            if (isFinishing || isDestroyed) return@post
+
+            session.clearThinking()
+            session.addAssistant(text, intent)
+
+            if (heard != null && heard != primary) {
+                chatUi?.showStatus(getString(R.string.status_heard, heard), highlight = true)
+                mainHandler.postDelayed({
+                    if (!speech.isSpeaking) chatUi?.showStatus(getString(R.string.status_idle))
+                }, 2500)
+            } else if (statusNote != null) {
+                chatUi?.showStatus(statusNote)
+            }
+
+            if (speakEnabled) {
+                if (heard == null || heard == primary) {
+                    chatUi?.showStatus(getString(R.string.status_speaking))
                 }
+                speech.speak(speakText)
+            } else {
+                if (heard == null || heard == primary) {
+                    chatUi?.showStatus(statusNote ?: getString(R.string.status_idle))
+                }
+                maybeRestartListening(400)
             }
         }
     }
@@ -762,9 +790,9 @@ class MainActivity : AppCompatActivity(), SpeechController.Listener {
     fun clearChat() {
         speech.cancelListening()
         speech.stopSpeaking()
-        // 清空时如果还有一条答案没落地，取消掉，免得清空后又冒出来
-        pendingDeliver?.let { mainHandler.removeCallbacks(it) }
-        pendingDeliver = null
+        // 作废还在后台跑的那一条：序号一变，它的结果就不会再上屏
+        turnSeq++
+        thinkingActive = false
         session.clear()
         session.addAssistant(getString(R.string.welcome))
         chatUi?.showStatus(getString(R.string.status_idle))

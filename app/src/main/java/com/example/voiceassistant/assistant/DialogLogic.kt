@@ -105,13 +105,23 @@ object DialogLogic {
                 ?: context.entitySlot()?.let { "${it}天气怎么样" }
         }
 
-        // ⑥ 只报了一个词，上一轮是翻译：当成下一个要翻译的词
-        if (intent == "translate" && subject != null && text.length in 1..6 && isChineseWord(text)) {
+        // ⑥ 只报了一个词，上一轮是翻译：当成下一个要翻译的词。
+        //    必须**像词不像句子**：「我好累」这种带人称 / 程度副词的短句是情绪表达，
+        //    当成单词翻译会答成「我好累的英语是 tired」，答非所问还堵住了闲聊。
+        if (intent == "translate" && subject != null && text.length in 1..6 &&
+            isChineseWord(text) && SENTENCE_MARKS.none { text.contains(it) }
+        ) {
             return "${text}用英语怎么说"
         }
 
         return null
     }
+
+    /** 出现这些字说明用户说的是一句话，不是一个待翻译的词 */
+    private val SENTENCE_MARKS = listOf(
+        "我", "你", "他", "她", "它", "咱", "谁", "好", "很", "太", "真",
+        "不", "没", "别", "吗", "呢", "吧", "了", "啊", "呀", "累", "饿", "困"
+    )
 
     /** 从上下文里取「上一句聊到的那个东西」 */
     private fun entityOf(context: DialogContext): String? {

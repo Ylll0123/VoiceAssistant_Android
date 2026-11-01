@@ -3,11 +3,16 @@ package com.example.voiceassistant.assistant
 /**
  * 联网决策：这句话值不值得联网、要联网查什么。
  *
- * ## 原则：**本地能答好的就不联网**
- * 联网要花 1~3 秒，还依赖网络。所以：
- * - 时间、计算、单位换算、闲聊、记忆里教过的内容 → 本地答，秒回，不联网；
- * - **实时天气** → 本地只有常年平均值，联网能给出真实数据，值得等；
- * - 本地彻底答不上来（走到兜底 / 小模型瞎编） → 联网查百科，至少给个靠谱来源。
+ * ## 原则（v3.0 重写）：**按需联网，能查就别让大模型猜**
+ * 1. **实时天气** → 必联网（本地只有常年平均值，联网才有真实数据）；
+ *    没有城市名时按**网络定位**查（"天气怎么样"也要答得出来）；
+ * 2. 用户明确说「帮我查 / 百度 / 最新消息」→ 联网搜；
+ * 3. 本地答不上来的**事实类**问题（「量子纠缠是什么」）→ 先联网搜（免费），
+ *    搜不到再交给云端大模型；
+ * 4. 时间、计算、翻译、闲聊、教过的内容 → 本地秒回，不联网。
+ *
+ * 联网是按顺序串行的：**先免费搜索，再付费问云端**，
+ * 所以搜索命中就根本不会花 token（见 [AnswerRouter]）。
  *
  * 纯逻辑，不碰网络本身（真正上网在 [com.example.voiceassistant.data.WebSearch]），
  * 所以决定"该不该联网"这件事可以在单元测试里断言。
@@ -26,10 +31,20 @@ object OnlineQuery {
     /** 一次联网计划 */
     data class Plan(
         val kind: Kind,
-        /** 查询关键词 */
+        /** 查询关键词（天气时是城市名，可能为空表示按定位查） */
         val query: String,
-        val city: CityClimate.CityClimate? = null
-    )
+        val city: CityClimate.CityClimate? = null,
+        /** 第几天：0 今天、1 明天、2 后天 */
+        val dayOffset: Int = 0
+    ) {
+        /** "今天 / 明天 / 后天"，回答里要说清是哪一天 */
+        val dayLabel: String get() = when (dayOffset) {
+            1 -> "明天"
+            2 -> "后天"
+            in 3..6 -> "${dayOffset}天后"
+            else -> "今天"
+        }
+    }
 
     /**
      * **用户明确要求上网查**的说法。
@@ -47,10 +62,36 @@ object OnlineQuery {
         "最新消息", "最新进展", "最新情况", "实时报价", "实时数据", "实时 COVID", "今天的新闻", "近况如何", "进展如何"
     )
 
-    /** 出现这些词说明问的是实时天气 / 气温 */
-    private val WEATHER_CUES = listOf(
-        "天气", "气温", "温度", "多少度", "几度", "下雨", "下雪", "湿度", "刮风", "台风", "空气质量"
+    /**
+     * 出现这些词说明问的是**实时**天气 / 气温，本地的常年气候数据不够用。
+     *
+     * 「带伞 / 穿什么」也在里面：这两个问题的答案取决于今天下不下雨、多少度，
+     * 用常年平均答会误导用户——给它实时数据，穿衣建议才有意义。
+     */
+    val WEATHER_CUES = listOf(
+        "天气", "气温", "温度", "多少度", "几度", "下雨", "下雪", "湿度", "刮风", "台风",
+        "空气质量", "冷不冷", "热不热", "闷热", "紫外线", "大风", "带伞", "穿什么", "穿多少",
+        "要穿", "适合出门", "出门", "回暖", "降温"
     )
+
+    /** 「明天 / 后天 / 大后天」：联网查天气时要取对应那一天的数据 */
+    private val DAY_OFFSETS: List<Pair<String, Int>> = listOf(
+        "大后天" to 3, "后天" to 2, "明天" to 1, "明儿" to 1
+    )
+
+    /** 这句话问的是第几天（0 今天 / 1 明天 / 2 后天 …） */
+    fun dayOffsetOf(text: String): Int {
+        val raw = text.trim()
+        for ((cue, offset) in DAY_OFFSETS) {
+            if (raw.contains(cue)) return offset
+        }
+        return 0
+    }
+
+    /** 是否提到了具体某一天（回答里要带上"明天"这类限定词） */
+    fun hasDayCue(text: String): Boolean =
+        DAY_OFFSETS.any { (cue, _) -> text.contains(cue) } ||
+            text.contains("今天") || text.contains("今日")
 
     /** 问句里这些只是套话，去掉之后剩下的才是真正的查询主题 */
     private val QUERY_PREFIXES = listOf(
@@ -70,14 +111,14 @@ object OnlineQuery {
         "怎么读", "怎么写", "怎么用", "有哪些", "新闻", "最新消息", "的最新进展"
     )
 
-    /** 这些话题问了也查不出所以然（要实时数据 / 是我的身份），不联网 */
+    /** 这些话题问了也查不出所以然（是本机功能 / 我的身份 / 纯情绪），不联网 */
     private val SKIP_KEYWORDS = listOf(
-        "我教你", "记住", "几点", "几号", "星期", "算", "等于", "笑话", "故事",
+        "我教你", "记住", "几点", "几号", "星期", "等于", "笑话", "故事",
         "打开", "关闭", "提醒", "闹钟"
     )
 
     /**
-     * 决定要不要联网。
+     * 决定要不要联网（兼容旧入口；新代码请用 [weatherPlan] / [searchPlan]）。
      *
      * @param input 用户这一句（原始文本）
      * @param intent 本地给出的意图（[AssistantResponse.intent]）
@@ -87,26 +128,46 @@ object OnlineQuery {
     fun plan(input: String, intent: String?, fallbackCity: CityClimate.CityClimate? = null): Plan? {
         val raw = input.trim()
         if (raw.isEmpty()) return null
-        val text = FuzzyMatcher.normalize(raw)
-        // 注意：判断 cue 必须用**原始句子**。[FuzzyMatcher.normalize] 会剥掉「帮我查一下」
-        // 这类前缀（它本来是给语义匹配用的），归一化之后再找「帮我查」就永远找不到了。
-        val lowered = raw.lowercase()
-        if (SKIP_KEYWORDS.any { lowered.contains(it) }) return null
+        if (SKIP_KEYWORDS.any { raw.contains(it) }) return null
+        // 常识知识库已经答好（「为什么会下雨」讲的是原理，不是今天的天气）
+        if (intent == AssistantEngine.INTENT_KNOWLEDGE) return null
 
-        // ① 用户明确说「帮我查 / 搜一下 / 百度」→ 才去网上查，并且抽出真正要查的主题
-        if (wantsWeb(raw)) {
-            val topic = extractTopic(raw)
-            if (topic.length >= 2) return Plan(Kind.SEARCH, topic)
-        }
-
-        // ② 实时天气：城市明确（或者刚聊过某个城市）才值得联网
-        if (WEATHER_CUES.any { lowered.contains(it) }) {
-            val city = CityClimate.find(raw) ?: fallbackCity
-            if (city != null) return Plan(Kind.WEATHER, city.city, city)
-        }
-
-        // ③ 其余一律不联网：本地会用「思维模式」给出分析思路（ReplyCrafter），不搜不编
+        weatherPlan(raw, fallbackCity)?.let { return it }
+        if (wantsWeb(raw)) return searchPlan(raw)
         return null
+    }
+
+    /**
+     * 天气联网计划。
+     *
+     * 城市拿不到也照样返回计划（[Plan.city] 为 null）：这时联网会按
+     * **网络定位**查用户所在位置的天气——「天气怎么样」这种没带城市的问题
+     * 以前会被判成"不联网"，只能回常年平均数据，现在能给出实时值。
+     */
+    fun weatherPlan(
+        raw: String,
+        fallbackCity: CityClimate.CityClimate? = null,
+        dayOffset: Int? = null
+    ): Plan? {
+        val text = raw.trim()
+        if (text.isEmpty()) return null
+        if (SKIP_KEYWORDS.any { text.contains(it) }) return null
+        if (!WEATHER_CUES.any { text.contains(it) }) return null
+        val city = CityClimate.find(text) ?: fallbackCity
+        val offset = dayOffset ?: dayOffsetOf(text)
+        return Plan(
+            kind = Kind.WEATHER,
+            query = city?.city.orEmpty(),
+            city = city,
+            dayOffset = offset
+        )
+    }
+
+    /** 搜索联网计划：主题太短（「哦」「嗯」）不值得发一次请求 */
+    fun searchPlan(topic: String): Plan? {
+        val query = extractTopic(topic).ifBlank { topic.trim() }
+        if (query.length < 2) return null
+        return Plan(Kind.SEARCH, query)
     }
 
     /**
@@ -140,10 +201,20 @@ object OnlineQuery {
                 break
             }
         }
+        // 尾部的语气词（「量子纠缠到底是什么」→ 去掉「是什么」还剩「到底」）
+        for (tail in QUERY_TAILS) {
+            if (topic.endsWith(tail) && topic.length > tail.length) {
+                topic = topic.removeSuffix(tail)
+                break
+            }
+        }
         topic = topic
             .removePrefix("什么是")
             .removePrefix("为什么")
             .trim('的', '了', '是', '？', '?', '，', ',', '。', '.', ' ')
         return topic
     }
+
+    /** 「量子纠缠到底」里的「到底」这类没有检索价值的尾巴 */
+    private val QUERY_TAILS = listOf("到底", "究竟", "具体", "大概", "呢", "啊", "呀")
 }

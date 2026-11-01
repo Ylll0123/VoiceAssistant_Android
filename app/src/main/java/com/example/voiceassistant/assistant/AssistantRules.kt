@@ -234,7 +234,7 @@ object AssistantRules {
                 if (context.hasIntent("weather")) {
                     val city = CityClimate.find(context.slot("city").orEmpty())
                     return RuleReply(
-                        "${relative.second}的实时天气我查不到，常年气候参考：${CityClimate.describe(city)}",
+                        "${relative.second}的实时天气这次没查到，常年气候参考：${CityClimate.describe(city)}",
                         "weather"
                     )
                 }
@@ -304,8 +304,15 @@ object AssistantRules {
     object Arithmetic : IntentRule {
         override val intent = "arithmetic"
 
+        /** 运算符：判断句子里的单字数字是不是"挨着运算符"用的 */
+        private val OPERATORS = setOf('+', '-', '*', '/', '%', '^')
+
         override fun reply(request: AssistantRequest): RuleReply? {
-            val normalized = request.raw
+            // 语音说出来的数字是中文的（「十二乘以八」），先翻成阿拉伯数字，
+            // 否则这类题会掉到兜底、被当成"本地不会"送去问云端，白花 token。
+            // 先把运算符换成符号，再按"挨着运算符"这个条件翻数字——
+            // 这样「帮我算一下」里的「一」不会被当成 1。
+            val withOperators = request.raw
                 .replace("加上", "+")
                 .replace("加", "+")
                 .replace("减去", "-")
@@ -314,6 +321,8 @@ object AssistantRules {
                 .replace("乘", "*")
                 .replace("除以", "/")
                 .replace("除", "/")
+
+            val normalized = ChineseNumber.replaceIn(withOperators, single = true, near = OPERATORS)
                 .replace("的平方", "^2")
                 .replace("×", "*")
                 .replace("÷", "/")
@@ -691,7 +700,7 @@ object AssistantRules {
             val day = relativeDay(text)?.second
             val body = CityClimate.describe(city)
             val answer = if (day != null) {
-                "${day}的具体天气我查不到（纯离线不联网），但常年气候可以给你参考：$body"
+                "${day}的实时天气这次没查到，先用常年气候给你参考：$body"
             } else {
                 body
             }
@@ -727,7 +736,7 @@ object AssistantRules {
                 append("出行建议：")
                 append(tip)
                 if (dress != null) append("。穿衣上：$dress")
-                append("。这是常年气候参考，实时天气我目前查不到——要出门前看一眼手机天气更保险。")
+                append("。这是常年气候参考，实时天气这次没查到——要出门前我再帮你联网确认一次更保险。")
             }
             return RuleReply(answer, intent, mapOf("city" to (city?.city ?: "")))
         }
@@ -761,6 +770,7 @@ object AssistantRules {
 
             // 整句是英文单词：英 → 中
             if (Dictionary.isEnglish(raw)) {
+                request.context.rememberSubject(raw)
                 val chinese = Dictionary.toChinese(raw)
                     ?: return RuleReply(
                         "「$raw」不在我的内置词典里。你可以教我：说「记住：$raw = 中文意思」，我下次就会了。",
@@ -778,6 +788,10 @@ object AssistantRules {
             word = word.trim()
                 .trim('的', '是', '说', '讲', '写', '成', '为', '在', '了', '啊', '呢', '呀', '？', '?', '！', '!', '，', ',', '。', '.', ' ')
             if (word.length < 1 || word.length > 10) return null
+
+            // 记下这次翻译的对象：用户接着只报一个词（「电脑」）时，
+            // 上下文能认出这是"下一个要翻译的词"（见 DialogLogic.expand）
+            request.context.rememberSubject(word)
 
             // 中文词里夹着英文（「翻译 apple」）时按英文查
             val english = Dictionary.toEnglish(word)
@@ -929,9 +943,9 @@ private val WEATHER_WORDS = listOf(
             "天气", "下雨", "下雪", "气温", "温度", "多少度", "几度", "冷吗", "热吗", "天气怎么样"
         )
 
-/** 天气占位回复，多轮追问时也能说明是哪一天 */
+/** 天气占位回复，多轮追问时也能说明是哪一天（联网也失败时才用） */
 private fun weatherPlaceholder(dayLabel: String): String =
-    "${dayLabel}的天气我还没接入在线数据源，现在查不到实时天气，这一步在后续计划里。"
+    "${dayLabel}的实时天气这次没联网查到，先按常年气候给你参考，过一会儿可以再问一次。"
 
 /** 百分比取整的辅助，保留给以后可能用到的统计场景 */
 @Suppress("unused")

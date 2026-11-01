@@ -298,15 +298,27 @@ object QueryUnderstanding {
         return hits.toList()
     }
 
-    /** 单句意图识别：短句先查精准表，命中不了再走关键词 */
+    /**
+     * 单句意图识别：短句先查精准表，命中不了再走关键词。
+     *
+     * 「为什么 / 原理」这类解释性提问要**先于**关键词判断：
+     * 「为什么会下雨」里也有「下雨」，但它问的是成因（本地常识库就能答），
+     * 判成天气就会被送去查实时天气——答非所问还白跑一次网络。
+     */
     fun intentOf(text: String): Intent {
         val norm = FuzzyMatcher.normalize(text)
         EXACT[norm]?.let { return it.first }
+        if (EXPLAIN_CUES.any { norm.contains(it) }) return Intent.CAUSE
         for ((intent, words) in KEYWORD_RULES) {
             if (words.any { norm.contains(it) }) return intent
         }
         return Intent.OTHER
     }
+
+    /** 问成因 / 讲原理的说法 */
+    private val EXPLAIN_CUES = listOf(
+        "为什么", "为啥", "为何", "原理", "怎么形成", "如何形成", "是怎么回事", "怎么来的", "如何产生"
+    )
 
     // ------------------------------------------------------------------ ⑤ 指代消解
 
