@@ -59,13 +59,18 @@ class AssistantRouterTest {
         override fun handle(raw: String, local: AssistantResponse): ToolReply? = null
     }
 
+    /** 共用一份会话，才能断言"用户这句到底被记了几次" */
+    private val session = ChatSession()
+
     private fun router(): AssistantRouter = AssistantRouter(
-        history = HistoryManager(ChatSession()),
+        history = HistoryManager(session),
         toolHandler = noTools,
         qaHandler = local,
         webHandler = web,
         llmHandler = cloud
     )
+
+    private fun userBubbles(): Int = session.messages.count { it.isUser }
 
     @org.junit.Test
     fun `本地答得好时，联网和云端一次都不调用`() {
@@ -141,6 +146,42 @@ class AssistantRouterTest {
         assertEquals(AssistantRouter.Source.LOCAL, reply.source)
         assertEquals(null, reply.error)
         assertTrue("不该调用云端，实际：$log", "cloud" !in log)
+    }
+
+    @org.junit.Test
+    fun `先 plan 再 run 只记一条用户消息`() {
+        // 回归：UI 先 plan() 定路线，再交给后台执行。
+        // 若后台又 plan() 一次，用户这句会被写进历史两遍，
+        // 屏幕上就是两个一模一样的提问气泡（只在联网/云端时出现）。
+        local.response = AssistantResponse("我本地的看法…", "fallback")
+        web.result = null
+        cloud.result = LlmResult.Ok("云端答案", "doubao")
+
+        val r = router()
+        val config = AssistantRouter.Config(cloud = readyConfig())
+        val plan = r.plan(listOf("什么是黑洞"), config)
+        assertEquals("plan 之后应有一条用户气泡", 1, userBubbles())
+
+        r.run(plan, config)
+        assertEquals("run 不该再写用户气泡", 1, userBubbles())
+    }
+
+    @org.junit.Test
+    fun `连问三句时用户气泡数量正好等于提问次数`() {
+        local.response = AssistantResponse("兜底", "fallback")
+        web.result = null
+        cloud.result = LlmResult.Fail("没配")
+
+        val r = router()
+        val config = AssistantRouter.Config(cloud = readyConfig())
+        val replies = mutableListOf<AssistantRouter.Reply>()
+        repeat(3) { index ->
+            val plan = r.plan(listOf("什么是黑洞$index"), config)
+            replies += r.run(plan, config)
+        }
+        // 助手气泡由 UI 写，所以这里只数用户气泡；路由器每轮各给一个结果
+        assertEquals("三句提问只能有三个用户气泡", 3, userBubbles())
+        assertEquals(3, replies.size)
     }
 
     /** 一份「已填好 Key」的云端配置，用来触发云端路线 */

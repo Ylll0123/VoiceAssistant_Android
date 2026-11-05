@@ -2,16 +2,26 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:gravity="start"
+    android:gravity="start|top"
     android:orientation="horizontal"
     android:paddingTop="5dp"
     android:paddingBottom="5dp">
+
+    <!-- 助手头像：图片本身就是圆形裁切好的，这里只要控制尺寸即可 -->
+    <ImageView
+        android:id="@+id/ivAvatar"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginEnd="8dp"
+        android:contentDescription="@string/desc_avatar"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_assistant_avatar" />
 
     <TextView
         android:id="@+id/tvMessage"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="56dp"
+        android:layout_marginEnd="48dp"
         android:background="@drawable/bg_bubble_bot"
         android:elevation="1dp"
         android:lineSpacingExtra="3dp"

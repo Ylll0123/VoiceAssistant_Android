@@ -37,6 +37,7 @@ import com.example.voiceassistant.core.AssistantRouter
 import com.example.voiceassistant.core.HistoryManager
 import com.example.voiceassistant.core.RoutePlanner
 import com.example.voiceassistant.data.AppSettings
+import com.example.voiceassistant.data.ChatHistoryStore
 import com.example.voiceassistant.data.ChatSession
 import com.example.voiceassistant.handler.qa.QaLib
 import com.example.voiceassistant.handler.qa.QaLocalHandler
@@ -44,7 +45,10 @@ import com.example.voiceassistant.handler.web.WebHandler
 import com.example.voiceassistant.memory.MemorySeed
 import com.example.voiceassistant.network.LlmResult
 import com.example.voiceassistant.memory.SqliteMemoryRepository
+import com.example.voiceassistant.reminder.ReminderAlarm
+import com.example.voiceassistant.reminder.Reminders
 import com.example.voiceassistant.service.AndroidAudioController
+import com.example.voiceassistant.service.AndroidDeviceController
 import com.example.voiceassistant.service.AsrManager
 import com.example.voiceassistant.service.TtsManager
 import com.example.voiceassistant.tool.ToolHandler
@@ -165,6 +169,19 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             }
         }
 
+    /**
+     * 通知权限（Android 13+）。
+     *
+     * 拒绝了也不影响其它功能：提醒照样记进清单，
+     * 只是到点弹不出通知——所以这里不追着要，也不弹解释框。
+     */
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                chatUi?.showStatus(getString(R.string.status_notify_denied))
+            }
+        }
+
     /** 会话状态（消息 + 引擎），整个应用共享一份 */
     val session: ChatSession by lazy {
         ChatSession(
@@ -178,6 +195,9 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     /** 对话历史：只负责"记几轮、给云端时截多长" */
     private val history: HistoryManager by lazy { HistoryManager(session) }
 
+    /** 对话记录的落盘位置：重启后把最近几十条恢复出来 */
+    private val chatHistory: ChatHistoryStore by lazy { ChatHistoryStore(applicationContext) }
+
     /**
      * 调度核心：本地工具 → 本地问答 → 按需联网 → 云端大模型 → 本地兜底。
      *
@@ -187,7 +207,8 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         AssistantRouter(
             history = history,
             toolHandler = ToolHandler(
-                AndroidAudioController(applicationContext)
+                AndroidAudioController(applicationContext),
+                AndroidDeviceController(applicationContext)
             ),
             qaHandler = QaLocalHandler(session.engine, QaLib.load(applicationContext)),
             webHandler = WebHandler,
@@ -219,9 +240,17 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
         settings = AppSettings(this)
 
+        // 提醒模块：建通知渠道、把工具层的落点换成持久化实现、
+        // 把重启 / 覆盖安装后丢掉的闹钟重新排上
+        Reminders.install(this)
+
         // 小模型要先于会话创建（会话的引擎里要引用它）
         localModel = createLocalModel()
 
+        // 上次的对话先恢复出来，再补欢迎语：
+        // 否则重启后屏幕上只剩一句自我介绍，追问「那明天呢」就接不上了
+        session.restore(chatHistory.load())
+        session.onChanged = { chatHistory.save(it) }
         session.ensureWelcome(getString(R.string.welcome))
 
         asr = AsrManager(this)
@@ -243,6 +272,23 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             ?: Tab.CHAT
         currentTab = null
         selectTab(restored)
+
+        askNotificationPermission()
+    }
+
+    /** 第一次进来问一次通知权限；拒绝了就不再打扰 */
+    private fun askNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return
+        if (ReminderAlarm.canNotify(this)) return
+
+        // 只问一次：反复弹系统权限框很烦，用户想开自己去系统设置里开
+        val prefs = getSharedPreferences("onboarding", MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_NOTIFY_ASKED, false)) return
+        prefs.edit().putBoolean(KEY_NOTIFY_ASKED, true).apply()
+
+        runCatching {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -567,15 +613,15 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         }
 
         // 需要联网 / 问云端：先显示思考过程，后台跑完再一次性上屏
+        // 注意走 runAsync 而不是 processAsync —— plan 已经算过了，
+        // 再走一遍会把用户这句写两次历史，屏幕上就是两个一样的提问气泡
         showThinking(seq, plan)
-        router.processAsync(
+        router.runAsync(
             executor = netExecutor,
             main = mainHandler,
-            input = cleaned,
-            config = config(),
-            onPlan = {},
-            onResult = { reply -> finishTurn(seq, reply, cleaned.first()) }
-        )
+            plan = plan,
+            config = config()
+        ) { reply -> finishTurn(seq, reply, cleaned.first()) }
     }
 
     /** 当前生效的运行期配置 */
@@ -646,7 +692,13 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
         if (speakEnabled) {
             chatUi?.showStatus(getString(R.string.status_speaking))
-            tts.speak(reply.speakText)
+            // 没念出声（引擎坏了 / 全是不认识的符号）就当场收尾，
+            // 否则状态栏会一直停在「正在回答…」，也不会重开麦克风
+            if (!tts.speak(reply.speakText)) {
+                chatUi?.showStatus(reply.error?.let { getString(R.string.status_cloud_fail, it) }
+                    ?: getString(R.string.status_idle))
+                maybeRestartListening(400)
+            }
         } else {
             chatUi?.showStatus(reply.error?.let { getString(R.string.status_cloud_fail, it) }
                 ?: getString(R.string.status_idle))
@@ -796,6 +848,9 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     private companion object {
         const val KEY_TAB = "current_tab"
+
+        /** 通知权限只问一次，问过就记下来 */
+        const val KEY_NOTIFY_ASKED = "notify_asked"
 
         /** 本地小模型训练进度的存档文件名 */
         const val MODEL_FILE = "ngram_model.txt"

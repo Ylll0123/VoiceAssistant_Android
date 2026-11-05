@@ -15,6 +15,16 @@ object ToolIntent {
     const val REMINDER = "reminder"
     const val VOLUME = "volume"
 
+    /** 计时 / 倒计时 */
+    const val TIMER = "timer"
+
+    /** 打开应用之类的设备操作 */
+    const val DEVICE = "device"
+
+    /** 手电筒 / 电量：单独标出来，设置页统计时能和「开应用」区分开 */
+    const val TORCH = "torch"
+    const val BATTERY = "battery"
+
     /** 让助手闭嘴（静音 / 停止播报），UI 层据此 stopSpeaking */
     const val TTS_STOP = "tts_stop"
 }

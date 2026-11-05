@@ -19,7 +19,16 @@ data class Skill(
      * 联网是在 Activity 层异步做的（先出本地答案，查到再刷新那条气泡），
      * 纯引擎层跑不到，所以一致性测试要跳过它。
      */
-    val requiresNetwork: Boolean = false
+    val requiresNetwork: Boolean = false,
+
+    /**
+     * 这个技能由**工具层**（[com.example.voiceassistant.tool.ToolHandler]）执行，
+     * 不在规则引擎里。
+     *
+     * 提醒、计时、手电筒这类要碰系统能力，放进引擎反而会把纯逻辑弄脏，
+     * 所以技能页照常展示，一致性测试改为验证「工具层能认领它」。
+     */
+    val tool: Boolean = false
 )
 
 /**
@@ -110,6 +119,46 @@ object SkillCatalog {
             description = "看看助手现在会做什么",
             category = CATEGORY_TOOL,
             examples = listOf("你能做什么", "有什么功能")
+        ),
+        Skill(
+            id = "reminder",
+            title = "定时提醒",
+            description = "说到点就弹通知，重启手机也不会丢；也支持查看和删除清单",
+            category = CATEGORY_TOOL,
+            examples = listOf("提醒我明天八点交报告", "我的提醒"),
+            tool = true
+        ),
+        Skill(
+            id = "timer",
+            title = "计时器",
+            description = "倒计时结束弹通知，说「取消计时」可以中途停掉",
+            category = CATEGORY_TOOL,
+            examples = listOf("计时五分钟", "定个十分钟的闹钟"),
+            tool = true
+        ),
+        Skill(
+            id = "torch",
+            title = "手电筒",
+            description = "直接开关手机的闪光灯",
+            category = CATEGORY_TOOL,
+            examples = listOf("打开手电筒", "关掉手电筒"),
+            tool = true
+        ),
+        Skill(
+            id = "battery",
+            title = "剩余电量",
+            description = "报出电量百分比，顺便说一句在不在充电",
+            category = CATEGORY_TOOL,
+            examples = listOf("手机还有多少电"),
+            tool = true
+        ),
+        Skill(
+            id = "open_app",
+            title = "打开应用",
+            description = "按名字拉起微信、相机、设置这些常用应用",
+            category = CATEGORY_TOOL,
+            examples = listOf("打开微信", "打开相机"),
+            tool = true
         ),
         Skill(
             id = "guess",

@@ -247,24 +247,21 @@ class AssistantRouter(
     }
 
     /**
-     * 异步跑完整一轮。
+     * 异步执行**已经算好**的本地阶段结果。
      *
-     * 本地阶段在**调用线程**（主线程）执行，所以能马上知道要不要等；
-     * 只有需要联网时才把 [run] 派发到 [executor]，结果回到 [main] 线程。
+     * 这条是 UI 该走的入口：本地阶段（含把用户这句写进历史）由调用方先做一次，
+     * 这里**只执行不再重算**。否则同一个 [plan] 会被算两遍，
+     * 用户会看到两条一模一样的提问气泡。
      *
-     * @param onPlan 本地阶段完成回调（UI 用它决定要不要显示「思考过程」）
-     * @param onResult 最终结果回调
+     * 需要联网时把 [run] 派发到 [executor]，结果回到 [main] 线程。
      */
-    fun processAsync(
+    fun runAsync(
         executor: Executor,
         main: Handler,
-        input: List<String>,
+        plan: TurnPlan,
         config: Config,
-        onPlan: (TurnPlan) -> Unit,
         onResult: (Reply) -> Unit
     ) {
-        val plan = plan(input, config)
-        onPlan(plan)
         if (!plan.needsNetwork) {
             main.post { onResult(replyOf(plan)) }
             return
@@ -282,6 +279,29 @@ class AssistantRouter(
                 }
             main.post { onResult(reply) }
         }
+    }
+
+    /**
+     * 异步跑完整一轮（算本地阶段 + 执行）。
+     *
+     * ⚠️ 会写入用户这句历史，**只适合"从零开始"的调用方**（脚本、测试）。
+     * UI 已经先 [plan] 过一遍了，必须走 [runAsync]，
+     * 否则用户气泡会重复出现两次。
+     *
+     * @param onPlan 本地阶段完成回调（UI 用它决定要不要显示「思考过程」）
+     * @param onResult 最终结果回调
+     */
+    fun processAsync(
+        executor: Executor,
+        main: Handler,
+        input: List<String>,
+        config: Config,
+        onPlan: (TurnPlan) -> Unit,
+        onResult: (Reply) -> Unit
+    ) {
+        val plan = plan(input, config)
+        onPlan(plan)
+        runAsync(executor, main, plan, config, onResult)
     }
 
     /** 兜底：本地答案 + 一句说明（念的时候只念正文） */

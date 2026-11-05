@@ -23,4 +23,7 @@
 
     <!-- 技能页标签 -->
     <color name="chip_bg">#EAF1FE</color>
+
+    <!-- 启动图标背景：取自头像的底色，自适应图标被放大裁切时露出的就是它 -->
+    <color name="ic_launcher_background">#6FD6F2</color>
 </resources>

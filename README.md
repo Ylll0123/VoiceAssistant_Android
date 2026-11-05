@@ -1,14 +1,16 @@
-# 本地智能语音助手（C3 课题）
+# DeepSuck · 本地智能语音助手（C3 课题）
 
 Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语音助手。
+应用在桌面上显示为 **DeepSuck**。
 
 ## 项目简介
 
 通过语音识别 + 规则引擎 + 按需联网 + 云端大模型 + TTS 实现一个可对话、
-可执行本地功能的语音助手，并配套一个独立的通知提醒中心伴生模块。
+可执行本地功能（含**真正会响的定时提醒**）的语音助手，
+并配套一个独立的通知提醒中心伴生模块。
 
 - **主课题**：C3 本地智能语音助手（语音识别 + 规则引擎 + TTS，多功能集成）
-- **伴生模块**：P3 通知提醒中心（WorkManager 定时 + 通知直接操作）
+- **伴生模块**：P3 通知提醒中心（AlarmManager 定时 + 通知直接操作）
 
 设计上以 **离线优先** 为准绳：不联网、不配云端时，助手依然完全可用；
 联网与云端只是让答案更实时、更会说话的**增强项**。
@@ -63,7 +65,20 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
 
 ### 四、本机工具（0 请求）
 
-- ✅ 提醒清单：增删改查，存在内存里（真正定时属于 P3 伴生模块）
+- ✅ **定时提醒（会真的响）**：「提醒我明天八点交报告」→ AlarmManager 精确定时 →
+  到点弹通知，通知上可直接「10 分钟后再提醒」或「知道了」
+  - 时间解析：相对时长（10 分钟后 / 半小时 / 两小时）、今天明天后天、
+    具体日期（11 月 10 号）、时段（下午 / 晚上 / 中午）、半点 / 一刻
+  - 说的时间已经过了会**顺延一天**，不会出现「设完立刻响」
+  - 提醒存在本地，重启手机 / 覆盖安装后自动重排闹钟（AlarmManager 的登记会丢）
+  - 没说时间的提醒不假装能响，会明确告诉你差个时间
+- ✅ **计时器 / 倒计时**：「计时五分钟」「定个十分钟的闹钟」，到点弹通知，
+  说「取消计时」可以中途停掉
+- ✅ **手电筒**：「打开手电筒」「关掉手电筒」，直接控制闪光灯
+- ✅ **查电量**：「手机还有多少电」，顺带说一句在不在充电
+- ✅ **打开应用**：「打开微信」「打开相机」「打开设置」，按名字拉起常用应用；
+  没装就如实说找不到，不会偷偷开浏览器
+- ✅ 提醒清单：增删改查、按序号删除、全部清空
 - ✅ 音量 / 静音 / 取消静音 / 调大调小：直接改系统音量
 - ✅ 停止播报：说「别说了」立刻闭嘴
 - ✅ 中文数字算术：支持「帮我算一下十二乘以八」= 96
@@ -112,11 +127,11 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
 | --- | --- |
 | 语言 | Kotlin |
 | 架构 | 单 Activity + 四 Fragment，按职责分层（ui / core / handler / tool / network / service / assistant / memory / data） |
-| 本地存储 | SQLite（自建极简封装，零新增依赖）；伴生模块阶段再接 Room |
-| 后台任务 | 待接入 WorkManager（伴生模块阶段） |
+| 本地存储 | SQLite（自建极简封装，零新增依赖）+ SharedPreferences（提醒清单 / 最近 40 条对话） |
+| 后台任务 | AlarmManager 精确闹钟（`setExactAndAllowWhileIdle` / `setAlarmClock`）+ 通知 Action，开机自动重排 |
 | 语音 | Android `SpeechRecognizer` / `TextToSpeech` |
 | 联网 | `HttpURLConnection` + 项目自带极简 JSON 解析（`JsonLite`） |
-| 测试 | JUnit4（313 个单测，覆盖调度顺序、路线决策、语义理解、规则引擎、工具、联网、云端、记忆） |
+| 测试 | JUnit4（373 个单测，覆盖调度顺序、路线决策、语义理解、规则引擎、工具、提醒解析、对话落盘、联网、云端、记忆） |
 | 构建 | Gradle 9.5 + AGP 9.3，minSdk 28 / targetSdk 37 |
 
 ## 分层与目录结构
@@ -140,16 +155,21 @@ app/src/main/java/com/example/voiceassistant/
 │   ├── web/WebHandler.kt            按需联网
 │   └── llm/CloudLlmHandler.kt       云端大模型 + CloudCache
 ├── tool/                        工具层：本机能力，0 请求
-│   └── ToolHandler / Reminder / Volume / Time / Calc / ToolReply
+│   └── ToolHandler / ReminderTool / ReminderTime / TimerTool / DeviceTool
+│       Volume / Time / Calc / ToolReply
+├── reminder/                    伴生模块 P3：通知提醒中心
+│   └── Reminders（唯一入口）/ ReminderStore（SharedPreferences 持久化）
+│       ReminderAlarm（精确闹钟 + 通知 + Action）/ ReminderReceiver / BootReceiver
 ├── network/                     网络层
 │   └── Http.kt / SearchApi.kt / LlmRequest.kt
 ├── service/                     语音服务层
-│   └── AsrManager / TtsManager / AudioController
+│   └── AsrManager / TtsManager / TtsTiming（播报兜底）/ AudioController
 ├── assistant/                   规则与知识（纯逻辑，可直接单测）
 │   └── AssistantEngine / AssistantRules / DialogLogic / KnowledgeBase
 │       FuzzyMatcher / QueryUnderstanding / NgramModel / ChineseNumber …
 ├── memory/                      记忆库（SQLite + 检索 + 内置语料）
 └── data/                        会话与设置模型
+    └── ChatSession / ChatHistoryStore（对话落盘）/ ChatMessage / AppSettings / JsonLite
 ```
 
 层与层之间靠 `core/Sources.kt` 里的四个接口解耦，
@@ -165,7 +185,13 @@ app/src/main/java/com/example/voiceassistant/
       答案算完才上屏）、**可见的思考过程**、**工具层**（提醒 / 音量 / 中文算术）、
       **省 token**（简要问题 + 按需历史 + LRU 缓存 + system 瘦身）、
       **分层重构**（ui / core / handler / tool / network / service）+ 单测（313 个）
-- [ ] 第 3 周：伴生模块（Room + WorkManager + 通知 Action）
+- [x] 第 3 周：**伴生模块 P3 通知提醒中心**（纯函数时间解析 / SharedPreferences 持久化 /
+      AlarmManager 精确闹钟（Android 14 用 `USE_EXACT_ALARM`）/ 通知 Action
+      「10 分钟后再提醒」「知道了」/ 开机重排）；**设备工具**（计时器 / 手电筒 /
+      电量 / 打开应用）；品牌更名 DeepSuck + 自适应图标与聊天头像；
+      **对话落盘**（重启后最近 40 条还在，上下文接得上）；
+      **播报兜底**（引擎吞掉语音时按字数超时收尾，状态栏不再卡在「正在回答…」）
+      + 单测（373 个）
 - [ ] 第 4 周：TTS 与 UI 打磨、异常处理、文档与演示视频
 
 ## 环境要求

@@ -25,7 +25,22 @@ class ChatSession(
 
     var listener: Listener? = null
 
+    /**
+     * 每次消息列表变化后的额外回调，用来落盘。
+     *
+     * 单独一个槽位而不是塞进 [Listener]：界面切页会换 listener，
+     * 落盘这件事跟谁在看屏幕无关，不能跟着一起被换掉。
+     */
+    var onChanged: ((List<ChatMessage>) -> Unit)? = null
+
     val messages: List<ChatMessage> get() = items
+
+    /** 用上次落盘的记录恢复对话（启动时调用一次） */
+    fun restore(saved: List<ChatMessage>) {
+        if (items.isNotEmpty() || saved.isEmpty()) return
+        items.addAll(saved)
+        listener?.onMessagesChanged(items.toList())
+    }
 
     fun addUser(text: String) {
         items.add(ChatMessage(text = text, isUser = true))
@@ -166,6 +181,8 @@ class ChatSession(
     }
 
     private fun notifyChanged() {
-        listener?.onMessagesChanged(items.toList())
+        val snapshot = items.toList()
+        listener?.onMessagesChanged(snapshot)
+        onChanged?.invoke(snapshot)
     }
 }

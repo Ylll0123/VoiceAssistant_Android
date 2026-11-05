@@ -1,7 +1,12 @@
 package com.example.voiceassistant.assistant
 
 import com.example.voiceassistant.memory.InMemoryMemoryRepository
+import com.example.voiceassistant.service.AudioController
+import com.example.voiceassistant.service.DeviceController
+import com.example.voiceassistant.tool.ReminderTool
+import com.example.voiceassistant.tool.ToolHandler
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -28,6 +33,7 @@ class SkillCatalogTest {
         SkillCatalog.skills
             .filterNot { it.id in contextDependent }
             .filterNot { it.id in networkDependent }
+            .filterNot { it.tool }
             .forEach { skill ->
                 skill.examples.forEach { example ->
                     val reply = newEngine().reply(example)
@@ -38,6 +44,38 @@ class SkillCatalogTest {
                     )
                 }
             }
+    }
+
+    /**
+     * 工具类技能（提醒 / 计时 / 手电筒…）由工具层执行，引擎测不到。
+     * 但「页面上写着能做、实际却做不了」的底线同样要守——
+     * 这里换成验证「工具层认领了它」。
+     */
+    @Test
+    fun `工具类技能的每个示例都能被工具层认领`() {
+        ReminderTool.sink.clear()
+        val handler = ToolHandler(object : AudioController {
+            override fun setMuted(muted: Boolean) = Unit
+            override fun isMuted(): Boolean = false
+            override fun adjustVolume(up: Boolean) = Unit
+        }, object : DeviceController {
+            override fun battery(): String = "现在电量 80%。"
+            override fun setTorch(on: Boolean): Boolean = true
+            override fun openApp(name: String): String? = name
+        })
+        val local = AssistantResponse("兜底", "fallback")
+
+        val toolSkills = SkillCatalog.skills.filter { it.tool }
+        assertTrue("应当有工具类技能", toolSkills.isNotEmpty())
+
+        toolSkills.forEach { skill ->
+            skill.examples.forEach { example ->
+                assertTrue(
+                    "技能「${skill.title}」的示例「$example」没被工具层认领",
+                    handler.claims(example, local)
+                )
+            }
+        }
     }
 
     @Test

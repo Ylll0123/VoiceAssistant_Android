@@ -50,23 +50,46 @@ class TtsManager(context: Context) {
     private var ttsReady = false
     private var pendingSpeak: String? = null
 
+    /** 引擎彻底不可用（初始化失败）：之后的 [speak] 直接返回 false，不再挂起 */
+    private var broken = false
+
+    /** 播报看门狗：引擎吞掉这句话时替它收尾，见 [armWatchdog] */
+    private var watchdog: Runnable? = null
+
     init {
         create(enginePackage)
     }
 
-    /** 播报一段文字 */
-    fun speak(text: String) {
-        if (!speakEnabled) return
+    /**
+     * 播报一段文字。
+     *
+     * @return 是否真的交给了引擎。返回 false 时上层**必须**自己收尾
+     *   （把状态栏改回「空闲」并重开麦克风）——否则界面会永远停在「正在回答…」。
+     */
+    fun speak(text: String): Boolean {
+        if (!speakEnabled) return false
         val cleaned = text.replace(Regex("[\\p{So}\\p{Cn}]"), "").trim()
-        if (cleaned.isEmpty()) return
+        if (cleaned.isEmpty()) return false
         val engine = tts
         if (!ttsReady || engine == null) {
-            // 引擎还没初始化好，先存着，init 回调里再念
+            // 引擎还没初始化好，先存着，init 回调里再念（那时会再走一遍本方法并武装看门狗）
+            if (broken) return false
             pendingSpeak = cleaned
-            return
+            return false
         }
         isSpeaking = true
-        engine.speak(cleaned, TextToSpeech.QUEUE_FLUSH, null, "reply-${System.currentTimeMillis()}")
+        val utteranceId = "reply-${System.currentTimeMillis()}"
+        val result = runCatching {
+            engine.speak(cleaned, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        }.getOrDefault(TextToSpeech.ERROR)
+        if (result == TextToSpeech.ERROR) {
+            // 引擎收到了却念不出来（语音包缺失、服务被杀）：不会有任何回调
+            Log.w(TAG, "播报入队失败，本轮不念了")
+            isSpeaking = false
+            return false
+        }
+        armWatchdog(utteranceId, cleaned.length)
+        return true
     }
 
     /**
@@ -82,6 +105,7 @@ class TtsManager(context: Context) {
 
     /** 停止播报 */
     fun stop() {
+        cancelWatchdog()
         isSpeaking = false
         tts?.stop()
     }
@@ -89,9 +113,11 @@ class TtsManager(context: Context) {
     /** 切换到指定语音引擎；传空串表示系统默认 */
     fun useEngine(packageName: String) {
         if (packageName == enginePackage) return
+        cancelWatchdog()
         val old = tts
         tts = null
         ttsReady = false
+        broken = false
         isSpeaking = false
         runCatching { old?.stop(); old?.shutdown() }
         enginePackage = packageName
@@ -118,6 +144,7 @@ class TtsManager(context: Context) {
 
     /** 释放资源 */
     fun release() {
+        cancelWatchdog()
         tts?.stop()
         tts?.shutdown()
         tts = null
@@ -142,6 +169,9 @@ class TtsManager(context: Context) {
         val engine = tts
         if (status != TextToSpeech.SUCCESS || engine == null) {
             Log.w(TAG, "TextToSpeech 初始化失败: $status")
+            // 没引擎就别再挂起待念文本了：挂起不会有任何回调，界面会一直等
+            broken = true
+            pendingSpeak = null
             return@OnInitListener
         }
         val result = engine.setLanguage(Locale.SIMPLIFIED_CHINESE)
@@ -180,11 +210,37 @@ class TtsManager(context: Context) {
     }
 
     private fun notifyFinished() {
+        cancelWatchdog()
         mainHandler.post {
             if (!isSpeaking) return@post
             isSpeaking = false
             listener?.onSpeakingFinished()
         }
+    }
+
+    /**
+     * 给这一句配上「兜底计时器」。
+     *
+     * 有些设备（语音包缺失、引擎被杀）会把 [TextToSpeech.speak] 悄悄吞掉：
+     * 不报错、也不回调 `onDone`，[isSpeaking] 就永远停在 true，
+     * 界面卡在「正在回答…」、连续对话也不再重开麦克风。
+     * 这里按字数估一个宽松的上限，到点还没回音就当作念完收尾。
+     */
+    private fun armWatchdog(utteranceId: String, length: Int) {
+        cancelWatchdog()
+        val task = Runnable {
+            if (!isSpeaking) return@Runnable
+            Log.w(TAG, "播报超时未回调，按念完处理: $utteranceId")
+            runCatching { tts?.stop() }
+            notifyFinished()
+        }
+        watchdog = task
+        mainHandler.postDelayed(task, TtsTiming.watchdogMs(length))
+    }
+
+    private fun cancelWatchdog() {
+        watchdog?.let { mainHandler.removeCallbacks(it) }
+        watchdog = null
     }
 
     /** 一个可选的语音合成引擎 */
