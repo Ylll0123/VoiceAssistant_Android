@@ -18,24 +18,22 @@ import com.example.voiceassistant.handler.llm.CloudLlmHandler
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.switchmaterial.SwitchMaterial
 
 /**
  * 设置页：只留最常用的几项。
  *
- * 回答方式、语言、大模型开关、清空对话、恢复默认——五件事，一屏放得下。
- * 语音播报和连续对话不在这里：它们在对话页顶栏有图标，随手就能点，
- * 设置页再放一份只是重复。
+ * 回答方式、语言、清空对话、账号、恢复默认——一屏放得下。
+ * 语音播报和连续对话不在这里：它们在对话页顶栏有图标，随手就能点。
+ *
+ * 大模型也不在这里摆「开关」：默认就接的是 GLM-4-Flash-250414（免费），
+ * 用户没必要先理解什么叫「接入」。只在「关于」里留一行模型名，
+ * 点开才填 Key、换服务商——那是维护入口，不是日常选项。
  */
 class SettingsFragment : Fragment() {
 
     private lateinit var toggleStyle: MaterialButtonToggleGroup
     private lateinit var tvLanguageValue: TextView
-    private lateinit var switchModel: SwitchMaterial
-    private lateinit var tvCloudState: TextView
-    private lateinit var tvCloudEndpoint: TextView
-    private lateinit var tvCloudModel: TextView
-    private lateinit var tvCloudKey: TextView
+    private lateinit var tvModelValue: TextView
     private lateinit var tvAccount: TextView
     private lateinit var tvVersion: TextView
 
@@ -53,11 +51,7 @@ class SettingsFragment : Fragment() {
 
         toggleStyle = view.findViewById(R.id.toggleStyle)
         tvLanguageValue = view.findViewById(R.id.tvLanguageValue)
-        switchModel = view.findViewById(R.id.switchModel)
-        tvCloudState = view.findViewById(R.id.tvCloudState)
-        tvCloudEndpoint = view.findViewById(R.id.tvCloudEndpoint)
-        tvCloudModel = view.findViewById(R.id.tvCloudModel)
-        tvCloudKey = view.findViewById(R.id.tvCloudKey)
+        tvModelValue = view.findViewById(R.id.tvModelValue)
         tvAccount = view.findViewById(R.id.tvAccount)
         tvVersion = view.findViewById(R.id.tvVersion)
 
@@ -126,51 +120,34 @@ class SettingsFragment : Fragment() {
         requireActivity().recreate()
     }
 
-    // ------------------------------------------------------------------ 大模型
+    // ------------------------------------------------------------------ 模型
 
+    /**
+     * 「关于」里那一行模型入口。
+     *
+     * 设置页不再摆「接入大模型」开关：默认就接的是 GLM-4-Flash-250414。
+     * 这一行只显示当前模型名，没填 Key 时补一句「待填 Key」——
+     * GLM 免费但仍然要一个 Key，不说清楚会让人以为已经能用了。
+     */
     private fun bindModel() {
-        switchModel.isChecked = host.cloudConfig.enabled
-        switchModel.setOnCheckedChangeListener { _, checked ->
-            if (host.cloudConfig.enabled == checked) return@setOnCheckedChangeListener
-            val mode = if (checked && host.cloudConfig.mode == CloudLlmHandler.CloudMode.OFF) {
-                CloudLlmHandler.CloudMode.LOCAL_FIRST
-            } else if (!checked) {
-                CloudLlmHandler.CloudMode.OFF
-            } else {
-                host.cloudConfig.mode
-            }
-            applyCloud(host.cloudConfig.copy(enabled = checked, mode = mode))
+        requireView().findViewById<View>(R.id.rowModel).setOnClickListener {
+            showCloudEditor()
         }
-
-        requireView().findViewById<MaterialButton>(R.id.btnCloudEdit)
-            .setOnClickListener { showCloudEditor() }
-        requireView().findViewById<MaterialButton>(R.id.btnCloudTest)
-            .setOnClickListener { runCloudTest() }
+        updateModelRow()
     }
 
     private fun applyCloud(config: CloudLlmHandler.CloudConfig) {
         host.setCloudConfig(config)
-        updateCloudState()
+        updateModelRow()
     }
 
-    private fun updateCloudState() {
+    private fun updateModelRow() {
         val cfg = host.cloudConfig
-        val unset = getString(R.string.action_unset)
-
-        tvCloudEndpoint.text = getString(R.string.settings_cloud_endpoint, cfg.baseUrl.ifBlank { unset })
-        tvCloudModel.text = getString(R.string.settings_cloud_model, cfg.model.ifBlank { unset })
-        tvCloudKey.text = getString(
-            R.string.settings_cloud_key,
-            if (cfg.apiKey.isBlank()) unset else cfg.maskedKey()
-        )
-
-        tvCloudState.text = when {
-            !cfg.enabled -> getString(R.string.settings_model_off_hint)
-            !cfg.isReady() -> getString(
-                R.string.settings_cloud_state_missing,
-                missingFields(cfg).joinToString("、")
-            )
-            else -> getString(R.string.settings_cloud_state_ready, providerLabel(cfg), cfg.model)
+        val name = cfg.model.ifBlank { CloudLlmHandler.DEFAULT_PROVIDER.model }
+        tvModelValue.text = if (cfg.isReady()) {
+            name
+        } else {
+            getString(R.string.settings_model_missing_key, name)
         }
     }
 
@@ -182,18 +159,11 @@ class SettingsFragment : Fragment() {
         return missing
     }
 
-    /** 按 Base URL 反查服务商名（自己填的地址显示第一个内置项） */
-    private fun providerLabel(cfg: CloudLlmHandler.CloudConfig): String {
-        val base = cfg.baseUrl.trim().trimEnd('/')
-        val hit = CloudLlmHandler.PROVIDERS.firstOrNull {
-            it.baseUrl.isNotEmpty() && it.baseUrl.trimEnd('/') == base
-        }
-        return hit?.label ?: CloudLlmHandler.PROVIDERS.first().label
-    }
-
     /**
      * 填写接口四项配置。
      *
+     * 从「关于 → AI 模型」进入，不是日常选项：
+     * 大多数人一次都不用打开——默认的 GLM-4-Flash-250414 只要填个 Key。
      * 用代码搭界面而不是另写一份 XML：只有四个输入框，
      * 而且这样不用管主题里有没有对应 style，任何 Material 版本都能编译过。
      */
@@ -234,26 +204,52 @@ class SettingsFragment : Fragment() {
             .setMessage(R.string.settings_cloud_hint)
             .setView(container)
             .setNegativeButton(R.string.action_cancel, null)
+            .setNeutralButton(R.string.settings_cloud_test) { _, _ ->
+                // 先落盘再测：否则测的是上一次存进去的配置，很容易误判
+                applyCloud(
+                    buildConfig(
+                        cfg,
+                        inputBase.text.toString(),
+                        inputKey.text.toString(),
+                        inputModel.text.toString(),
+                        inputPrompt.text.toString()
+                    )
+                )
+                runCloudTest()
+            }
             .setPositiveButton(R.string.action_save) { _, _ ->
-                val next = cfg.copy(
-                    enabled = true,
-                    mode = if (cfg.mode == CloudLlmHandler.CloudMode.OFF) {
-                        CloudLlmHandler.CloudMode.LOCAL_FIRST
-                    } else {
-                        cfg.mode
-                    },
-                    baseUrl = inputBase.text.toString(),
-                    apiKey = inputKey.text.toString(),
-                    model = inputModel.text.toString(),
-                    systemPrompt = inputPrompt.text.toString().trim()
-                        .ifBlank { CloudLlmHandler.DEFAULT_SYSTEM_PROMPT }
+                val next = buildConfig(
+                    cfg,
+                    inputBase.text.toString(),
+                    inputKey.text.toString(),
+                    inputModel.text.toString(),
+                    inputPrompt.text.toString()
                 )
                 applyCloud(next)
-                switchModel.isChecked = true
                 toast(getString(R.string.settings_cloud_saved, next.model.ifBlank { next.baseUrl }))
             }
             .show()
     }
+
+    /** 把四个输入框读成一份配置：保存过就是想用，所以 enabled 恒为 true */
+    private fun buildConfig(
+        cfg: CloudLlmHandler.CloudConfig,
+        base: String,
+        key: String,
+        model: String,
+        prompt: String
+    ): CloudLlmHandler.CloudConfig = cfg.copy(
+        enabled = true,
+        mode = if (cfg.mode == CloudLlmHandler.CloudMode.OFF) {
+            CloudLlmHandler.CloudMode.LOCAL_FIRST
+        } else {
+            cfg.mode
+        },
+        baseUrl = base,
+        apiKey = key,
+        model = model,
+        systemPrompt = prompt.trim().ifBlank { CloudLlmHandler.DEFAULT_SYSTEM_PROMPT }
+    )
 
     /** 打一次最小请求，验证地址和 Key 对不对 */
     private fun runCloudTest() {
@@ -267,13 +263,8 @@ class SettingsFragment : Fragment() {
             )
             return
         }
-        tvCloudState.text = getString(R.string.settings_cloud_testing)
-        host.testCloud(cfg) { result ->
-            // Toast 会把服务端原文截掉一半，排查问题不方便：
-            // 把完整结果留在状态行里，它不会消失，可以逐字对照
-            tvCloudState.text = result
-            toast(result)
-        }
+        toast(getString(R.string.settings_cloud_testing))
+        host.testCloud(cfg) { result -> toast(result) }
     }
 
     // ------------------------------------------------------------------ 其他动作
@@ -325,7 +316,7 @@ class SettingsFragment : Fragment() {
     }
 
     private fun refresh() {
-        updateCloudState()
+        updateModelRow()
         tvAccount.text = AccountStore(requireContext()).currentUser
             ?: getString(R.string.settings_account_guest)
         tvVersion.text = getString(
@@ -334,7 +325,6 @@ class SettingsFragment : Fragment() {
             SkillCatalog.skills.size
         )
         tvLanguageValue.text = languageLabel(host.appSettings().language)
-        switchModel.isChecked = host.cloudConfig.enabled
     }
 
     @Suppress("DEPRECATION")

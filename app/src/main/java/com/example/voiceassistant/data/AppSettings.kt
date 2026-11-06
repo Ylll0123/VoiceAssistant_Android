@@ -96,32 +96,46 @@ class AppSettings(context: Context) {
 
     // ---------------------------------------------------------------- 云端大模型
 
-    /** 是否启用云端大模型（AI 大脑） */
+    /**
+     * 是否启用云端大模型（AI 大脑）。
+     *
+     * 默认开启：新装用户打开就是「已接入 GLM-4-Flash-250414」，只差填一个 API Key。
+     * 没有 Key 时 [CloudLlmHandler.CloudConfig.isReady] 为 false，
+     * 路由根本不会去调云端，所以这个默认值不会让离线可用性变差、也不会偷偷花钱。
+     */
     var cloudEnabled: Boolean
-        get() = prefs.getBoolean(KEY_CLOUD, false)
+        get() = prefs.getBoolean(KEY_CLOUD, true)
         set(value) = prefs.edit().putBoolean(KEY_CLOUD, value).apply()
 
     /**
      * 工作方式：0 不用云端 / 1 本地优先 / 2 AI 优先。
      * 存的是 [CloudLlmHandler.CloudMode.code]，读出来时用 [CloudLlmHandler.CloudMode.of] 还原。
+     *
+     * 默认「本地优先」：能本地答的绝不花钱问云端，答不好才交给免费模型。
      */
     var cloudMode: Int
-        get() = prefs.getInt(KEY_CLOUD_MODE, 0)
+        get() = prefs.getInt(KEY_CLOUD_MODE, CloudLlmHandler.CloudMode.LOCAL_FIRST.code)
         set(value) = prefs.edit().putInt(KEY_CLOUD_MODE, value.coerceIn(0, 2)).apply()
 
-    /** 接口地址（Base URL），例如 https://api.deepseek.com */
+    /** 接口地址（Base URL），默认是智谱的 OpenAI 兼容地址 */
     var cloudEndpoint: String
-        get() = prefs.getString(KEY_CLOUD_URL, "").orEmpty()
+        get() = prefs.getString(KEY_CLOUD_URL, CloudLlmHandler.DEFAULT_PROVIDER.baseUrl).orEmpty()
         set(value) = prefs.edit().putString(KEY_CLOUD_URL, value.trim()).apply()
 
-    /** API Key。本地保存，只在本机使用，不上传给除所选服务商以外的任何地方 */
+    /**
+     * API Key。本地保存，只在本机使用，不上传给除所选服务商以外的任何地方。
+     *
+     * 默认值就是包里内置的那把 Key（见 [CloudLlmHandler.DEFAULT_API_KEY]）：
+     * 装上就能用，不用先注册；用户在「关于 → AI 模型」里改过之后，
+     * 存的是他自己的，内置那把不再参与。
+     */
     var cloudKey: String
-        get() = prefs.getString(KEY_CLOUD_KEY, "").orEmpty()
+        get() = prefs.getString(KEY_CLOUD_KEY, CloudLlmHandler.DEFAULT_API_KEY).orEmpty()
         set(value) = prefs.edit().putString(KEY_CLOUD_KEY, value.trim()).apply()
 
-    /** 模型名，例如 deepseek-flash / qwen-plus */
+    /** 模型名，默认 glm-4-flash-250414（智谱免费模型） */
     var cloudModel: String
-        get() = prefs.getString(KEY_CLOUD_MODEL, "").orEmpty()
+        get() = prefs.getString(KEY_CLOUD_MODEL, CloudLlmHandler.DEFAULT_PROVIDER.model).orEmpty()
         set(value) = prefs.edit().putString(KEY_CLOUD_MODEL, value.trim()).apply()
 
     /** 人设（system prompt）：留空表示用 [CloudLlmHandler.DEFAULT_SYSTEM_PROMPT] */

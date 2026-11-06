@@ -71,9 +71,6 @@
     <string name="settings_style_detailed">Detailed</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_title">Choose interface language</string>
-    <string name="settings_model_switch">Use a cloud LLM</string>
-    <string name="settings_model_desc">When on, questions the local engine cannot answer go to the cloud. Off means fully offline.</string>
-    <string name="settings_model_off_hint">Not connected: every answer is computed on this phone</string>
     <string name="settings_chat">Chat</string>
     <string name="settings_clear_chat">Clear chat history</string>
     <string name="settings_clear_chat_done">Chat cleared</string>
@@ -86,21 +83,16 @@
     <string name="settings_reset_done">Defaults restored (memory kept)</string>
 
     <!-- Cloud LLM -->
-    <string name="settings_cloud_state_ready">Connected: %1$s · %2$s</string>
     <string name="settings_cloud_state_missing">Missing: %1$s</string>
     <string name="settings_cloud_missing_url">base URL</string>
     <string name="settings_cloud_missing_key">API key</string>
     <string name="settings_cloud_missing_model">model name</string>
-    <string name="settings_cloud_endpoint">Endpoint: %1$s</string>
-    <string name="settings_cloud_model">Model: %1$s</string>
-    <string name="settings_cloud_key">Key: %1$s</string>
     <string name="settings_cloud_test">Test</string>
-    <string name="settings_cloud_edit">Edit settings</string>
     <string name="settings_cloud_title">AI endpoint settings</string>
     <string name="settings_cloud_hint">Works with any OpenAI-compatible API (DeepSeek, Qwen, Zhipu, Kimi, SiliconFlow and more). The key stays on this phone.</string>
-    <string name="settings_cloud_base_hint">Base URL, e.g. https://api.deepseek.com</string>
+    <string name="settings_cloud_base_hint">Base URL, e.g. https://open.bigmodel.cn/api/paas/v4</string>
     <string name="settings_cloud_key_hint">API key</string>
-    <string name="settings_cloud_model_hint">Model name, e.g. deepseek-chat</string>
+    <string name="settings_cloud_model_hint">Model name, e.g. glm-4-flash-250414</string>
     <string name="settings_cloud_prompt_hint">Persona (optional): leave blank for the default, long prompts cost tokens every turn</string>
     <string name="settings_cloud_testing">Testing connection…</string>
     <string name="settings_cloud_saved">Saved: %1$s</string>
@@ -111,7 +103,6 @@
     <string name="action_delete">Delete</string>
     <string name="action_save">Save</string>
     <string name="action_edit">Edit</string>
-    <string name="action_unset">Not set</string>
 
     <!-- Message bubble actions -->
     <string name="bubble_actions_title">This message</string>
@@ -238,4 +229,8 @@
     <string name="skill_title_follow_up">Follow-ups</string>
     <string name="skill_desc_follow_up">Within 3 minutes, and the day after or one more keeps the thread</string>
     <string name="features_examples_note">Examples are in Chinese: the offline engine only understands Chinese commands.</string>
+
+    <!-- 设置页底部：模型入口（默认已接入，只有一个入口） -->
+    <string name="settings_model_row">Model</string>
+    <string name="settings_model_missing_key">%1$s · API key needed</string>
 </resources>

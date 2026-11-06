@@ -71,9 +71,6 @@
     <string name="settings_style_detailed">詳しく</string>
     <string name="settings_language">言語</string>
     <string name="settings_language_title">表示言語を選択</string>
-    <string name="settings_model_switch">クラウド LLM を使う</string>
-    <string name="settings_model_desc">オンにすると、ローカルで答えられない質問をクラウド AI に送ります。オフなら完全オフラインです</string>
-    <string name="settings_model_off_hint">未接続：すべての答えを端末内で計算します</string>
     <string name="settings_chat">会話</string>
     <string name="settings_clear_chat">会話履歴を消去</string>
     <string name="settings_clear_chat_done">会話を消去しました</string>
@@ -86,21 +83,16 @@
     <string name="settings_reset_done">既定の設定に戻しました（記憶は残ります）</string>
 
     <!-- クラウド LLM -->
-    <string name="settings_cloud_state_ready">接続済み：%1$s · %2$s</string>
     <string name="settings_cloud_state_missing">未設定：%1$s</string>
     <string name="settings_cloud_missing_url">接続先 URL</string>
     <string name="settings_cloud_missing_key">API キー</string>
     <string name="settings_cloud_missing_model">モデル名</string>
-    <string name="settings_cloud_endpoint">接続先：%1$s</string>
-    <string name="settings_cloud_model">モデル：%1$s</string>
-    <string name="settings_cloud_key">キー：%1$s</string>
     <string name="settings_cloud_test">接続をテスト</string>
-    <string name="settings_cloud_edit">設定を入力</string>
     <string name="settings_cloud_title">AI 接続設定</string>
     <string name="settings_cloud_hint">OpenAI 互換の API に対応しています（DeepSeek、Qwen、Zhipu、Kimi、SiliconFlow など）。キーは端末内だけに保存します。</string>
-    <string name="settings_cloud_base_hint">接続先 URL（例：https://api.deepseek.com）</string>
+    <string name="settings_cloud_base_hint">接続先 URL（例：https://open.bigmodel.cn/api/paas/v4）</string>
     <string name="settings_cloud_key_hint">API キー</string>
-    <string name="settings_cloud_model_hint">モデル名（例：deepseek-chat）</string>
+    <string name="settings_cloud_model_hint">モデル名（例：glm-4-flash-250414）</string>
     <string name="settings_cloud_prompt_hint">人格（任意）：空欄なら既定。長すぎると毎回トークンを消費します</string>
     <string name="settings_cloud_testing">接続をテストしています…</string>
     <string name="settings_cloud_saved">保存しました：%1$s</string>
@@ -111,7 +103,6 @@
     <string name="action_delete">削除</string>
     <string name="action_save">保存</string>
     <string name="action_edit">修正</string>
-    <string name="action_unset">未設定</string>
 
     <!-- メッセージ操作 -->
     <string name="bubble_actions_title">このメッセージ</string>
@@ -238,4 +229,8 @@
     <string name="skill_title_follow_up">追加の質問</string>
     <string name="skill_desc_follow_up">3 分以内なら「明後日は？」「もう一つ」で続けられます</string>
     <string name="features_examples_note">例文は中国語です。オフラインエンジンは現在、中国語の指示だけを理解します。</string>
+
+    <!-- 设置页底部：模型入口（默认已接入，只有一个入口） -->
+    <string name="settings_model_row">AI モデル</string>
+    <string name="settings_model_missing_key">%1$s · API キー未設定</string>
 </resources>

@@ -1,5 +1,6 @@
 package com.example.voiceassistant.handler.llm
 
+import com.example.voiceassistant.BuildConfig
 import com.example.voiceassistant.assistant.AssistantEngine
 import com.example.voiceassistant.assistant.DialogContext
 import com.example.voiceassistant.core.CloudSource
@@ -70,7 +71,7 @@ object CloudLlmHandler : CloudSource {
         fun maskedKey(): String = maskKey(apiKey)
     }
 
-    /** 服务商预设：换服务商 = 换 Base URL + 模型名，其它都一样 */
+    /** 一个服务商预设：换服务商 = 换 Base URL + 模型名，其它都一样 */
     data class Provider(
         val label: String,
         val baseUrl: String,
@@ -78,7 +79,20 @@ object CloudLlmHandler : CloudSource {
         val hint: String
     )
 
+    /**
+     * 服务商预设列表。
+     *
+     * **第一个就是默认接入的**（见 [DEFAULT_PROVIDER]）：智谱 GLM-4-Flash-250414，
+     * 官方免费、128K 上下文、OpenAI 兼容，装完只要填一个 API Key 就能用，
+     * 不需要用户先想清楚去哪家注册、充多少钱。
+     */
     val PROVIDERS: List<Provider> = listOf(
+        Provider(
+            "智谱 GLM",
+            "https://open.bigmodel.cn/api/paas/v4",
+            "glm-4-flash-250414",
+            "默认接入的免费模型，地址以 /v4 结尾；到 open.bigmodel.cn 注册后取 API Key 填进来即可"
+        ),
         Provider(
             "火山方舟（豆包）",
             "https://ark.cn-beijing.volces.com/api/v3",
@@ -102,14 +116,22 @@ object CloudLlmHandler : CloudSource {
             "https://api.moonshot.cn/v1",
             "kimi-k2-0905-preview",
             "Moonshot 开放平台，地址以 /v1 结尾"
-        ),
-        Provider(
-            "智谱 GLM",
-            "https://open.bigmodel.cn/api/paas/v4",
-            "glm-4-flash",
-            "智谱开放平台，地址以 /v4 结尾"
         )
     )
+
+    /** 默认接入的服务商：新装用户不用配置就知道「点这里能用」 */
+    val DEFAULT_PROVIDER: Provider get() = PROVIDERS.first()
+
+    /**
+     * 随包内置的 Key（编译期从 `local.properties` 注入到 [BuildConfig.GLM_API_KEY]）。
+     *
+     * 这样下载 APK 的人不用注册、不用填 Key 就能直接问大模型；
+     * 想换成自己的，在「关于 → AI 模型」里改一次即可，改过之后以本地保存的为准。
+     *
+     * 注意这是**共享额度**：Key 在 APK 里，懂行的人能提取出来。
+     * 所以智谱后台要设额度上限，发现异常就换一把钥匙重新打包。
+     */
+    val DEFAULT_API_KEY: String get() = BuildConfig.GLM_API_KEY
 
     // ------------------------------------------------------------------ 常量
 

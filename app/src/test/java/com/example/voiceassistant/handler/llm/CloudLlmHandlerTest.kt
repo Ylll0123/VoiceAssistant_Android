@@ -258,6 +258,19 @@ class CloudLlmHandlerTest {
     }
 
     @Test
+    fun `默认接入的是智谱免费的 Flash 模型`() {
+        val provider = CloudLlmHandler.DEFAULT_PROVIDER
+        assertEquals("默认服务商必须是列表第一项", CloudLlmHandler.PROVIDERS.first(), provider)
+        assertEquals("glm-4-flash-250414", provider.model)
+        assertEquals("https://open.bigmodel.cn/api/paas/v4", provider.baseUrl)
+        // 默认地址 + 默认模型拼出来的就是可用的 chat 接口
+        assertEquals(
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+            CloudLlmHandler.chatUrl(provider.baseUrl)
+        )
+    }
+
+    @Test
     fun `预设模型名不能用已停用的旧名`() {
         // deepseek-chat / deepseek-reasoner 已在 2026-07-24 停用，请求会被拒
         val dead = setOf("deepseek-chat", "deepseek-reasoner")
