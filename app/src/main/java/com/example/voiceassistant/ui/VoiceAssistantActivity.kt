@@ -13,6 +13,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
+import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.IntentSenderRequest
@@ -46,6 +47,8 @@ import com.example.voiceassistant.core.ReplyReady
 import com.example.voiceassistant.core.RoutePlanner
 import com.example.voiceassistant.core.TurnPlanned
 import com.example.voiceassistant.data.AppSettings
+import com.example.voiceassistant.data.AccountStore
+import com.example.voiceassistant.data.LocaleHelper
 import com.example.voiceassistant.data.ChatHistoryStore
 import com.example.voiceassistant.data.ChatMessage
 import com.example.voiceassistant.data.ChatSession
@@ -81,7 +84,7 @@ import java.io.File
  */
 class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsManager.Listener {
 
-    enum class Tab { CHAT, SKILLS, MEMORY, SETTINGS }
+    enum class Tab { CHAT, FEATURES, SETTINGS }
 
     /** 对话页对外暴露的回调，Activity 收到语音事件后转给它 */
     interface ChatUi {
@@ -158,12 +161,10 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         private set
 
     private lateinit var ivTabChat: ImageView
-    private lateinit var ivTabSkills: ImageView
-    private lateinit var ivTabMemory: ImageView
+    private lateinit var ivTabFeatures: ImageView
     private lateinit var ivTabSettings: ImageView
     private lateinit var tvTabChat: TextView
-    private lateinit var tvTabSkills: TextView
-    private lateinit var tvTabMemory: TextView
+    private lateinit var tvTabFeatures: TextView
     private lateinit var tvTabSettings: TextView
 
     private var chatUi: ChatUi? = null
@@ -200,28 +201,11 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
      *
      * 装机后清理安装包要用它：别人的文件（浏览器下载的）只能由系统弹框、
      * 用户点一下才删得掉，这是分区存储的安全约束。
+     * 我们自己的确认框已经去掉了——装完就清，不再多问一句。
      */
     private val apkCleanLauncher =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             val deleted = result.resultCode == Activity.RESULT_OK
-            Toast.makeText(
-                this,
-                if (deleted) R.string.apk_clean_done else R.string.apk_clean_kept,
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-
-    /**
-     * 手动兜底：用户自己在文件选择器里挑一个 APK 删掉。
-     *
-     * 浏览器下载的安装包在分区存储里对本应用不可见，
-     * 只有「用户亲手选中」这一步能拿到删除授权。
-     */
-    private val apkPickLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val uri = result.data?.data
-            if (uri == null) return@registerForActivityResult
-            val deleted = runCatching { ApkCleaner.deletePicked(this, uri) }.getOrDefault(false)
             Toast.makeText(
                 this,
                 if (deleted) R.string.apk_clean_done else R.string.apk_clean_kept,
@@ -286,8 +270,22 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         )
     }
 
+    /**
+     * 界面语言：在 Context 构造阶段就把 Configuration 换成选定语言。
+     *
+     * 必须早于 setContentView，否则资源已经按系统语言解析过了，
+     * 设置页里切完语言会「文字没变、只有重建之后才变」。
+     */
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase, AppSettings.readLanguage(newBase)))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 没登录（也没选游客）就先去看登录页。
+        // 外部 query 入口放行：自动化测试和「发送到 HardlySeek」不该被门禁挡住。
+        if (!ensureSignedIn()) return
 
         // 显式指定浅色系统栏样式。
         // enableEdgeToEdge() 不带参数时会按系统深色模式自动选择图标颜色，
@@ -321,10 +319,14 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         localModel = createLocalModel()
 
         // 上次的对话先恢复出来，再补欢迎语：
-        // 否则重启后屏幕上只剩一句自我介绍，追问「那明天呢」就接不上了
-        // 旧记录里的欢迎语带的是旧名字，先剔掉，用当前文案重新放回最前面
-        val saved = chatHistory.load().filterNot { it.isOldWelcome() }
-        session.restore(listOf(newWelcome()) + saved)
+        // 否则重启后屏幕上只剩一句自我介绍，追问「那明天呢」就接不上了。
+        //
+        // 历史的第一条永远是欢迎语，而且它的文案会随界面语言 / 应用名变化，
+        // 所以这里按「位置」而不是按文字认：先丢掉旧的那条，再用当前语言的文案重放一条。
+        // （以前按中文前缀判断，一切到英文就会出现两条欢迎语）
+        val saved = chatHistory.load()
+        val history = if (saved.firstOrNull()?.isOpeningLine() == true) saved.drop(1) else saved
+        session.restore(listOf(newWelcome()) + history)
         session.onChanged = { chatHistory.save(it) }
         session.ensureWelcome(getString(R.string.welcome))
 
@@ -350,6 +352,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             ?: Tab.CHAT
         currentTab = null
         selectTab(restored)
+        setupBackBehavior()
 
         askNotificationPermission()
 
@@ -386,13 +389,14 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     }
 
     /**
-     * 装完自动清理安装包（每个版本只试一次）。
+     * 装完自动清理安装包：不问，直接删（每个版本只跑一次）。
      *
-     * 分两步：
-     * 1. 自己的文件（将来应用内升级下载的）→ 直接删，用户完全无感；
-     * 2. 浏览器下载的文件 → 只能发起系统删除请求，系统弹一句确认。
+     * 分两档，都不弹自建对话框：
+     * 1. 自己的文件（应用内升级下载的）→ 静默删除，用户完全无感；
+     * 2. 浏览器下载的 → 直接发起系统删除请求。系统那一下授权是分区存储的硬约束，
+     *    删别人的文件必须过系统这道门，但它不是我们多问一句。
      *
-     * 找不到本应用的安装包就什么都不做，也不会反复打扰。
+     * 两档都不成立就安静退出，绝不拿弹窗打扰用户。
      */
     private fun cleanInstallerOnce() {
         if (isFinishing || isDestroyed) return
@@ -402,36 +406,17 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         prefs.edit().putBoolean(key, true).apply()
 
         val found = runCatching { ApkCleaner.findInstallers(this) }.getOrNull().orEmpty()
+        if (found.isEmpty()) return
+
         val remaining = found.filterNot { ApkCleaner.deleteSilently(this, it) }
-        if (found.isNotEmpty() && remaining.isEmpty()) {
+        if (remaining.isEmpty()) {
             Toast.makeText(this, R.string.apk_clean_done, Toast.LENGTH_SHORT).show()
             return
         }
 
-        if (remaining.isNotEmpty()) {
-            val sender = ApkCleaner.deleteRequest(this, remaining)
-            if (sender != null) {
-                runCatching { apkCleanLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
-                return
-            }
-        }
-
-        // 最后一档：安装包是浏览器下载的，本应用既看不见也删不掉，
-        // 只能请用户自己选中——这也是分区存储下唯一合规的删法
-        if (ApkCleaner.wasSideLoaded(this)) askManualClean()
-    }
-
-    /** 问一次要不要手动清安装包（每个版本只问一次） */
-    private fun askManualClean() {
-        if (isFinishing || isDestroyed) return
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.apk_clean_title)
-            .setMessage(R.string.apk_clean_message)
-            .setPositiveButton(R.string.apk_clean_pick) { _, _ ->
-                runCatching { apkPickLauncher.launch(ApkCleaner.pickIntent()) }
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .show()
+        // 传空列表会让 createDeleteRequest 抛异常，所以这里必须先判空
+        val sender = ApkCleaner.deleteRequest(this, remaining) ?: return
+        runCatching { apkCleanLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
     }
 
     /** 当前版本号，用来做「每个版本只清理一次」的键 */
@@ -493,17 +478,14 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     private fun setupTabs() {
         ivTabChat = findViewById(R.id.ivTabChat)
-        ivTabSkills = findViewById(R.id.ivTabSkills)
-        ivTabMemory = findViewById(R.id.ivTabMemory)
+        ivTabFeatures = findViewById(R.id.ivTabFeatures)
         ivTabSettings = findViewById(R.id.ivTabSettings)
         tvTabChat = findViewById(R.id.tvTabChat)
-        tvTabSkills = findViewById(R.id.tvTabSkills)
-        tvTabMemory = findViewById(R.id.tvTabMemory)
+        tvTabFeatures = findViewById(R.id.tvTabFeatures)
         tvTabSettings = findViewById(R.id.tvTabSettings)
 
         findViewById<View>(R.id.tabChat).setOnClickListener { selectTab(Tab.CHAT) }
-        findViewById<View>(R.id.tabSkills).setOnClickListener { selectTab(Tab.SKILLS) }
-        findViewById<View>(R.id.tabMemory).setOnClickListener { selectTab(Tab.MEMORY) }
+        findViewById<View>(R.id.tabFeatures).setOnClickListener { selectTab(Tab.FEATURES) }
         findViewById<View>(R.id.tabSettings).setOnClickListener { selectTab(Tab.SETTINGS) }
     }
 
@@ -520,14 +502,62 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         currentTab = tab
         val fragment: Fragment = when (tab) {
             Tab.CHAT -> ChatFragment()
-            Tab.SKILLS -> SkillsFragment()
-            Tab.MEMORY -> MemoryFragment()
+            Tab.FEATURES -> FeaturesFragment()
             Tab.SETTINGS -> SettingsFragment()
         }
+        // 切底部导航时把二级页面的返回栈清空，
+        // 否则从设置页按返回会先退回「记忆」这种上一轮的中间页
+        supportFragmentManager.popBackStackImmediate(
+            null,
+            androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE
+        )
         supportFragmentManager.beginTransaction()
             .replace(R.id.fragmentContainer, fragment)
             .commit()
         updateTabUi()
+    }
+
+    /**
+     * 打开本地记忆页。
+     *
+     * 底部导航只有三项，记忆不是独立 tab，而是功能页里的二级页面——
+     * 所以用 addToBackStack，系统返回时回到功能页，底栏高亮仍是「功能」。
+     */
+    fun openMemory() {
+        asr.cancel()
+        tts.stop()
+        chatUi?.setMicActive(false)
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.fragmentContainer, MemoryFragment())
+            .addToBackStack(BACK_MEMORY)
+            .commit()
+    }
+
+    /** 退出登录：清掉身份，回到登录页（任务栈整体重置） */
+    fun gotoLogin() {
+        startActivity(
+            android.content.Intent(this, LoginActivity::class.java).apply {
+                addFlags(
+                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+                )
+            }
+        )
+        finish()
+    }
+
+    /**
+     * 登录门禁。
+     *
+     * @return true 表示可以继续启动；false 表示已经跳去登录页并结束了本页
+     */
+    private fun ensureSignedIn(): Boolean {
+        if (AccountStore(this).isSignedIn) return true
+        // 外部送进来的那句话（自动化 / 分享）不挡
+        if (intent?.getStringExtra(EXTRA_QUERY) != null) return true
+        startActivity(android.content.Intent(this, LoginActivity::class.java))
+        finish()
+        return false
     }
 
     private fun updateTabUi() {
@@ -535,13 +565,11 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         val inactive = ContextCompat.getColor(this, R.color.text_secondary)
 
         ivTabChat.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.CHAT) active else inactive)
-        ivTabSkills.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.SKILLS) active else inactive)
-        ivTabMemory.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.MEMORY) active else inactive)
+        ivTabFeatures.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.FEATURES) active else inactive)
         ivTabSettings.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.SETTINGS) active else inactive)
 
         tvTabChat.setTextColor(if (currentTab == Tab.CHAT) active else inactive)
-        tvTabSkills.setTextColor(if (currentTab == Tab.SKILLS) active else inactive)
-        tvTabMemory.setTextColor(if (currentTab == Tab.MEMORY) active else inactive)
+        tvTabFeatures.setTextColor(if (currentTab == Tab.FEATURES) active else inactive)
         tvTabSettings.setTextColor(if (currentTab == Tab.SETTINGS) active else inactive)
     }
 
@@ -551,6 +579,28 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     fun unbindChatUi(ui: ChatUi) {
         if (chatUi === ui) chatUi = null
+    }
+
+    // ------------------------------------------------------------------ 返回键
+
+    /**
+     * 返回键分三层，符合「二级页面 → 主页面 → 退出」的直觉：
+     * 1. 有二级页面（记忆）→ 先退回功能页；
+     * 2. 不在对话页 → 回对话页；
+     * 3. 已经在对话页 → 把控制权交回系统（退出应用）。
+     */
+    private fun setupBackBehavior() {
+        onBackPressedDispatcher.addCallback(this) {
+            when {
+                supportFragmentManager.backStackEntryCount > 0 ->
+                    supportFragmentManager.popBackStack()
+                currentTab != Tab.CHAT -> selectTab(Tab.CHAT)
+                else -> {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------ 设置
@@ -802,15 +852,13 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private fun newWelcome() = ChatMessage(text = getString(R.string.welcome), isUser = false)
 
     /**
-     * 是不是「旧名字」的欢迎语。
+     * 是不是「开场那一条」。
      *
-     * 落盘的历史里第一条永远是欢迎语，改名之后它上面还印着旧名字，
-     * 恢复时剔掉重放，屏幕上就不会出现「我叫旧名字」这种穿帮。
+     * 落盘的历史里第一条固定是欢迎语；改名、换语言之后它的文字会变，
+     * 所以只认「位置 + 是助手发的普通消息」，不去比对具体文案。
      */
-    private fun ChatMessage.isOldWelcome(): Boolean =
-        !isUser && kind == ChatMessage.KIND_NORMAL &&
-            text.startsWith(WELCOME_HEAD) &&
-            !text.contains(getString(R.string.app_name))
+    private fun ChatMessage.isOpeningLine(): Boolean =
+        !isUser && kind == ChatMessage.KIND_NORMAL
 
     /** 当前生效的运行期配置 */
     private fun config(): AssistantRouter.Config = AssistantRouter.Config(
@@ -894,15 +942,19 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         }
     }
 
-    /** 顶栏「技能」按钮：即使底部导航被系统栏遮住，也能进技能页 */
-    fun openSkills() = selectTab(Tab.SKILLS)
-
-    /** 技能页点击示例：切回对话页并直接执行 */
+    /** 功能页点击示例：切回对话页并直接执行 */
     fun runFromSkill(example: String) {
         selectTab(Tab.CHAT)
         supportFragmentManager.executePendingTransactions()
         sendText(example)
     }
+
+    /** 改一条用户消息的文字（对话页点气泡 → 修改） */
+    fun updateUserMessage(index: Int, text: String): Boolean =
+        session.updateUserText(index, text)
+
+    /** 删掉一轮对话：提问 + 紧跟着的回答（对话页点气泡 → 删除） */
+    fun deleteTurn(index: Int): Boolean = session.deleteTurn(index)
 
     fun toggleSpeak(): Boolean {
         setSpeakEnabled(!speakEnabled)
@@ -1018,10 +1070,12 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     override fun onPause() {
         isForeground = false
-        // 退到后台就停掉识别和播报，避免连续对话在后台一直抢占麦克风
+        // 退到后台就停掉识别和播报，避免连续对话在后台一直抢占麦克风。
+        // 这里必须判 initialized：登录门禁会在 onCreate 里就 finish 掉本页，
+        // 那时 asr / tts 还没来得及创建，直接调用会崩在 onDestroy（已被真机撞到过）
         mainHandler.removeCallbacksAndMessages(null)
-        asr.cancel()
-        tts.stop()
+        if (::asr.isInitialized) asr.cancel()
+        if (::tts.isInitialized) tts.stop()
         chatUi?.setMicActive(false)
         if (::localModel.isInitialized) saveLocalModel()
         super.onPause()
@@ -1031,8 +1085,8 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         mainHandler.removeCallbacksAndMessages(null)
         // 一次注销全部订阅：只注销单个的话，旋转屏几次就会收到一堆重复回调
         bus.off(this)
-        asr.release()
-        tts.release()
+        if (::asr.isInitialized) asr.release()
+        if (::tts.isInitialized) tts.release()
         super.onDestroy()
     }
 
@@ -1051,10 +1105,10 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         /** 外部传入一句话用的 extra 名 */
         const val EXTRA_QUERY = "query"
 
+        /** 记忆页在返回栈里的名字 */
+        const val BACK_MEMORY = "memory"
+
         /** 本地小模型训练进度的存档文件名 */
         const val MODEL_FILE = "ngram_model.txt"
-
-        /** 欢迎语的开头（用来认出旧名字的欢迎语） */
-        const val WELCOME_HEAD = "你好，我是"
     }
 }

@@ -81,6 +81,19 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_ONLINE, true)
         set(value) = prefs.edit().putBoolean(KEY_ONLINE, value).apply()
 
+    // ---------------------------------------------------------------- 界面语言
+
+    /**
+     * 界面语言标签：zh / en / ja / ko。
+     *
+     * 真正生效的是 [androidx.appcompat.app.AppCompatDelegate.setApplicationLocales]，
+     * 这里再存一份是为了「启动时先按它把语言定下来」——
+     * AppCompat 自己的存储是异步同步的，冷启动第一帧可能还没读到。
+     */
+    var language: String
+        get() = prefs.getString(KEY_LANGUAGE, LANGUAGE_ZH).orEmpty()
+        set(value) = prefs.edit().putString(KEY_LANGUAGE, value).apply()
+
     // ---------------------------------------------------------------- 云端大模型
 
     /** 是否启用云端大模型（AI 大脑） */
@@ -184,6 +197,7 @@ class AppSettings(context: Context) {
         private const val KEY_ONLINE = "online_search"
         private const val KEY_PENDING = "pending_questions"
         private const val KEY_CLOUD = "cloud_enabled"
+        private const val KEY_LANGUAGE = "language"
         private const val KEY_CLOUD_MODE = "cloud_mode"
         private const val KEY_CLOUD_URL = "cloud_endpoint"
         private const val KEY_CLOUD_KEY = "cloud_key"
@@ -192,5 +206,28 @@ class AppSettings(context: Context) {
 
         private const val SEP = "␟"
         private const val MAX_PENDING = 40
+
+        /** 默认界面语言：中文 */
+        const val LANGUAGE_ZH = "zh"
+
+        /**
+         * 只读语言标签。
+         *
+         * 单独一个静态入口，是因为 [android.app.Application.attachBaseContext] 里
+         * 还拿不到 `applicationContext`，没法 new 一个 AppSettings 出来。
+         */
+        fun readLanguage(context: Context): String =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_LANGUAGE, LANGUAGE_ZH)
+                .orEmpty()
+                .ifEmpty { LANGUAGE_ZH }
+
+        /** 设置页提供的四种语言（标签 → 用各自语言写的名字） */
+        val LANGUAGES: List<Pair<String, String>> = listOf(
+            LANGUAGE_ZH to "中文",
+            "en" to "English",
+            "ja" to "日本語",
+            "ko" to "한국어"
+        )
     }
 }

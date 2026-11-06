@@ -1,6 +1,8 @@
 package com.example.voiceassistant.ui
 
+import android.content.res.ColorStateList
 import android.os.Bundle
+import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -8,6 +10,7 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -17,13 +20,16 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.voiceassistant.R
 import com.example.voiceassistant.data.ChatMessage
 import com.example.voiceassistant.data.ChatSession
-import android.content.res.ColorStateList
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
- * 对话页：消息列表 + 输入区 + 语音按钮。
+ * 对话页：消息列表 + 教学入口 + 输入区 + 语音按钮。
  *
  * 不持有语音资源（那在 Activity 里），只把用户操作转发给 Activity，
  * 再接收 Activity 的状态回调更新顶栏。
+ *
+ * 点自己的气泡可以改字或删掉这一轮——聊天记录是用户的东西，
+ * 说错了应该能修，而不是只能「清空全部」。
  */
 class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.Listener {
 
@@ -34,7 +40,8 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
     private lateinit var btnMute: ImageButton
     private lateinit var btnContinuous: ImageButton
     private lateinit var btnClear: ImageButton
-    private lateinit var btnSkills: TextView
+    private lateinit var btnTeach: TextView
+    private lateinit var tvTeachHint: TextView
     private lateinit var tvStatus: TextView
     private lateinit var root: LinearLayout
 
@@ -59,6 +66,7 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
         host.bindChatUi(this)
         host.session.attach(this)   // 立即回调一次，重建视图后也能恢复全部消息
         refreshToolbar()
+        refreshTeachHint()
         status(getString(R.string.status_idle))
     }
 
@@ -71,7 +79,8 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
         btnMute = view.findViewById(R.id.btnMute)
         btnContinuous = view.findViewById(R.id.btnContinuous)
         btnClear = view.findViewById(R.id.btnClear)
-        btnSkills = view.findViewById(R.id.btnSkills)
+        btnTeach = view.findViewById(R.id.btnTeach)
+        tvTeachHint = view.findViewById(R.id.tvTeachHint)
         tvStatus = view.findViewById(R.id.tvStatus)
     }
 
@@ -93,7 +102,7 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
     }
 
     private fun setupList() {
-        adapter = ChatAdapter()
+        adapter = ChatAdapter { position -> onBubbleClicked(position) }
         val manager = LinearLayoutManager(requireContext())
         // 从底部开始排：消息少的时候也贴着输入栏，而不是顶在列表上方
         manager.stackFromEnd = true
@@ -134,7 +143,66 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
 
         btnClear.setOnClickListener { host.clearChat() }
 
-        btnSkills.setOnClickListener { host.openSkills() }
+        // 教学入口：教一句 / 看记忆 / 补答没答上来的，都在这个菜单里
+        btnTeach.setOnClickListener {
+            TeachDialog.showMenu(this) { host.openMemory() }
+        }
+    }
+
+    // ---------------------------------------------------------------- 气泡操作
+
+    /** 点自己的气泡：改字或者删掉这一轮 */
+    private fun onBubbleClicked(index: Int) {
+        val message = host.session.messageAt(index) ?: return
+        if (!message.isUser) return
+
+        val items = arrayOf(
+            getString(R.string.action_edit),
+            getString(R.string.action_delete)
+        )
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.bubble_actions_title)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showEditDialog(index, message)
+                    else -> {
+                        if (host.deleteTurn(index)) {
+                            toast(getString(R.string.bubble_delete_done))
+                            refreshTeachHint()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    private fun showEditDialog(index: Int, message: ChatMessage) {
+        val context = requireContext()
+        val padding = dp(20)
+        val input = EditText(context).apply {
+            setText(message.text)
+            hint = getString(R.string.bubble_edit_hint)
+            inputType = InputType.TYPE_CLASS_TEXT
+            setSingleLine(false)
+            setSelection(text.length)
+        }
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padding, dp(4), padding, 0)
+            addView(input)
+        }
+
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.bubble_edit_title)
+            .setView(container)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.action_save) { _, _ ->
+                if (host.updateUserMessage(index, input.text.toString())) {
+                    toast(getString(R.string.bubble_edited))
+                }
+            }
+            .show()
     }
 
     // ---------------------------------------------------------------- 状态回调
@@ -187,9 +255,19 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
         )
     }
 
+    /** 教学按钮旁边那行小字：让用户知道「记忆里已经有多少条」 */
+    private fun refreshTeachHint() {
+        val count = host.session.engine.memoryRepository()?.entries()?.size ?: 0
+        tvTeachHint.text = getString(R.string.features_memory_count, count)
+    }
+
     private fun scrollToBottom() {
         val lastIndex = adapter.itemCount - 1
         if (lastIndex >= 0) rvMessages.smoothScrollToPosition(lastIndex)
+    }
+
+    private fun toast(text: String) {
+        Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -199,6 +277,7 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
         // 从设置页改了开关再回来，图标要跟着更新
         if (isAdded) {
             refreshToolbar()
+            refreshTeachHint()
             host.session.attach(this)
         }
     }

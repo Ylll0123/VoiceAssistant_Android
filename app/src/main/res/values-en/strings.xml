@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HardlySeek</string>
+
+    <!-- Bottom navigation -->
+    <string name="tab_chat">Chat</string>
+    <string name="tab_features">Features</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- Status line -->
+    <string name="status_idle">Tap the mic to speak, or type below</string>
+    <string name="status_listening">Listening…</string>
+    <string name="status_recognizing">Recognizing…</string>
+    <string name="status_speaking">Answering…</string>
+    <string name="status_muted">Voice playback is off</string>
+    <string name="status_continuous_on">Continuous chat on: it listens again after each answer</string>
+    <string name="status_continuous_off">Continuous chat off: tap the mic to be heard</string>
+    <string name="status_heard">I heard “%1$s”</string>
+    <string name="status_online">Searching online…</string>
+    <string name="status_notify_denied">Notification permission denied, reminders will not pop up (you can enable it in system settings)</string>
+    <string name="status_reminder_fired">Reminder due: %1$s</string>
+    <string name="status_cloud_thinking">Asking the AI…</string>
+    <string name="status_cloud_fail">AI unreachable (%1$s), answered locally</string>
+
+    <!-- Input bar -->
+    <string name="hint_input">Type here, or tap the mic on the left</string>
+    <string name="desc_mic">Voice input</string>
+    <string name="desc_send">Send</string>
+    <string name="desc_mute">Voice playback</string>
+    <string name="desc_continuous_on">Continuous chat: on</string>
+    <string name="desc_continuous_off">Continuous chat: off</string>
+    <string name="desc_clear">Clear chat</string>
+    <string name="desc_avatar">HardlySeek avatar</string>
+
+    <!-- Messages -->
+    <string name="welcome">Hi, I am HardlySeek. Tap the mic at the bottom left or just type.\nTry: 现在几点 (time), 今天几号 (date), 帮我算 12*8 (math), or 我们玩猜数字 (a guessing game).</string>
+    <string name="error_no_permission">No microphone permission, please type instead</string>
+    <string name="error_no_recognizer">No speech recognition service on this device, please type</string>
+    <string name="error_empty_input">Say something first</string>
+
+    <!-- Teach entry -->
+    <string name="teach_action">Teach</string>
+    <string name="teach_title">Teach</string>
+    <string name="teach_action_new">Teach a sentence: how should I answer it</string>
+    <string name="teach_action_memory">View my memory (%1$d items)</string>
+    <string name="teach_action_pending">Answer what I could not (%1$d)</string>
+
+    <!-- Features page -->
+    <string name="features_title">Features</string>
+    <string name="features_subtitle">Tap a row to expand, tap an item to see examples, tap an example to run it in chat.</string>
+    <string name="features_empty">Nothing to show yet.</string>
+    <string name="features_count">%1$d items</string>
+    <string name="features_memory_group">Memory and teaching</string>
+    <string name="features_memory_open">Open my memory</string>
+    <string name="features_memory_hint">Taught, learned and built-in entries all stay on this phone</string>
+    <string name="features_memory_count">%1$d memories</string>
+
+    <string name="group_time">Time and date</string>
+    <string name="group_calc">Calculation</string>
+    <string name="group_life">Weather and outings</string>
+    <string name="group_knowledge">Knowledge</string>
+    <string name="group_tool">Everyday tools</string>
+    <string name="group_fun">Fun and chat</string>
+    <string name="group_dialog">Multi-turn dialog</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_subtitle">Only the essentials</string>
+    <string name="settings_answer_style">Answer style</string>
+    <string name="settings_style_concise">Concise</string>
+    <string name="settings_style_detailed">Detailed</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_title">Choose interface language</string>
+    <string name="settings_model_switch">Use a cloud LLM</string>
+    <string name="settings_model_desc">When on, questions the local engine cannot answer go to the cloud. Off means fully offline.</string>
+    <string name="settings_model_off_hint">Not connected: every answer is computed on this phone</string>
+    <string name="settings_chat">Chat</string>
+    <string name="settings_clear_chat">Clear chat history</string>
+    <string name="settings_clear_chat_done">Chat cleared</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_account_guest">Guest</string>
+    <string name="settings_logout">Sign out</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version %1$s · %2$d features</string>
+    <string name="settings_reset">Restore defaults</string>
+    <string name="settings_reset_done">Defaults restored (memory kept)</string>
+
+    <!-- Cloud LLM -->
+    <string name="settings_cloud_state_ready">Connected: %1$s · %2$s</string>
+    <string name="settings_cloud_state_missing">Missing: %1$s</string>
+    <string name="settings_cloud_missing_url">base URL</string>
+    <string name="settings_cloud_missing_key">API key</string>
+    <string name="settings_cloud_missing_model">model name</string>
+    <string name="settings_cloud_endpoint">Endpoint: %1$s</string>
+    <string name="settings_cloud_model">Model: %1$s</string>
+    <string name="settings_cloud_key">Key: %1$s</string>
+    <string name="settings_cloud_test">Test</string>
+    <string name="settings_cloud_edit">Edit settings</string>
+    <string name="settings_cloud_title">AI endpoint settings</string>
+    <string name="settings_cloud_hint">Works with any OpenAI-compatible API (DeepSeek, Qwen, Zhipu, Kimi, SiliconFlow and more). The key stays on this phone.</string>
+    <string name="settings_cloud_base_hint">Base URL, e.g. https://api.deepseek.com</string>
+    <string name="settings_cloud_key_hint">API key</string>
+    <string name="settings_cloud_model_hint">Model name, e.g. deepseek-chat</string>
+    <string name="settings_cloud_prompt_hint">Persona (optional): leave blank for the default, long prompts cost tokens every turn</string>
+    <string name="settings_cloud_testing">Testing connection…</string>
+    <string name="settings_cloud_saved">Saved: %1$s</string>
+
+    <!-- Common actions -->
+    <string name="action_ok">OK</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_save">Save</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_unset">Not set</string>
+
+    <!-- Message bubble actions -->
+    <string name="bubble_actions_title">This message</string>
+    <string name="bubble_edit_title">Edit this message</string>
+    <string name="bubble_edit_hint">Say it again</string>
+    <string name="bubble_edited">Edited. Send it again if you want a new answer.</string>
+    <string name="bubble_delete_done">That turn was deleted</string>
+
+    <!-- Sign in / sign up -->
+    <string name="login_brand_sub">On-device voice assistant</string>
+    <string name="login_subtitle">Accounts stay on this phone and keep your chats and memory separate</string>
+    <string name="login_tab_login">Sign in</string>
+    <string name="login_tab_register">Sign up</string>
+    <string name="login_hint_username">Username</string>
+    <string name="login_hint_password">Password</string>
+    <string name="login_hint_confirm">Repeat password</string>
+    <string name="login_submit_login">Sign in</string>
+    <string name="login_submit_register">Create account</string>
+    <string name="login_guest">Continue as guest</string>
+    <string name="login_error_empty">Enter both username and password</string>
+    <string name="login_error_short_password">Password needs at least 6 characters</string>
+    <string name="login_error_mismatch">The two passwords differ</string>
+    <string name="login_error_user_exists">That username is already taken</string>
+    <string name="login_error_no_user">No such user, please sign up first</string>
+    <string name="login_error_wrong_password">Wrong password</string>
+    <string name="login_welcome">Welcome, %1$s</string>
+
+    <!-- Local memory -->
+    <string name="memory_title">Local memory</string>
+    <string name="memory_subtitle">Everything you taught stays on this phone. The more it knows, the better it talks.</string>
+    <string name="memory_teach">Teach one</string>
+    <string name="memory_empty">No memories yet. Tap “Teach one” and tell the assistant how to reply.</string>
+    <string name="memory_source_taught">Taught</string>
+    <string name="memory_source_seed">Built-in</string>
+    <string name="memory_source_learned">Learned</string>
+    <string name="memory_count_full">%1$d in total (taught %2$d / learned %3$d / built-in %4$d)</string>
+    <string name="memory_pending_group">Unanswered phrases (%1$d)</string>
+    <string name="memory_pending_hint">Things you said that I did not know. Tap one to teach me.</string>
+    <string name="memory_pending_empty">Nothing here. Phrases I cannot answer during chat land here automatically.</string>
+    <string name="memory_teach_pending_title">How should I answer this</string>
+    <string name="memory_teach_pending_saved">Learned: when I hear “%1$s”, I say “%2$s”</string>
+    <string name="memory_clear_pending">Clear unanswered</string>
+    <string name="memory_delete_title">Delete this memory?</string>
+    <string name="memory_delete_message">The assistant will not understand this phrase afterwards. You can teach it again.</string>
+    <string name="memory_unavailable">The local memory database failed to open; using temporary memory for this run.</string>
+    <string name="memory_teach_dialog_title">Teach the assistant a sentence</string>
+    <string name="memory_teach_question_hint">What I say (e.g. 下班了)</string>
+    <string name="memory_teach_answer_hint">How it should answer (e.g. 早点回家)</string>
+    <string name="memory_teach_saved">Remembered: %1$s → %2$s</string>
+    <string name="memory_teach_incomplete">Both fields are required.</string>
+
+    <!-- Reminder notifications -->
+    <string name="notify_channel_reminder">Reminders and timers</string>
+    <string name="notify_channel_reminder_desc">Notifications for reminders and finished timers</string>
+    <string name="notify_reminder_title">Reminder</string>
+    <string name="notify_reminder_repeat">Reminder · %1$s</string>
+    <string name="notify_action_snooze">Remind me in 10 minutes</string>
+    <string name="notify_action_done">Got it</string>
+    <string name="speak_reminder">Reminder: %1$s</string>
+
+    <!-- Installer cleanup -->
+    <string name="apk_clean_done">Installer package deleted</string>
+    <string name="apk_clean_kept">The installer was not deleted; you can remove it in Files</string>
+
+    <!-- 功能页技能条目（四语言） -->
+    <string name="skill_title_time">Current time</string>
+    <string name="skill_desc_time">Tells you the current hour and minute</string>
+    <string name="skill_title_date">Today\'s date</string>
+    <string name="skill_desc_date">Date and weekday; yesterday, tomorrow and the day after work too</string>
+    <string name="skill_title_weekday_calc">Date math</string>
+    <string name="skill_desc_weekday_calc">Which date next Wednesday is, or days left until a date</string>
+    <string name="skill_title_timezone">World clock</string>
+    <string name="skill_desc_timezone">Local time in New York, London, Tokyo and more</string>
+    <string name="skill_title_arithmetic">Arithmetic</string>
+    <string name="skill_desc_arithmetic">Plus, minus, times, brackets, percent — just say the expression</string>
+    <string name="skill_title_calc_continue">Keep calculating</string>
+    <string name="skill_desc_calc_continue">Continue from the last result</string>
+    <string name="skill_title_unit_convert">Unit conversion</string>
+    <string name="skill_desc_unit_convert">km and miles, Celsius and Fahrenheit, jin and kg</string>
+    <string name="skill_title_age">Age</string>
+    <string name="skill_desc_age">Tell it your birth year, it works out your age</string>
+    <string name="skill_title_random">Make a decision</string>
+    <string name="skill_desc_random">Coin flip, dice, random number, pick one of two</string>
+    <string name="skill_title_support">What it can do</string>
+    <string name="skill_desc_support">See everything the assistant can do now</string>
+    <string name="skill_title_reminder">Reminders</string>
+    <string name="skill_desc_reminder">A notification at the time you say, survives a reboot; list and delete too</string>
+    <string name="skill_title_timer">Timer</string>
+    <string name="skill_desc_timer">Notification when the countdown ends; you can stop it midway</string>
+    <string name="skill_title_torch">Flashlight</string>
+    <string name="skill_desc_torch">Turns the phone flash on and off</string>
+    <string name="skill_title_battery">Battery</string>
+    <string name="skill_desc_battery">Battery percentage, and whether it is charging</string>
+    <string name="skill_title_open_app">Open apps</string>
+    <string name="skill_desc_open_app">Opens WeChat, Camera, Settings and other apps by name</string>
+    <string name="skill_title_echo">Read it back</string>
+    <string name="skill_desc_echo">Say it to repeat the rest word for word</string>
+    <string name="skill_title_guess">Guess the number</string>
+    <string name="skill_desc_guess">1 to 100 with higher or lower hints, as many rounds as you like</string>
+    <string name="skill_title_joke">Tell a joke</string>
+    <string name="skill_desc_joke">A random one from the offline joke bank</string>
+    <string name="skill_title_quote">A quote</string>
+    <string name="skill_desc_quote">A random quote or line of poetry</string>
+    <string name="skill_title_teach">Teach it a phrase</string>
+    <string name="skill_desc_teach">Teach a new phrase, saved locally; separate answers with |</string>
+    <string name="skill_title_chat">Small talk</string>
+    <string name="skill_desc_chat">Built-in everyday replies: tired, overtime, dorm, parcels</string>
+    <string name="skill_title_self_learn">Self-learning</string>
+    <string name="skill_desc_self_learn">After one lesson it generalises to similar phrasings; unknown lines wait in Memory</string>
+    <string name="skill_title_continue_chat">Follow-up chat</string>
+    <string name="skill_desc_continue_chat">Why, and then, what should I do — keeps the same topic</string>
+    <string name="skill_title_weather">Weather</string>
+    <string name="skill_desc_weather">Live temperature and today\'s high and low online; offline uses climate averages</string>
+    <string name="skill_title_outing">Going out</string>
+    <string name="skill_desc_outing">Month and city based advice on clothing and umbrellas</string>
+    <string name="skill_title_translate">Word translation</string>
+    <string name="skill_desc_translate">Built-in Chinese-English dictionary, both directions</string>
+    <string name="skill_title_knowledge">Common knowledge</string>
+    <string name="skill_desc_knowledge">Hundreds of answered questions: weather, health, study, safety</string>
+    <string name="skill_title_decide">Analysis and decisions</string>
+    <string name="skill_desc_decide">A goal, cost, fallback order for choices you cannot settle</string>
+    <string name="skill_title_online">Web lookup</string>
+    <string name="skill_desc_online">When local answers run out it searches the web and cites the source</string>
+    <string name="skill_title_follow_up">Follow-ups</string>
+    <string name="skill_desc_follow_up">Within 3 minutes, and the day after or one more keeps the thread</string>
+    <string name="features_examples_note">Examples are in Chinese: the offline engine only understands Chinese commands.</string>
+</resources>

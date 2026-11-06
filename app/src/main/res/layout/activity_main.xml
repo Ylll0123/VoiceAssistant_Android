@@ -9,14 +9,14 @@
     android:orientation="vertical"
     tools:context=".ui.VoiceAssistantActivity">
 
-    <!-- 页面容器：对话 / 技能 / 设置 三个 Fragment 轮流放进来 -->
+    <!-- 页面容器：对话 / 功能 / 设置 三个页面轮流放进来 -->
     <FrameLayout
         android:id="@+id/fragmentContainer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1" />
 
-    <!-- 底部导航：最小高度固定，避免大字体 / 系统栏设置把它挤掉，导致技能、设置入口看不见 -->
+    <!-- 底部导航：只留三项 -->
     <LinearLayout
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
@@ -61,7 +61,7 @@
         </LinearLayout>
 
         <LinearLayout
-            android:id="@+id/tabSkills"
+            android:id="@+id/tabFeatures"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -74,51 +74,19 @@
             android:paddingBottom="2dp">
 
             <ImageView
-                android:id="@+id/ivTabSkills"
+                android:id="@+id/ivTabFeatures"
                 android:layout_width="22dp"
                 android:layout_height="22dp"
-                android:contentDescription="@string/tab_skills"
+                android:contentDescription="@string/tab_features"
                 android:src="@drawable/ic_tab_skills"
                 app:tint="@color/text_secondary" />
 
             <TextView
-                android:id="@+id/tvTabSkills"
+                android:id="@+id/tvTabFeatures"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="@string/tab_skills"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
-        </LinearLayout>
-
-
-        <LinearLayout
-            android:id="@+id/tabMemory"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:paddingTop="2dp"
-            android:paddingBottom="2dp">
-
-            <ImageView
-                android:id="@+id/ivTabMemory"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:contentDescription="@string/tab_memory"
-                android:src="@drawable/ic_tab_memory"
-                app:tint="@color/text_secondary" />
-
-            <TextView
-                android:id="@+id/tvTabMemory"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="@string/tab_memory"
+                android:text="@string/tab_features"
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>

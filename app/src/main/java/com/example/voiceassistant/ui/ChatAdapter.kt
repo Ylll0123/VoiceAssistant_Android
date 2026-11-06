@@ -8,8 +8,15 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.voiceassistant.R
 import com.example.voiceassistant.data.ChatMessage
 
-/** 对话气泡列表：用户消息靠右（蓝底），助手消息靠左（白底） */
-class ChatAdapter : RecyclerView.Adapter<ChatAdapter.MessageViewHolder>() {
+/**
+ * 对话气泡列表：用户消息靠右（蓝底），助手消息靠左（白底）。
+ *
+ * 点自己的气泡会回调 [onUserClick]，位置由 Adapter 给——
+ * 界面层拿到位置后弹「修改 / 删除」，不需要自己反查是哪一条。
+ */
+class ChatAdapter(
+    private val onUserClick: ((Int) -> Unit)? = null
+) : RecyclerView.Adapter<ChatAdapter.MessageViewHolder>() {
 
     private val items = mutableListOf<ChatMessage>()
 
@@ -35,7 +42,21 @@ class ChatAdapter : RecyclerView.Adapter<ChatAdapter.MessageViewHolder>() {
     }
 
     override fun onBindViewHolder(holder: MessageViewHolder, position: Int) {
-        holder.bind(items[position])
+        val message = items[position]
+        holder.bind(message)
+
+        // 只有自己说的话能改能删：助手的回答是执行结果，改它没有意义
+        holder.itemView.setOnClickListener(
+            if (message.isUser && onUserClick != null) {
+                View.OnClickListener {
+                    val index = holder.bindingAdapterPosition
+                    if (index != RecyclerView.NO_POSITION) onUserClick.invoke(index)
+                }
+            } else {
+                null
+            }
+        )
+        holder.itemView.isClickable = message.isUser && onUserClick != null
     }
 
     /**

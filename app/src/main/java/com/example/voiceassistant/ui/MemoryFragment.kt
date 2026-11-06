@@ -68,6 +68,9 @@ class MemoryFragment : Fragment() {
         }
 
         view.findViewById<MaterialButton>(R.id.btnTeach).setOnClickListener { showTeachDialog() }
+        view.findViewById<View>(R.id.btnBack).setOnClickListener {
+            requireActivity().onBackPressedDispatcher.onBackPressed()
+        }
         view.findViewById<MaterialButton>(R.id.btnClearPending).setOnClickListener {
             host.appSettings().pendingQuestions = emptyList()
             refresh()

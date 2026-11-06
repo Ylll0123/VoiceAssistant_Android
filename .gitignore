@@ -18,3 +18,6 @@ local.properties
 # 不受此规则影响——出新版本时用 git add 显式提交覆盖即可
 *.apk
 *.aab
+
+# 截图/临时产物
+.tmp/

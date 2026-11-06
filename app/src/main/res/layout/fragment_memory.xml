@@ -21,6 +21,18 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <!-- 记忆页是从「功能」进来看的二级页面，留一个返回箭头 -->
+            <ImageView
+                android:id="@+id/btnBack"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginEnd="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/features_memory_group"
+                android:padding="7dp"
+                android:src="@drawable/ic_arrow_back"
+                app:tint="@color/text_primary" />
+
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"

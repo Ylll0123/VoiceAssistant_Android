@@ -164,6 +164,43 @@ class ChatSession(
     /** 最近一次助手命中的意图，设置页展示用 */
     fun lastIntent(): String? = items.lastOrNull { !it.isUser }?.intent
 
+    /** 取某一条（点击气泡后要先知道点的是哪条） */
+    fun messageAt(index: Int): ChatMessage? = items.getOrNull(index)
+
+    /**
+     * 改掉某条**用户消息**的文字。
+     *
+     * 只改显示，不重新回答：重新回答会打断流水线、把后面的上下文全冲掉。
+     * 想要新答案，改完再发一遍即可——界面上也是这么提示的。
+     */
+    fun updateUserText(index: Int, text: String): Boolean {
+        val item = items.getOrNull(index) ?: return false
+        if (!item.isUser) return false
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+        items[index] = item.copy(text = trimmed)
+        notifyChanged()
+        return true
+    }
+
+    /**
+     * 删掉一轮：用户那句 + 紧跟其后的助手回答。
+     *
+     * 连带删掉回答，是因为只删提问会让对话剩一句没头没尾的回复；
+     * 「理解过程」这类临时条目本来就不落盘，不参与删除。
+     */
+    fun deleteTurn(index: Int): Boolean {
+        val item = items.getOrNull(index) ?: return false
+        if (!item.isUser) return false
+        val next = items.getOrNull(index + 1)
+        if (next != null && !next.isUser && next.kind == ChatMessage.KIND_NORMAL) {
+            items.removeAt(index + 1)
+        }
+        items.removeAt(index)
+        notifyChanged()
+        return true
+    }
+
     fun clear() {
         items.clear()
         engine.resetContext()

@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HardlySeek</string>
+
+    <!-- ボトムナビ -->
+    <string name="tab_chat">会話</string>
+    <string name="tab_features">機能</string>
+    <string name="tab_settings">設定</string>
+
+    <!-- ステータス -->
+    <string name="status_idle">マイクを押して話すか、文字で入力してください</string>
+    <string name="status_listening">聞いています…</string>
+    <string name="status_recognizing">認識中…</string>
+    <string name="status_speaking">答えています…</string>
+    <string name="status_muted">読み上げをオフにしました</string>
+    <string name="status_continuous_on">連続会話オン：答え終わると自動で聞き直します</string>
+    <string name="status_continuous_off">連続会話オフ：マイクを押すと聞きます</string>
+    <string name="status_heard">「%1$s」と聞こえました</string>
+    <string name="status_online">ネットで検索しています…</string>
+    <string name="status_notify_denied">通知権限がないため、リマインダーは通知バーに出ません（システム設定で許可できます）</string>
+    <string name="status_reminder_fired">リマインダーの時刻です：%1$s</string>
+    <string name="status_cloud_thinking">AI に考えさせています…</string>
+    <string name="status_cloud_fail">AI に接続できません（%1$s）。ローカルの答えを使いました</string>
+
+    <!-- 入力欄 -->
+    <string name="hint_input">文字を入力するか、左のマイクを押してください</string>
+    <string name="desc_mic">音声入力</string>
+    <string name="desc_send">送信</string>
+    <string name="desc_mute">読み上げの切り替え</string>
+    <string name="desc_continuous_on">連続会話：オン</string>
+    <string name="desc_continuous_off">連続会話：オフ</string>
+    <string name="desc_clear">会話を消去</string>
+    <string name="desc_avatar">HardlySeek のアイコン</string>
+
+    <!-- メッセージ -->
+    <string name="welcome">こんにちは、HardlySeek です。左下のマイクを押して話すか、入力欄に文字を打ってください。\n例：现在几点（時刻）、今天几号（日付）、帮我算 12*8（計算）、我们玩猜数字（数当てゲーム）。</string>
+    <string name="error_no_permission">マイクの権限がありません。文字で入力してください</string>
+    <string name="error_no_recognizer">この端末には音声認識サービスがありません。文字で入力してください</string>
+    <string name="error_empty_input">まず何か話してください</string>
+
+    <!-- ティーチ入口 -->
+    <string name="teach_action">ティーチ</string>
+    <string name="teach_title">ティーチ</string>
+    <string name="teach_action_new">一言教える：この言葉にどう答えるか</string>
+    <string name="teach_action_memory">自分の記憶を見る（%1$d 件）</string>
+    <string name="teach_action_pending">答えられなかった言葉に答える（%1$d 件）</string>
+
+    <!-- 機能ページ -->
+    <string name="features_title">機能</string>
+    <string name="features_subtitle">行を押すと展開し、項目を押すと例文が出ます。例文を押すと会話で実行します。</string>
+    <string name="features_empty">表示できる機能がありません。</string>
+    <string name="features_count">%1$d 件</string>
+    <string name="features_memory_group">記憶とティーチ</string>
+    <string name="features_memory_open">自分の記憶を開く</string>
+    <string name="features_memory_hint">教えた記憶・自学した記憶・内蔵の記憶はすべて端末内にあります</string>
+    <string name="features_memory_count">全 %1$d 件の記憶</string>
+
+    <string name="group_time">時刻と日付</string>
+    <string name="group_calc">計算と換算</string>
+    <string name="group_life">天気と外出</string>
+    <string name="group_knowledge">一般知識</string>
+    <string name="group_tool">生活ツール</string>
+    <string name="group_fun">娯楽と雑談</string>
+    <string name="group_dialog">複数ターンの会話</string>
+
+    <!-- 設定 -->
+    <string name="settings_title">設定</string>
+    <string name="settings_subtitle">よく使う項目だけを残しました</string>
+    <string name="settings_answer_style">回答の仕方</string>
+    <string name="settings_style_concise">簡潔</string>
+    <string name="settings_style_detailed">詳しく</string>
+    <string name="settings_language">言語</string>
+    <string name="settings_language_title">表示言語を選択</string>
+    <string name="settings_model_switch">クラウド LLM を使う</string>
+    <string name="settings_model_desc">オンにすると、ローカルで答えられない質問をクラウド AI に送ります。オフなら完全オフラインです</string>
+    <string name="settings_model_off_hint">未接続：すべての答えを端末内で計算します</string>
+    <string name="settings_chat">会話</string>
+    <string name="settings_clear_chat">会話履歴を消去</string>
+    <string name="settings_clear_chat_done">会話を消去しました</string>
+    <string name="settings_account">アカウント</string>
+    <string name="settings_account_guest">ゲスト</string>
+    <string name="settings_logout">ログアウト</string>
+    <string name="settings_about">このアプリについて</string>
+    <string name="settings_version">バージョン %1$s · 全 %2$d 機能</string>
+    <string name="settings_reset">既定の設定に戻す</string>
+    <string name="settings_reset_done">既定の設定に戻しました（記憶は残ります）</string>
+
+    <!-- クラウド LLM -->
+    <string name="settings_cloud_state_ready">接続済み：%1$s · %2$s</string>
+    <string name="settings_cloud_state_missing">未設定：%1$s</string>
+    <string name="settings_cloud_missing_url">接続先 URL</string>
+    <string name="settings_cloud_missing_key">API キー</string>
+    <string name="settings_cloud_missing_model">モデル名</string>
+    <string name="settings_cloud_endpoint">接続先：%1$s</string>
+    <string name="settings_cloud_model">モデル：%1$s</string>
+    <string name="settings_cloud_key">キー：%1$s</string>
+    <string name="settings_cloud_test">接続をテスト</string>
+    <string name="settings_cloud_edit">設定を入力</string>
+    <string name="settings_cloud_title">AI 接続設定</string>
+    <string name="settings_cloud_hint">OpenAI 互換の API に対応しています（DeepSeek、Qwen、Zhipu、Kimi、SiliconFlow など）。キーは端末内だけに保存します。</string>
+    <string name="settings_cloud_base_hint">接続先 URL（例：https://api.deepseek.com）</string>
+    <string name="settings_cloud_key_hint">API キー</string>
+    <string name="settings_cloud_model_hint">モデル名（例：deepseek-chat）</string>
+    <string name="settings_cloud_prompt_hint">人格（任意）：空欄なら既定。長すぎると毎回トークンを消費します</string>
+    <string name="settings_cloud_testing">接続をテストしています…</string>
+    <string name="settings_cloud_saved">保存しました：%1$s</string>
+
+    <!-- 共通操作 -->
+    <string name="action_ok">OK</string>
+    <string name="action_cancel">キャンセル</string>
+    <string name="action_delete">削除</string>
+    <string name="action_save">保存</string>
+    <string name="action_edit">修正</string>
+    <string name="action_unset">未設定</string>
+
+    <!-- メッセージ操作 -->
+    <string name="bubble_actions_title">このメッセージ</string>
+    <string name="bubble_edit_title">この言葉を修正</string>
+    <string name="bubble_edit_hint">もう一度入力</string>
+    <string name="bubble_edited">修正しました。もう一度送ると新しい答えになります。</string>
+    <string name="bubble_delete_done">このやり取りを削除しました</string>
+
+    <!-- ログイン・登録 -->
+    <string name="login_brand_sub">端末内の音声アシスタント</string>
+    <string name="login_subtitle">アカウントはこの端末にだけ保存され、会話と記憶を分けて管理します</string>
+    <string name="login_tab_login">ログイン</string>
+    <string name="login_tab_register">新規登録</string>
+    <string name="login_hint_username">ユーザー名</string>
+    <string name="login_hint_password">パスワード</string>
+    <string name="login_hint_confirm">パスワードをもう一度</string>
+    <string name="login_submit_login">ログイン</string>
+    <string name="login_submit_register">登録する</string>
+    <string name="login_guest">ゲストとして使う</string>
+    <string name="login_error_empty">ユーザー名とパスワードを入力してください</string>
+    <string name="login_error_short_password">パスワードは 6 文字以上にしてください</string>
+    <string name="login_error_mismatch">パスワードが一致しません</string>
+    <string name="login_error_user_exists">このユーザー名はすでに登録されています</string>
+    <string name="login_error_no_user">そのユーザーはいません。先に登録してください</string>
+    <string name="login_error_wrong_password">パスワードが違います</string>
+    <string name="login_welcome">ようこそ、%1$s さん</string>
+
+    <!-- ローカル記憶 -->
+    <string name="memory_title">ローカル記憶</string>
+    <string name="memory_subtitle">教えた言葉は端末内に保存されます。増えるほど会話が上手になります。</string>
+    <string name="memory_teach">一言教える</string>
+    <string name="memory_empty">まだ記憶がありません。右上の「一言教える」から「この言葉にどう答えるか」を教えてください。</string>
+    <string name="memory_source_taught">教えた</string>
+    <string name="memory_source_seed">内蔵</string>
+    <string name="memory_source_learned">自学</string>
+    <string name="memory_count_full">全 %1$d 件（教えた %2$d / 自学 %3$d / 内蔵 %4$d）</string>
+    <string name="memory_pending_group">答えられなかった言葉（%1$d）</string>
+    <string name="memory_pending_hint">あなたが言ったのに、まだ覚えていない言葉です。押すと教えられます。</string>
+    <string name="memory_pending_empty">今はありません。会話で答えられない言葉は自動でここに入ります。</string>
+    <string name="memory_teach_pending_title">この言葉にどう答えるか</string>
+    <string name="memory_teach_pending_saved">覚えました：「%1$s」と聞いたら「%2$s」と答えます</string>
+    <string name="memory_clear_pending">未学習を消去</string>
+    <string name="memory_delete_title">この記憶を削除しますか</string>
+    <string name="memory_delete_message">削除するとこの言い方には答えられなくなります。もう一度教えれば戻せます。</string>
+    <string name="memory_unavailable">ローカル記憶庫を開けませんでした。今回の実行は一時記憶を使います。</string>
+    <string name="memory_teach_dialog_title">アシスタントに一言教える</string>
+    <string name="memory_teach_question_hint">私が言う言葉（例：下班了）</string>
+    <string name="memory_teach_answer_hint">どう答えるか（例：早点回家）</string>
+    <string name="memory_teach_saved">覚えました：%1$s → %2$s</string>
+    <string name="memory_teach_incomplete">両方の欄を埋めてください。</string>
+
+    <!-- リマインダー通知 -->
+    <string name="notify_channel_reminder">リマインダーとタイマー</string>
+    <string name="notify_channel_reminder_desc">リマインダー時刻とタイマー終了の通知</string>
+    <string name="notify_reminder_title">リマインダー</string>
+    <string name="notify_reminder_repeat">リマインダー · %1$s</string>
+    <string name="notify_action_snooze">10 分後にもう一度</string>
+    <string name="notify_action_done">了解</string>
+    <string name="speak_reminder">お知らせです：%1$s</string>
+
+    <!-- インストーラ削除 -->
+    <string name="apk_clean_done">インストール用ファイルを削除しました</string>
+    <string name="apk_clean_kept">インストール用ファイルを削除できませんでした。ファイル管理から削除できます</string>
+
+    <!-- 功能页技能条目（四语言） -->
+    <string name="skill_title_time">今何時</string>
+    <string name="skill_desc_time">現在の時刻を読み上げます</string>
+    <string name="skill_title_date">今日の日付</string>
+    <string name="skill_desc_date">日付と曜日。昨日・明日・明後日も使えます</string>
+    <string name="skill_title_weekday_calc">日付の計算</string>
+    <string name="skill_desc_weekday_calc">来週の水曜が何日か、ある日まで何日か</string>
+    <string name="skill_title_timezone">世界の時刻</string>
+    <string name="skill_desc_timezone">ニューヨーク・ロンドン・東京などの現在時刻</string>
+    <string name="skill_title_arithmetic">計算</string>
+    <string name="skill_desc_arithmetic">四則演算・かっこ・パーセント。式をそのまま言うだけ</string>
+    <string name="skill_title_calc_continue">続けて計算</string>
+    <string name="skill_desc_calc_continue">前回の結果から続けて計算</string>
+    <string name="skill_title_unit_convert">単位変換</string>
+    <string name="skill_desc_unit_convert">km・マイル、摂氏・華氏、斤・kg など</string>
+    <string name="skill_title_age">年齢計算</string>
+    <string name="skill_desc_age">生まれた年を言えば今年の年齢を計算</string>
+    <string name="skill_title_random">決めてもらう</string>
+    <string name="skill_desc_random">コイン・サイコロ・乱数・二択</string>
+    <string name="skill_title_support">できること</string>
+    <string name="skill_desc_support">今できる機能の一覧</string>
+    <string name="skill_title_reminder">リマインダー</string>
+    <string name="skill_desc_reminder">指定時刻に通知。再起動しても消えません。一覧・削除も可</string>
+    <string name="skill_title_timer">タイマー</string>
+    <string name="skill_desc_timer">終了時に通知。途中で止めることもできます</string>
+    <string name="skill_title_torch">ライト</string>
+    <string name="skill_desc_torch">スマホのフラッシュを直接オン・オフ</string>
+    <string name="skill_title_battery">バッテリー</string>
+    <string name="skill_desc_battery">残量パーセントと充電中かどうか</string>
+    <string name="skill_title_open_app">アプリ起動</string>
+    <string name="skill_desc_open_app">WeChat・カメラ・設定などを名前で起動</string>
+    <string name="skill_title_echo">復唱</string>
+    <string name="skill_desc_echo">「言って」「読み上げて」の後ろをそのまま読み上げ</string>
+    <string name="skill_title_guess">数字当て</string>
+    <string name="skill_desc_guess">1〜100 の数字当て。大小ヒント付きで何回でも</string>
+    <string name="skill_title_joke">ジョーク</string>
+    <string name="skill_desc_joke">ローカルのジョーク集からランダムに一つ</string>
+    <string name="skill_title_quote">名言</string>
+    <string name="skill_desc_quote">名言や詩の一節をランダムに</string>
+    <string name="skill_title_teach">言葉を教える</string>
+    <string name="skill_desc_teach">新しい言い方を教えるとローカルに保存。「|」で複数回答</string>
+    <string name="skill_title_chat">雑談</string>
+    <string name="skill_desc_chat">日常話題の返答を内蔵。疲れた・残業・寮・宅配など</string>
+    <string name="skill_title_self_learn">自己学習</string>
+    <string name="skill_desc_self_learn">一度教えると似た言い方を覚えます。答えられない言葉はメモリに溜まります</string>
+    <string name="skill_title_continue_chat">文脈で続ける</string>
+    <string name="skill_desc_continue_chat">「なぜ」「それで」「どうすれば」も話題を引き継ぎます</string>
+    <string name="skill_title_weather">天気と気温</string>
+    <string name="skill_desc_weather">オンラインで実況と最高・最低。オフラインでも平年値で回答</string>
+    <string name="skill_title_outing">お出かけのヒント</string>
+    <string name="skill_desc_outing">月と都市に応じた服装・傘のアドバイス</string>
+    <string name="skill_title_translate">単語翻訳</string>
+    <string name="skill_desc_translate">中英の基本辞書を内蔵。中→英も英→中も</string>
+    <string name="skill_title_knowledge">一般知識</string>
+    <string name="skill_desc_knowledge">天気の仕組み・健康・勉強・生活のコツ・応急処置など数百問</string>
+    <string name="skill_title_decide">分析と意思決定</string>
+    <string name="skill_desc_decide">迷う選択に「目的—代償—逃げ道」の判断順序を提示</string>
+    <string name="skill_title_online">ネット検索</string>
+    <string name="skill_desc_online">ローカルで答えられない時だけ検索し、出典付きで要約</string>
+    <string name="skill_title_follow_up">追加の質問</string>
+    <string name="skill_desc_follow_up">3 分以内なら「明後日は？」「もう一つ」で続けられます</string>
+    <string name="features_examples_note">例文は中国語です。オフラインエンジンは現在、中国語の指示だけを理解します。</string>
+</resources>

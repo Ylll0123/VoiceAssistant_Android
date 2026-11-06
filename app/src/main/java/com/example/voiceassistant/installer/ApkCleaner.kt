@@ -128,7 +128,9 @@ object ApkCleaner {
      */
     fun deleteRequest(context: Context, installers: List<Installer>): IntentSender? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        val uris = installers.map { it.uri }
+        // 只认 MediaStore 的 content:// —— createDeleteRequest 传 file:// 会直接抛异常。
+        // 走 File 扫出来的那些（adb push / 电脑拷进来的）本来也删不掉，跳过即可
+        val uris = installers.mapNotNull { it.uri.takeIf { uri -> uri.scheme == "content" } }
         if (uris.isEmpty()) return null
         return runCatching {
             MediaStore.createDeleteRequest(context.contentResolver, uris).intentSender

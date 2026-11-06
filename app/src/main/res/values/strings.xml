@@ -1,29 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">HardlySeek</string>
 
     <!-- 底部导航 -->
     <string name="tab_chat">对话</string>
-    <string name="tab_skills">技能</string>
-    <string name="tab_memory">记忆</string>
+    <string name="tab_features">功能</string>
     <string name="tab_settings">设置</string>
 
     <!-- 状态栏文案 -->
     <string name="status_idle">点麦克风说话，或直接输入文字</string>
     <string name="status_listening">正在聆听…</string>
     <string name="status_recognizing">正在识别…</string>
-    <string name="status_thinking">正在思考…</string>
     <string name="status_speaking">正在回答…</string>
     <string name="status_muted">已关闭语音播报</string>
     <string name="status_continuous_on">连续对话已开启，回答完会自动听你说话</string>
     <string name="status_continuous_off">连续对话已关闭，需要点麦克风才会听</string>
-    <string name="status_skill_sent">已从技能页发送：%1$s</string>
     <string name="status_heard">我听到的是「%1$s」</string>
     <string name="status_online">正在联网查询…</string>
-    <string name="status_offline_fail">没连上网络，已用本地内容回答</string>
-    <string name="settings_online">联网查询</string>
-    <string name="settings_online_desc">实时天气（含明天 / 按定位）走 Open-Meteo，本地答不上来的问题先联网搜；关掉也能离线使用</string>
-    <string name="settings_online_state">联网已开启：先本地、再联网，联网查不到才问云端 AI</string>
-    <string name="settings_online_state_off">联网已关闭：只用本地内置的气候数据和知识库</string>
+    <string name="status_notify_denied">没给通知权限，提醒到点只会显示在通知栏外（可在系统设置里打开）</string>
+    <string name="status_reminder_fired">提醒时间到了：%1$s</string>
+    <string name="status_cloud_thinking">交给 AI 想一想…</string>
+    <string name="status_cloud_fail">AI 没接上（%1$s），已用本地回答</string>
 
     <!-- 输入区 -->
     <string name="hint_input">输入文字，或点左侧麦克风</string>
@@ -41,69 +38,110 @@
     <string name="error_no_recognizer">这台设备没有可用的语音识别服务，请用文字输入</string>
     <string name="error_empty_input">先说点什么吧</string>
 
-    <!-- 技能页 -->
-    <string name="skills_title">技能中心</string>
-    <string name="skills_subtitle">点下面的示例说法，会直接跳到对话页执行。绝大多数能力在本机完成；只有天气、百科这类需要实时数据时才联网。</string>
-    <string name="skills_empty">暂时没有可展示的技能。</string>
-    <string name="skills_load_failed">技能列表加载失败：%1$s\n请把这个提示截图反馈给开发者。</string>
+    <!-- 教学入口（对话页输入框上方） -->
+    <string name="teach_action">教学</string>
+    <string name="teach_title">教学</string>
+    <string name="teach_action_new">教一句：这句话该怎么回答</string>
+    <string name="teach_action_memory">查看我的记忆（%1$d 条）</string>
+    <string name="teach_action_pending">补上没答上来的话（%1$d 句）</string>
+
+    <!-- 功能页 -->
+    <string name="features_title">功能</string>
+    <string name="features_subtitle">点一行展开，再点一条看示例说法；点示例直接在对话页执行。</string>
+    <string name="features_empty">暂时没有可展示的功能。</string>
+    <string name="features_count">%1$d 项</string>
+    <string name="features_memory_group">记忆与教学</string>
+    <string name="features_memory_open">打开我的记忆</string>
+    <string name="features_memory_hint">教过的、自学到的、内置的都存在手机本地</string>
+    <string name="features_memory_count">共 %1$d 条记忆</string>
+
+    <string name="group_time">时间与日期</string>
+    <string name="group_calc">计算与换算</string>
+    <string name="group_life">天气与出行</string>
+    <string name="group_knowledge">常识问答</string>
+    <string name="group_tool">生活小工具</string>
+    <string name="group_fun">娱乐与闲聊</string>
+    <string name="group_dialog">多轮对话</string>
 
     <!-- 设置页 -->
     <string name="settings_title">设置</string>
-    <string name="settings_subtitle">语音行为、多轮上下文状态都在这里</string>
-    <string name="settings_group_voice">语音</string>
-    <string name="settings_continuous">连续对话</string>
-    <string name="settings_continuous_desc">回答播完后自动重新打开麦克风</string>
-    <string name="settings_speak">语音播报</string>
-    <string name="settings_speak_desc">关闭后只显示文字，不出声</string>
-    <string name="settings_engine">语音引擎：%1$s</string>
-    <string name="settings_engine_label">语音引擎</string>
-    <string name="settings_engine_pick">换语音引擎</string>
-    <string name="settings_engine_default">系统默认</string>
-    <string name="settings_engine_title">选择语音引擎</string>
-    <string name="settings_engine_preview">你好，我是 HardlySeek，这就是换完引擎后的声音。</string>
-    <string name="settings_engine_note">语速固定为系统默认；如果你手机自带的语音引擎效果不好，可以在这里换一个。</string>
-
-    <string name="settings_group_style">说话方式</string>
-    <string name="settings_style">回答风格</string>
-    <string name="settings_style_concise">简洁</string>
-    <string name="settings_style_standard">标准</string>
+    <string name="settings_subtitle">只留下最常用的几项</string>
+    <string name="settings_answer_style">回答方式</string>
+    <string name="settings_style_concise">精简</string>
     <string name="settings_style_detailed">详细</string>
-    <string name="settings_follow_up">主动追问</string>
-    <string name="settings_follow_up_desc">回答完递一句反问，让对话能继续</string>
-    <string name="settings_thinking">显示理解过程</string>
-    <string name="settings_thinking_desc">回答前用淡色小字展示本地如何拆分与归纳，答案出现即隐藏</string>
-
-    <string name="settings_group_learn">自学习与本地模型</string>
-    <string name="settings_auto_learn">自学习</string>
-    <string name="settings_auto_learn_desc">相似说法自动学会，不用一句句教</string>
-    <string name="settings_learn_stat">记忆分布：%1$d 条教的 / %2$d 条自学的 / %3$d 条内置</string>
-    <string name="settings_pending_stat">待学习：%1$d 句还没答上来</string>
-    <string name="settings_go_teach">去教它</string>
-    <string name="settings_local_model">本地小模型</string>
-    <string name="settings_local_model_desc">内置的离线语言模型：答不上来时自动生成回复，聊得越多学得越多，全程不联网</string>
-    <string name="settings_model_state">模型进度：已学 %1$d 句 / %2$d 个字组参数</string>
-    <string name="settings_model_state_off">本地小模型已关闭（答不上来时直接提示教学）</string>
-    <string name="settings_thought_state">思维模式：%1$d 类提问，共 %2$d 套说法轮换；网络只在你说「帮我查」时才用</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_language_title">选择界面语言</string>
+    <string name="settings_model_switch">接入大模型</string>
+    <string name="settings_model_desc">打开后，本地答不好的问题交给云端 AI；关掉就是纯离线</string>
+    <string name="settings_model_off_hint">未接入：所有回答都在本机算</string>
+    <string name="settings_chat">对话</string>
+    <string name="settings_clear_chat">清空对话记录</string>
+    <string name="settings_clear_chat_done">对话已清空</string>
+    <string name="settings_account">账号</string>
+    <string name="settings_account_guest">游客</string>
+    <string name="settings_logout">退出登录</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_version">版本 %1$s · 共 %2$d 项功能</string>
     <string name="settings_reset">恢复默认设置</string>
     <string name="settings_reset_done">已恢复默认设置（记忆库保留）</string>
-    <string name="settings_group_context">对话状态</string>
-    <string name="settings_group_device">设备与版本</string>
-    <string name="settings_last_intent">上一轮意图：%1$s</string>
-    <string name="settings_context_idle">上下文：空闲（还没有对话）</string>
-    <string name="settings_context_alive">上下文：%1$s，剩余 %2$d 秒</string>
-    <string name="settings_context_slots">槽位：%1$s</string>
-    <string name="settings_message_count">当前对话消息数：%1$d</string>
-    <string name="settings_recognizer_ok">语音识别服务：可用</string>
-    <string name="settings_recognizer_missing">语音识别服务：不可用（只能文字输入）</string>
-    <string name="settings_version">版本：%1$s（%2$d 条规则 / %3$d 个技能 / %4$d 条记忆）</string>
-    <string name="settings_knowledge">常识知识库：%1$d 条知识 / %2$d 种问法 / %3$d 种答法；词典 %4$d 词 / 气候城市 %5$d 个</string>
-    <string name="settings_corpus">日常语料：%1$d 个话题 / %2$d 条应答 / 已聊 %3$d 轮（闲聊 %4$d 轮）</string>
-    <string name="settings_topic">当前话题：%1$s（第 %2$d 轮）</string>
 
-    <!-- 本地记忆（学习）页 -->
+    <!-- 设置页：云端大模型 -->
+    <string name="settings_cloud_state_ready">已接入：%1$s · %2$s</string>
+    <string name="settings_cloud_state_missing">还差配置：%1$s</string>
+    <string name="settings_cloud_missing_url">接口地址</string>
+    <string name="settings_cloud_missing_key">API Key</string>
+    <string name="settings_cloud_missing_model">模型名</string>
+    <string name="settings_cloud_endpoint">接口：%1$s</string>
+    <string name="settings_cloud_model">模型：%1$s</string>
+    <string name="settings_cloud_key">Key：%1$s</string>
+    <string name="settings_cloud_test">测试连接</string>
+    <string name="settings_cloud_edit">填写配置</string>
+    <string name="settings_cloud_title">AI 接口配置</string>
+    <string name="settings_cloud_hint">支持所有 OpenAI 兼容接口（DeepSeek、通义千问、智谱、Kimi、硅基流动等）。Key 只存在本机。</string>
+    <string name="settings_cloud_base_hint">接口地址，例如 https://api.deepseek.com</string>
+    <string name="settings_cloud_key_hint">API Key（火山方舟的 Key 不带 sk- 前缀，属正常）</string>
+    <string name="settings_cloud_model_hint">模型名，例如 deepseek-chat</string>
+    <string name="settings_cloud_prompt_hint">人设（可选）：留空用默认，写太长会每轮多花 token</string>
+    <string name="settings_cloud_testing">正在测试连接…</string>
+    <string name="settings_cloud_saved">已保存：%1$s</string>
+
+    <!-- 通用动作 -->
+    <string name="action_ok">确定</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_delete">删除</string>
+    <string name="action_save">保存</string>
+    <string name="action_edit">修改</string>
+    <string name="action_unset">未设置</string>
+
+    <!-- 气泡长按/点击 -->
+    <string name="bubble_actions_title">这条消息</string>
+    <string name="bubble_edit_title">修改这句话</string>
+    <string name="bubble_edit_hint">重新说一遍</string>
+    <string name="bubble_edited">已修改。需要重新回答的话，把它再发一次。</string>
+    <string name="bubble_delete_done">已删除这一轮</string>
+
+    <!-- 登录注册 -->
+    <string name="login_brand_sub">本地语音助手</string>
+    <string name="login_subtitle">账号只存在这台手机上，用于区分本地的对话与记忆</string>
+    <string name="login_tab_login">登录</string>
+    <string name="login_tab_register">注册</string>
+    <string name="login_hint_username">用户名</string>
+    <string name="login_hint_password">密码</string>
+    <string name="login_hint_confirm">再输一次密码</string>
+    <string name="login_submit_login">登录</string>
+    <string name="login_submit_register">注册</string>
+    <string name="login_guest">先以游客身份进入</string>
+    <string name="login_error_empty">用户名和密码都要填</string>
+    <string name="login_error_short_password">密码至少 6 位</string>
+    <string name="login_error_mismatch">两次输入的密码不一样</string>
+    <string name="login_error_user_exists">这个用户名已经注册过了</string>
+    <string name="login_error_no_user">没有这个用户，先去注册</string>
+    <string name="login_error_wrong_password">密码不对</string>
+    <string name="login_welcome">欢迎你，%1$s</string>
+
+    <!-- 本地记忆（教学）页 -->
     <string name="memory_title">本地记忆</string>
     <string name="memory_subtitle">教过我的话都存在手机本地，越多越会聊。点「教一句」可以随时补一条。</string>
-    <string name="memory_count">共 %1$d 条记忆（其中 %2$d 条是你教的）</string>
     <string name="memory_teach">教一句</string>
     <string name="memory_empty">还没有记忆。点右上角「教一句」，告诉助手「这句话该怎么回答」。</string>
     <string name="memory_source_taught">我教的</string>
@@ -116,27 +154,14 @@
     <string name="memory_teach_pending_title">教这句该怎么回答</string>
     <string name="memory_teach_pending_saved">学会了：当我听到「%1$s」，就说「%2$s」</string>
     <string name="memory_clear_pending">清空待学习</string>
-    <string name="memory_clear_learned">清空自学的</string>
-    <string name="memory_clear_taught">清空我教的</string>
-    <string name="memory_clear_all">全部清空</string>
-    <string name="memory_clear_title">要清空哪些记忆？</string>
     <string name="memory_delete_title">删除这条记忆？</string>
     <string name="memory_delete_message">删除后助手就答不上这个说法了，可以再教一遍。</string>
-    <string name="memory_clear">清空我教的</string>
     <string name="memory_unavailable">本地记忆库打开失败，本次运行使用临时记忆（重启后清空）。</string>
     <string name="memory_teach_dialog_title">教助手一句话</string>
     <string name="memory_teach_question_hint">我说什么（例如：下班了）</string>
     <string name="memory_teach_answer_hint">它该怎么回答（例如：早点回家）</string>
     <string name="memory_teach_saved">已记住：%1$s → %2$s</string>
     <string name="memory_teach_incomplete">问法和回答都要填。</string>
-    <string name="action_ok">确定</string>
-    <string name="action_cancel">取消</string>
-    <string name="action_delete">删除</string>
-    <string name="action_save">保存</string>
-    <string name="action_unset">未设置</string>
-
-    <!-- 状态栏：云端大模型 -->
-    <string name="status_notify_denied">没给通知权限，提醒到点只会显示在通知栏外（可在系统设置里打开）</string>
 
     <!-- 提醒通知 -->
     <string name="notify_channel_reminder">提醒与计时</string>
@@ -145,50 +170,72 @@
     <string name="notify_reminder_repeat">提醒 · %1$s</string>
     <string name="notify_action_snooze">10 分钟后再提醒</string>
     <string name="notify_action_done">知道了</string>
-    <string name="status_reminder_fired">提醒时间到了：%1$s</string>
     <string name="speak_reminder">提醒你：%1$s</string>
 
     <!-- 装完自动清理安装包 -->
     <string name="apk_clean_done">安装包已删除</string>
-    <string name="apk_clean_kept">安装包保留着，下次装完再问</string>
-    <string name="apk_clean_title">装好了 · 顺手清理安装包</string>
-    <string name="apk_clean_message">下载目录里的安装包已经用完了，删掉能省十几兆空间。\n系统不允许应用自己删除别的应用下载的文件，需要你选一下那个安装包。</string>
-    <string name="apk_clean_pick">选安装包删除</string>
-    <string name="status_cloud_thinking">交给 AI 想一想…</string>
-    <string name="status_cloud_fail">AI 没接上（%1$s），已用本地回答</string>
+    <string name="apk_clean_kept">安装包没删掉，可在文件管理里手动清理</string>
 
-    <!-- 设置页：AI 大脑 -->
-    <string name="settings_group_cloud">AI 大脑（云端大模型）</string>
-    <string name="settings_cloud">启用云端大模型</string>
-    <string name="settings_cloud_desc">填了自己的接口之后，本地答不好的问题会交给它；失败自动退回本地答案</string>
-    <string name="settings_cloud_state_ready">已接入：%1$s · %2$s</string>
-    <string name="settings_cloud_state_off">未启用：现在是纯离线助手，所有回答都在本机算</string>
-    <string name="settings_cloud_state_missing">还差配置：%1$s</string>
-    <string name="settings_cloud_missing_url">接口地址</string>
-    <string name="settings_cloud_missing_key">API Key</string>
-    <string name="settings_cloud_missing_model">模型名</string>
-    <string name="settings_cloud_mode">工作方式</string>
-    <string name="settings_cloud_mode_off">不用</string>
-    <string name="settings_cloud_mode_local">本地优先</string>
-    <string name="settings_cloud_mode_cloud">AI 优先</string>
-    <string name="settings_cloud_mode_desc">本地优先＝只有本地明显答不好才问 AI（省额度）；AI 优先＝除了本机功能都让 AI 答</string>
-    <string name="settings_cloud_provider">服务商：%1$s</string>
-    <string name="settings_cloud_endpoint">接口：%1$s</string>
-    <string name="settings_cloud_model">模型：%1$s</string>
-    <string name="settings_cloud_key">Key：%1$s</string>
-    <string name="settings_cloud_test">测试连接</string>
-    <string name="settings_cloud_edit">填写配置</string>
-    <string name="settings_cloud_title">AI 接口配置</string>
-    <string name="settings_cloud_hint">支持所有 OpenAI 兼容接口（DeepSeek、通义千问、智谱、Kimi、硅基流动等）。Key 只存在本机。</string>
-    <string name="settings_cloud_provider_label">服务商</string>
-    <string name="settings_cloud_base_label">接口地址 Base URL</string>
-    <string name="settings_cloud_base_hint">例如 https://api.deepseek.com</string>
-    <string name="settings_cloud_key_label">API Key</string>
-    <string name="settings_cloud_key_hint">一串字符即可（火山方舟的 Key 不带 sk- 前缀，属正常）</string>
-    <string name="settings_cloud_model_label">模型名</string>
-    <string name="settings_cloud_model_hint">例如 deepseek-flash</string>
-    <string name="settings_cloud_prompt_label">人设（可选）</string>
-    <string name="settings_cloud_prompt_hint">留空用默认：简短、口语化、不主动延伸。写太长会每轮多花 token</string>
-    <string name="settings_cloud_testing">正在测试连接…</string>
-    <string name="settings_cloud_saved">已保存：%1$s</string>
+    <!-- 功能页技能条目（四语言） -->
+    <string name="skill_title_time">现在几点</string>
+    <string name="skill_desc_time">报出当前的时分</string>
+    <string name="skill_title_date">今天几号</string>
+    <string name="skill_desc_date">日期、星期，也支持昨天 / 明天 / 后天</string>
+    <string name="skill_title_weekday_calc">日期推算</string>
+    <string name="skill_desc_weekday_calc">算下周几是几号、距离某个日子还有几天</string>
+    <string name="skill_title_timezone">世界时间</string>
+    <string name="skill_desc_timezone">纽约、伦敦、东京等城市现在几点</string>
+    <string name="skill_title_arithmetic">算数</string>
+    <string name="skill_desc_arithmetic">四则运算、括号、百分号，直接说算式就行</string>
+    <string name="skill_title_calc_continue">接着算</string>
+    <string name="skill_desc_calc_continue">在上一次结果上继续加减乘除</string>
+    <string name="skill_title_unit_convert">单位换算</string>
+    <string name="skill_desc_unit_convert">公里/英里、摄氏度/华氏度、斤/千克等</string>
+    <string name="skill_title_age">年龄计算</string>
+    <string name="skill_desc_age">说出出生年份，算今年多大</string>
+    <string name="skill_title_random">做个决定</string>
+    <string name="skill_desc_random">抛硬币、掷骰子、随机数、二选一</string>
+    <string name="skill_title_support">能力清单</string>
+    <string name="skill_desc_support">看看助手现在会做什么</string>
+    <string name="skill_title_reminder">定时提醒</string>
+    <string name="skill_desc_reminder">说到点就弹通知，重启手机也不会丢；也支持查看和删除清单</string>
+    <string name="skill_title_timer">计时器</string>
+    <string name="skill_desc_timer">倒计时结束弹通知，说「取消计时」可以中途停掉</string>
+    <string name="skill_title_torch">手电筒</string>
+    <string name="skill_desc_torch">直接开关手机的闪光灯</string>
+    <string name="skill_title_battery">剩余电量</string>
+    <string name="skill_desc_battery">报出电量百分比，顺便说一句在不在充电</string>
+    <string name="skill_title_open_app">打开应用</string>
+    <string name="skill_desc_open_app">按名字拉起微信、相机、设置这些常用应用</string>
+    <string name="skill_title_echo">复读朗读</string>
+    <string name="skill_desc_echo">让它照着念：说「说出……」「帮我朗读……」，后面的字原样说出来</string>
+    <string name="skill_title_guess">猜数字游戏</string>
+    <string name="skill_desc_guess">1 到 100 之间猜数，助手会提示大小，可以连猜多轮</string>
+    <string name="skill_title_joke">讲个笑话</string>
+    <string name="skill_desc_joke">本地笑话库，随机一条</string>
+    <string name="skill_title_quote">来句名言</string>
+    <string name="skill_desc_quote">随机一句名言或诗句</string>
+    <string name="skill_title_teach">教我说话</string>
+    <string name="skill_desc_teach">教我一句新说法，记进本地记忆库；用「|」可以教多种回答</string>
+    <string name="skill_title_chat">日常聊天</string>
+    <string name="skill_desc_chat">内置日常话题语料：同一句话多种回答，累了、加班、宿舍、快递都能接得住</string>
+    <string name="skill_title_self_learn">自学习</string>
+    <string name="skill_desc_self_learn">教过一句之后，相似的新说法它自己就学会了；答不上来的话会收进记忆页等你教</string>
+    <string name="skill_title_continue_chat">接着上文聊</string>
+    <string name="skill_desc_continue_chat">「为什么」「然后呢」「那怎么办」会顺着刚才的话题继续说，不会答非所问</string>
+    <string name="skill_title_weather">天气与气温</string>
+    <string name="skill_desc_weather">联网给出实时气温体感和当日高低（没网就用常年气候数据，照样有答案）</string>
+    <string name="skill_title_outing">出行建议</string>
+    <string name="skill_desc_outing">按月份和城市给出出行、穿衣、带伞这类能照做的提醒</string>
+    <string name="skill_title_translate">单词翻译</string>
+    <string name="skill_desc_translate">内置中英基础词典双向查询，中翻英、英翻中都能用</string>
+    <string name="skill_title_knowledge">常识问答</string>
+    <string name="skill_desc_knowledge">天气原理、健康、学习、生活窍门、安全急救等几百条有标准答案的问题</string>
+    <string name="skill_title_decide">分析与决策</string>
+    <string name="skill_desc_decide">拿不准的选择、找不到头绪的问题，给一套「目的—代价—退路」的判断顺序</string>
+    <string name="skill_title_online">联网查资料</string>
+    <string name="skill_desc_online">本地答不上来时上网搜索，把查到的摘要连同来源一起说给你（没网自动回落）</string>
+    <string name="skill_title_follow_up">多轮追问</string>
+    <string name="skill_desc_follow_up">3 分钟内可以用「那后天呢」「再来一个」这种省略说法接着聊</string>
+    <string name="features_examples_note">示例说法是中文：离线引擎目前只认中文指令。</string>
 </resources>

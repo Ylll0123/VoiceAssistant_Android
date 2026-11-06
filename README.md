@@ -116,25 +116,36 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
   - 内置规则优先于记忆，教错的内容可以在记忆页删掉
 - ✅ 云端的好答案会回灌给本地小模型（学的是「人怎么问」，所以用原话）
 
-### 七、多页面
+### 七、界面：三项导航 + 多语言 + 账号
 
-- ✅ 底部导航四页：**对话** / **技能** / **记忆** / **设置**
+- ✅ 底部导航三页：**对话** / **功能** / **设置**
   - 对话页：消息气泡列表（用户/助手）、状态栏、麦克风与发送；
-    顶栏另有一个「技能」按钮，底部导航万一被系统栏遮挡也能进技能页
-  - 技能页：按分类展示全部能力 + 可点击的示例说法，点击后自动跳回对话页执行
-  - 设置页：语音播报、连续对话、显示理解过程、本地小模型、联网查询开关，
-    云端配置与测试连接，上下文调试信息，清空上下文与对话
+    输入框**上方**常驻「教学」入口（教一句 / 看记忆 / 补答没答上来的）
+  - 功能页：一行一行按分类列出，点开一行才展开该类技能，再点一条才展开示例说法
+    （两级折叠，一屏看得到全部能力又不拥挤）；「我的记忆」是这里的二级页，
+    带返回箭头并接管系统返回键
+  - 设置页只留必要项：回答方式（精简 / 详细）、界面语言、接入大模型
+    （含接口配置与测试连接）、清空对话、账号、恢复默认设置
+- ✅ **四语言界面**：中文 / English / 日本語 / 한국어，`values-en / -ja / -ko` 全套翻译
+  （连功能页 30 条技能的标题和说明也逐条翻译；示例说法保持中文并在页尾说明原因）。
+  语言由 `LocaleHelper` 自己控制（重写 `attachBaseContext` + 启动时按存盘值套用），
+  不依赖系统语言，也不依赖 Android 13 的「按应用设置语言」——低版本一样能切
+- ✅ **登录注册**：本地账号，密码用 PBKDF2 加盐哈希（`data/Passwords`，有 7 条单测），
+  登录 / 注册切换，也可直接以游客身份进入；外部 `--es query` 入口不受门禁影响
+- ✅ **点气泡改 / 删**：点自己的气泡弹出「修改 / 删除」；删除会连带这条的助手回答，
+  不留没头没尾的半截对话；改完落盘，重启后是新内容
 - ✅ 对话状态由 `ChatSession` 持有，切页面不丢消息
 - ✅ 安全区适配：状态栏 / 导航栏留白统一交给根布局，键盘弹起时隐藏底部导航
 
 ### 八、装完自清理安装包 + 外部调用入口
 
-- ✅ **装完自动清理安装包**（每个版本只试一次）：
-  1. 自己下载的 APK（将来做应用内升级）→ 直接删，用户无感；
-  2. 系统能看见的下载项 → `MediaStore.createDeleteRequest`，系统弹一次确认；
-  3. 浏览器下载的文件（分区存储里对本应用不可见）→ 提供 SAF 手选一次，选中即删。
+- ✅ **装完自动清理安装包**（每个版本只做一次，不弹自建确认框）：
+  1. 本应用能索引到的下载项 → 直接 `delete()`，用户完全无感；
+  2. 索引不到的（浏览器 / adb push 进来的）→ 直接发 `MediaStore.createDeleteRequest`，
+     系统弹一次「允许删除？」，用户点一下即可。
   如实说明：Android 从 10 起**不允许**一个应用静默删除别的应用写的文件，
-  这是安全模型，不是权限没申请够——所以第 3 步必须由用户点一下。
+  这是分区存储的安全模型，不是权限没申请够——系统那一下确认省不掉，
+  但应用自己不再多问一句。
 - ✅ **外部调用入口**：`adb shell am start -n com.example.voiceassistant/.ui.VoiceAssistantActivity --es query "提醒我交作业"`
   （或任何 App 用同样的 extra），配合 `launchMode=singleTop`，第二句会回到同一实例，
   多轮上下文不会断
@@ -144,12 +155,14 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
 | 分类 | 选型 |
 | --- | --- |
 | 语言 | Kotlin |
-| 架构 | 单 Activity + 四 Fragment；**事件总线 + 四大模块**（语音链路 / 模糊容错 / 对话管理 / 提醒中心），模块间只走 `bus/EventBus` |
+| 架构 | 单 Activity + 三 Fragment；**事件总线 + 四大模块**（语音链路 / 模糊容错 / 对话管理 / 提醒中心），模块间只走 `bus/EventBus` |
+| 多语言 | 自有 `LocaleHelper`（`attachBaseContext`）+ `values-en / -ja / -ko`，不依赖系统语言 |
+| 账号 | 本地账号：PBKDF2WithHmacSHA256 加盐哈希，不联网、不上传 |
 | 本地存储 | SQLite（自建极简封装，零新增依赖）：记忆库 + 提醒表；SharedPreferences：设置与最近 40 条对话 |
 | 后台任务 | AlarmManager 精确闹钟（`setExactAndAllowWhileIdle` / `setAlarmClock`）+ 通知 Action，开机自动重排 |
 | 语音 | Android `SpeechRecognizer` / `TextToSpeech` |
 | 联网 | `HttpURLConnection` + 项目自带极简 JSON 解析（`JsonLite`） |
-| 测试 | JUnit4（438 个单测，覆盖事件分发、模糊容错、多轮上下文、提醒状态机、重复规则、调度顺序、路线决策、语义理解、工具、对话落盘、联网、云端、记忆） |
+| 测试 | JUnit4（445 个单测，覆盖事件分发、模糊容错、多轮上下文、提醒状态机、重复规则、调度顺序、路线决策、语义理解、工具、对话落盘、联网、云端、记忆、密码哈希） |
 | 构建 | Gradle 9.5 + AGP 9.3，minSdk 28 / targetSdk 37 |
 
 ## 分层与目录结构
@@ -200,10 +213,13 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
 
 ```
 app/src/main/java/com/example/voiceassistant/
+├── App.kt                       进程入口：按存盘语言包一层 Context（首帧就是对的）
 ├── ui/                          界面层：只做接线，不写业务判断
 │   ├── VoiceAssistantActivity.kt    应用外壳 + 语音入口（订阅总线，调 pipeline）
-│   ├── ChatFragment.kt / SkillsFragment.kt
-│   ├── MemoryFragment.kt / SettingsFragment.kt
+│   ├── LoginActivity.kt             登录 / 注册 / 游客进入（门禁在 onCreate）
+│   ├── ChatFragment.kt / FeaturesFragment.kt / SettingsFragment.kt
+│   ├── MemoryFragment.kt            记忆页（从功能页进入的二级页）
+│   ├── TeachDialog.kt               教学入口（教一句 / 看记忆 / 补答没答上来的）
 │   └── ChatAdapter.kt / MemoryAdapter.kt
 ├── bus/                         事件总线：模块之间唯一的通信方式
 │   └── EventBus（同步分发 + 类型订阅 + owner 注销）/ AssistantBus（进程级单例）
@@ -249,8 +265,11 @@ app/src/main/java/com/example/voiceassistant/
 │   └── AssistantEngine / AssistantRules / DialogLogic / KnowledgeBase
 │       FuzzyMatcher / QueryUnderstanding / NgramModel / ChineseNumber …
 ├── memory/                      记忆库（SQLite + 检索 + 内置语料）
-└── data/                        会话与设置模型
-    └── ChatSession / ChatHistoryStore（对话落盘）/ ChatMessage / AppSettings / JsonLite
+└── data/                        会话、设置与账号
+    ├── ChatSession / ChatHistoryStore（对话落盘）/ ChatMessage
+    ├── AppSettings（设置 + 语言 + 云端配置）
+    ├── AccountStore / Passwords（本地账号，PBKDF2 加盐）
+    └── LocaleHelper（语言上下文）/ JsonLite
 ```
 
 层与层之间靠 `core/Sources.kt` 里的四个接口 + `reminder/ReminderPort` 解耦，
@@ -282,6 +301,12 @@ app/src/main/java/com/example/voiceassistant/
       装完自动清理安装包（自己的文件静默删 / 别人的走系统确认 / 兜底 SAF 手选）；
       新增外部调用入口（`--es query "…"` 或别的 App 直接把话说给它）；
       `launchMode=singleTop` 保证多轮上下文不因重入而丢 + 单测（438 个）
+- [x] v3.5：界面重做 —— 底部改**三项导航**（对话 / 功能 / 设置），技能页换成
+      两级折叠的功能清单；设置精简为回答方式 / 语言 / 大模型 / 清空 / 账号 / 重置；
+      **四语言界面**（中 / 英 / 日 / 韩，自有 `LocaleHelper`，不依赖系统语言）；
+      **登录注册**（本地 PBKDF2 加盐）；**点气泡修改或删除**上一句（连带它的回答）；
+      教学入口移到输入框上方；装完清理安装包改为静默执行（不再自建确认框）
+      + 单测（445 个）
 - [ ] 第 4 周：TTS 与 UI 打磨、异常处理、文档与演示视频
 
 ## 环境要求

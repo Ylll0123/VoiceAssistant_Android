@@ -7,6 +7,10 @@
     android:paddingTop="5dp"
     android:paddingBottom="5dp">
 
+    <!--
+        这里刻意不开 textIsSelectable：它会吃掉单击事件，
+        「点气泡改字 / 删掉这一轮」就永远点不出来。
+    -->
     <TextView
         android:id="@+id/tvMessage"
         android:layout_width="wrap_content"
@@ -19,7 +23,6 @@
         android:paddingEnd="14dp"
         android:paddingBottom="10dp"
         android:textColor="@color/white"
-        android:textIsSelectable="true"
         android:textSize="15sp" />
 
 </LinearLayout>
