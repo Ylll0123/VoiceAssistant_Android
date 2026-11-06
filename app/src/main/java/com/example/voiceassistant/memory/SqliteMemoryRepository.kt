@@ -20,7 +20,7 @@ import com.example.voiceassistant.assistant.FuzzyMatcher
  */
 class SqliteMemoryRepository(context: Context) : MemoryRepository {
 
-    private val dbName = DB_NAME_PREFIX + UserScope.of(context)
+    private val dbName = DB_NAME_PREFIX + UserScope.of(context) + DB_SUFFIX
 
     init {
         UserScope.adoptLegacyDb(context.applicationContext, DB_NAME_LEGACY, dbName)
@@ -159,6 +159,7 @@ class SqliteMemoryRepository(context: Context) : MemoryRepository {
     private companion object {
         const val TAG = "MemoryStore"
         const val DB_NAME_PREFIX = "assistant_memory_"
+        const val DB_SUFFIX = ".db"
         const val DB_NAME_LEGACY = "assistant_memory.db"
         const val DB_VERSION = 1
         const val TABLE = "memory"

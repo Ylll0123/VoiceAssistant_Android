@@ -30,7 +30,7 @@ import com.example.voiceassistant.data.UserScope
 class ReminderDb(context: Context) : ReminderRepository {
 
     /** 每个账号一本提醒账：换账号就看不到别人的提醒（见 [UserScope]） */
-    private val dbName = DB_NAME_PREFIX + UserScope.of(context)
+    private val dbName = DB_NAME_PREFIX + UserScope.of(context) + DB_SUFFIX
 
     init {
         UserScope.adoptLegacyDb(context.applicationContext, DB_NAME_LEGACY, dbName)
@@ -147,6 +147,7 @@ class ReminderDb(context: Context) : ReminderRepository {
     private companion object {
         const val TAG = "ReminderDb"
         const val DB_NAME_PREFIX = "assistant_reminder_"
+        const val DB_SUFFIX = ".db"
         const val DB_NAME_LEGACY = "assistant_reminder.db"
         const val DB_VERSION = 1
         const val TABLE = "reminder"
