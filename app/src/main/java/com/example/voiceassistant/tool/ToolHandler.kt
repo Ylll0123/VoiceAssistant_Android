@@ -19,8 +19,9 @@ import com.example.voiceassistant.service.DeviceController
  * | ② | [ReminderTool] 提醒清单 | 关键词（「提醒我」等） |
  * | ③ | [VolumeTool] 音量 / 静音 / 闭嘴 | 关键词（「静音」「大点声」等） |
  * | ④ | [DeviceTool] 电量 / 手电筒 / 开应用 | 关键词 + 前缀 |
- * | ⑤ | [TimeTool] 时间日期 | **引擎命中的规则意图** |
- * | ⑥ | [CalcTool] 计算 | **引擎命中的规则意图** |
+ * | ⑤ | [EchoTool] 复读 / 朗读 | 「说出 / 朗读」开头且有内容 |
+ * | ⑥ | [TimeTool] 时间日期 | **引擎命中的规则意图** |
+ * | ⑦ | [CalcTool] 计算 | **引擎命中的规则意图** |
  *
  * ### 为什么计时排在提醒前面
  * 「定个 10 分钟闹钟」两边的关键词都沾。计时更具体（有时长），
@@ -56,6 +57,7 @@ class ToolHandler(
             ReminderTool.matches(raw) ||
             VolumeTool.matches(raw) ||
             DeviceTool.matches(raw, device) ||
+            EchoTool.matches(raw) ||
             TimeTool.matches(raw, local) ||
             CalcTool.matches(raw, local)
     }
@@ -74,6 +76,7 @@ class ToolHandler(
         ReminderTool.handle(raw, now)?.let { return it }
         VolumeTool.handle(raw, audio)?.let { return it }
         DeviceTool.handle(raw, device)?.let { return it }
+        EchoTool.handle(raw)?.let { return it }
 
         if (TimeTool.matches(raw, local)) {
             return ToolReply(local.text, ToolIntent.TIME, TimeTool.NAME)

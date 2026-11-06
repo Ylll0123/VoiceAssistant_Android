@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">DeepSuck</string>
+    <string name="app_name">HardlySeek</string>
 
     <!-- 底部导航 -->
     <string name="tab_chat">对话</string>
@@ -33,10 +33,10 @@
     <string name="desc_continuous_on">连续对话：已开启</string>
     <string name="desc_continuous_off">连续对话：已关闭</string>
     <string name="desc_clear">清空对话</string>
-    <string name="desc_avatar">DeepSuck 头像</string>
+    <string name="desc_avatar">HardlySeek 头像</string>
 
     <!-- 提示信息 -->
-    <string name="welcome">你好，我是 DeepSuck。点左下角的麦克风说话，或者直接在输入框里打字。\n试试问我：现在几点、今天几号、帮我算 12*8，或者「我们玩猜数字」。</string>
+    <string name="welcome">你好，我是 HardlySeek。点左下角的麦克风说话，或者直接在输入框里打字。\n试试问我：现在几点、今天几号、帮我算 12*8，或者「我们玩猜数字」。</string>
     <string name="error_no_permission">没有麦克风权限，先用文字输入吧</string>
     <string name="error_no_recognizer">这台设备没有可用的语音识别服务，请用文字输入</string>
     <string name="error_empty_input">先说点什么吧</string>
@@ -60,7 +60,7 @@
     <string name="settings_engine_pick">换语音引擎</string>
     <string name="settings_engine_default">系统默认</string>
     <string name="settings_engine_title">选择语音引擎</string>
-    <string name="settings_engine_preview">你好，我是 DeepSuck，这就是换完引擎后的声音。</string>
+    <string name="settings_engine_preview">你好，我是 HardlySeek，这就是换完引擎后的声音。</string>
     <string name="settings_engine_note">语速固定为系统默认；如果你手机自带的语音引擎效果不好，可以在这里换一个。</string>
 
     <string name="settings_group_style">说话方式</string>

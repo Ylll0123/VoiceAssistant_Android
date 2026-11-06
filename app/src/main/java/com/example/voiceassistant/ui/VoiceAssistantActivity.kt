@@ -38,12 +38,14 @@ import com.example.voiceassistant.core.HistoryManager
 import com.example.voiceassistant.core.RoutePlanner
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatHistoryStore
+import com.example.voiceassistant.data.ChatMessage
 import com.example.voiceassistant.data.ChatSession
 import com.example.voiceassistant.handler.qa.QaLib
 import com.example.voiceassistant.handler.qa.QaLocalHandler
 import com.example.voiceassistant.handler.web.WebHandler
 import com.example.voiceassistant.memory.MemorySeed
 import com.example.voiceassistant.network.LlmResult
+import com.example.voiceassistant.network.NetworkState
 import com.example.voiceassistant.memory.SqliteMemoryRepository
 import com.example.voiceassistant.reminder.ReminderAlarm
 import com.example.voiceassistant.reminder.Reminders
@@ -244,12 +246,17 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         // 把重启 / 覆盖安装后丢掉的闹钟重新排上
         Reminders.install(this)
 
+        // 联网状态：没网时网络层直接失败回落本地，不再干等超时
+        NetworkState.init(this)
+
         // 小模型要先于会话创建（会话的引擎里要引用它）
         localModel = createLocalModel()
 
         // 上次的对话先恢复出来，再补欢迎语：
         // 否则重启后屏幕上只剩一句自我介绍，追问「那明天呢」就接不上了
-        session.restore(chatHistory.load())
+        // 旧记录里的欢迎语带的是旧名字，先剔掉，用当前文案重新放回最前面
+        val saved = chatHistory.load().filterNot { it.isOldWelcome() }
+        session.restore(listOf(newWelcome()) + saved)
         session.onChanged = { chatHistory.save(it) }
         session.ensureWelcome(getString(R.string.welcome))
 
@@ -624,6 +631,20 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         ) { reply -> finishTurn(seq, reply, cleaned.first()) }
     }
 
+    /** 当前文案的欢迎语气泡 */
+    private fun newWelcome() = ChatMessage(text = getString(R.string.welcome), isUser = false)
+
+    /**
+     * 是不是「旧名字」的欢迎语。
+     *
+     * 落盘的历史里第一条永远是欢迎语，改名之后它上面还印着旧名字，
+     * 恢复时剔掉重放，屏幕上就不会出现「我叫旧名字」这种穿帮。
+     */
+    private fun ChatMessage.isOldWelcome(): Boolean =
+        !isUser && kind == ChatMessage.KIND_NORMAL &&
+            text.startsWith(WELCOME_HEAD) &&
+            !text.contains(getString(R.string.app_name))
+
     /** 当前生效的运行期配置 */
     private fun config(): AssistantRouter.Config = AssistantRouter.Config(
         onlineEnabled = onlineSearchEnabled,
@@ -854,5 +875,8 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
         /** 本地小模型训练进度的存档文件名 */
         const val MODEL_FILE = "ngram_model.txt"
+
+        /** 欢迎语的开头（用来认出旧名字的欢迎语） */
+        const val WELCOME_HEAD = "你好，我是"
     }
 }

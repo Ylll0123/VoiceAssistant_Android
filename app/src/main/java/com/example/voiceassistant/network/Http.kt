@@ -30,6 +30,8 @@ object Http {
 
     /** 阻塞式 GET，失败返回 null */
     fun get(url: String, timeoutMs: Int = DEFAULT_TIMEOUT_MS): String? = runCatching {
+        // 飞行模式 / 没网：直接失败，别让用户干等 7 秒超时
+        if (!NetworkState.isOnline()) return null
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "GET"
@@ -57,6 +59,8 @@ object Http {
         body: String,
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
     ): Pair<String?, Int> {
+        // 没网就别连了：返回 (null, 0)，上层按「连不上」处理并回落本地
+        if (!NetworkState.isOnline()) return null to 0
         val conn = URL(url).openConnection() as HttpURLConnection
         return try {
             conn.requestMethod = "POST"

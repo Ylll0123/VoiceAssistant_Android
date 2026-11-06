@@ -28,7 +28,7 @@ class ChatSessionRestoreTest {
     fun `恢复过的会话不再补欢迎语`() {
         val session = ChatSession()
         session.restore(listOf(ChatMessage(text = "旧对话", isUser = true)))
-        session.ensureWelcome("你好，我是 DeepSuck")
+        session.ensureWelcome("你好，我是 HardlySeek")
         assertEquals(1, session.messages.size)
         assertEquals("旧对话", session.messages[0].text)
     }
@@ -37,9 +37,9 @@ class ChatSessionRestoreTest {
     fun `空存档照旧补欢迎语`() {
         val session = ChatSession()
         session.restore(emptyList())
-        session.ensureWelcome("你好，我是 DeepSuck")
+        session.ensureWelcome("你好，我是 HardlySeek")
         assertEquals(1, session.messages.size)
-        assertEquals("你好，我是 DeepSuck", session.messages[0].text)
+        assertEquals("你好，我是 HardlySeek", session.messages[0].text)
     }
 
     @Test

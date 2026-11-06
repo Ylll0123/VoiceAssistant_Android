@@ -27,4 +27,7 @@ object ToolIntent {
 
     /** 让助手闭嘴（静音 / 停止播报），UI 层据此 stopSpeaking */
     const val TTS_STOP = "tts_stop"
+
+    /** 复读 / 朗读：原样说出后面的字 */
+    const val ECHO = "echo"
 }

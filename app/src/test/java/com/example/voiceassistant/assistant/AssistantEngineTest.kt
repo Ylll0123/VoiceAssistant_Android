@@ -48,7 +48,7 @@ class AssistantEngineTest {
 
     @Test
     fun `问身份时自我介绍`() {
-        assertTrue(engine.reply("你是谁").contains("DeepSuck"))
+        assertTrue(engine.reply("你是谁").contains("HardlySeek"))
     }
 
     @Test

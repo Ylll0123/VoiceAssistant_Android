@@ -161,6 +161,14 @@ object SkillCatalog {
             tool = true
         ),
         Skill(
+            id = "echo",
+            title = "复读朗读",
+            description = "让它照着念：说「说出……」「帮我朗读……」，后面的字原样说出来",
+            category = CATEGORY_TOOL,
+            examples = listOf("说出我爱中国", "帮我朗读好好学习天天向上"),
+            tool = true
+        ),
+        Skill(
             id = "guess",
             title = "猜数字游戏",
             description = "1 到 100 之间猜数，助手会提示大小，可以连猜多轮",

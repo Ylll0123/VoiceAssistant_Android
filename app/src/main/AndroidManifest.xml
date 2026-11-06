@@ -4,7 +4,9 @@
 
     <!-- 语音输入需要录音权限；系统语音识别走网络时需要联网权限 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 联网搜索：天气 / 百科 / 必应摘要都需要 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
         提醒 / 计时：到点弹通知，重启后把闹钟重排。
