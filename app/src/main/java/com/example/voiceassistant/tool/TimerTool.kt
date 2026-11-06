@@ -43,7 +43,7 @@ object TimerTool {
         val text = raw.trim()
 
         if (CANCEL_CUES.any { text.contains(it) }) {
-            val target = ReminderTool.sink.all().lastOrNull { it.text == DONE_TEXT }
+            val target = ReminderTool.sink.all().lastOrNull { it.content == DONE_TEXT }
                 ?: return reply("现在没有在跑的计时。")
             ReminderTool.sink.remove(target.id)
             return reply("计时停了。")

@@ -27,7 +27,9 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
 
 ### 二、调度（核心）
 
-一句话进来后按固定顺序**短路执行**，命中就返回，绝不往下多走一步：
+一句话先过**模糊容错引擎**：属于提醒域（新建 / 查看 / 改时间 / 取消）的
+就直接被对话管理器接走，0 请求 0 token，用模板回话；其余问题再按下面的顺序
+**短路执行**，命中就返回，绝不往下多走一步：
 
 ```
 ① 本机工具   提醒 / 计时 / 音量 / 时间 / 计算 / 复读 → 0 请求 0 token
@@ -125,30 +127,98 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
 - ✅ 对话状态由 `ChatSession` 持有，切页面不丢消息
 - ✅ 安全区适配：状态栏 / 导航栏留白统一交给根布局，键盘弹起时隐藏底部导航
 
+### 八、装完自清理安装包 + 外部调用入口
+
+- ✅ **装完自动清理安装包**（每个版本只试一次）：
+  1. 自己下载的 APK（将来做应用内升级）→ 直接删，用户无感；
+  2. 系统能看见的下载项 → `MediaStore.createDeleteRequest`，系统弹一次确认；
+  3. 浏览器下载的文件（分区存储里对本应用不可见）→ 提供 SAF 手选一次，选中即删。
+  如实说明：Android 从 10 起**不允许**一个应用静默删除别的应用写的文件，
+  这是安全模型，不是权限没申请够——所以第 3 步必须由用户点一下。
+- ✅ **外部调用入口**：`adb shell am start -n com.example.voiceassistant/.ui.VoiceAssistantActivity --es query "提醒我交作业"`
+  （或任何 App 用同样的 extra），配合 `launchMode=singleTop`，第二句会回到同一实例，
+  多轮上下文不会断
+
 ## 技术栈
 
 | 分类 | 选型 |
 | --- | --- |
 | 语言 | Kotlin |
-| 架构 | 单 Activity + 四 Fragment，按职责分层（ui / core / handler / tool / network / service / assistant / memory / data） |
-| 本地存储 | SQLite（自建极简封装，零新增依赖）+ SharedPreferences（提醒清单 / 最近 40 条对话） |
+| 架构 | 单 Activity + 四 Fragment；**事件总线 + 四大模块**（语音链路 / 模糊容错 / 对话管理 / 提醒中心），模块间只走 `bus/EventBus` |
+| 本地存储 | SQLite（自建极简封装，零新增依赖）：记忆库 + 提醒表；SharedPreferences：设置与最近 40 条对话 |
 | 后台任务 | AlarmManager 精确闹钟（`setExactAndAllowWhileIdle` / `setAlarmClock`）+ 通知 Action，开机自动重排 |
 | 语音 | Android `SpeechRecognizer` / `TextToSpeech` |
 | 联网 | `HttpURLConnection` + 项目自带极简 JSON 解析（`JsonLite`） |
-| 测试 | JUnit4（379 个单测，覆盖调度顺序、路线决策、语义理解、规则引擎、工具、提醒解析、对话落盘、联网、云端、记忆） |
+| 测试 | JUnit4（438 个单测，覆盖事件分发、模糊容错、多轮上下文、提醒状态机、重复规则、调度顺序、路线决策、语义理解、工具、对话落盘、联网、云端、记忆） |
 | 构建 | Gradle 9.5 + AGP 9.3，minSdk 28 / targetSdk 37 |
 
 ## 分层与目录结构
 
+整体按「**事件总线 + 四大模块**」组织。一句话的旅程：
+
+```
+话筒 ──▶ ① 语音链路 ──RawText──▶ ② 模糊容错引擎 ──IntentRecognized──▶ ③ 对话管理
+                                                                          │
+                                      ④ 提醒中心 ◀── 增删改查 ─────────────┘
+                                          │
+                                     ReminderFired ──▶ 界面 / TTS
+```
+
+| 模块 | 职责 | 关键文件 |
+| --- | --- | --- |
+| 事件总线 | 同步分发、按类型订阅、owner 批量注销、异常隔离 | `bus/EventBus`、`bus/AssistantBus` |
+| ① 语音链路 | ASR / TTS / 连续对话（系统能力，见 `service/`） | `AsrManager`、`TtsManager` |
+| ② 模糊容错 | 归一化 → 纠错 → 规则模板 → 编辑距离 → **置信度** | `fuzzy/TextNormalizer`、`fuzzy/FuzzyEngine`、`fuzzy/Levenshtein` |
+| ③ 对话管理 | 槽位补全、指代消解、会话超时、模板化回复 | `dialog/DialogueManager`、`dialog/DialogueSession` |
+| ④ 提醒中心 | 增删改查、重复规则、状态机、调度与通知 | `reminder/ReminderCenter`、`ReminderDb`、`ReminderAlarm` |
+
+模块之间只通过事件总线递消息：语音链路不知道提醒怎么存，
+提醒中心不知道这句话是谁说的、界面上长什么样——换掉任何一块都不影响其它三块。
+
+### 模糊容错的四层策略
+
+| 层 | 手段 | 解决什么 | 例 |
+| --- | --- | --- | --- |
+| ① | 归一化 + 词表纠错 | 全角、语气词、同音字 | 「明天**山**点提醒我」→ 三点 |
+| ② | 规则模板 + 槽位 | 「提醒我 X」「改到 X」「取消 X」 | 抽 `intent` / `time` / `content` |
+| ③ | 编辑距离 | 单字错、短指令变体 | 「取消提箱」→ `cancel_remind` |
+| ④ | 置信度闸门 | 拦下非指令 | 「提醒有什么意义」→ 不建提醒 |
+
+置信度 ≥ 0.8 直接执行；0.55~0.8 追问确认；< 0.55 当没听懂交给问答链路。
+**宁可多问一句，也不猜着去建一条错提醒。**
+
+### 多轮上下文
+
+```
+用户：提醒我交作业          → 意图 set_remind，但 time 空 → 反问「几点？」
+用户：三点                  → 补全槽位 → 建提醒，记住 ref_remind_id
+用户：改成四点              → 意图 update_remind，目标由 ref_remind_id 补全
+```
+
+会话上下文只在内存、120 秒过期：过期后「改成四点」不再瞎猜指代，
+而是反问「要改哪一条」。长期数据（提醒清单）在 SQLite，两者不混。
+
 ```
 app/src/main/java/com/example/voiceassistant/
 ├── ui/                          界面层：只做接线，不写业务判断
-│   ├── VoiceAssistantActivity.kt    应用外壳 + 语音入口
+│   ├── VoiceAssistantActivity.kt    应用外壳 + 语音入口（订阅总线，调 pipeline）
 │   ├── ChatFragment.kt / SkillsFragment.kt
 │   ├── MemoryFragment.kt / SettingsFragment.kt
 │   └── ChatAdapter.kt / MemoryAdapter.kt
+├── bus/                         事件总线：模块之间唯一的通信方式
+│   └── EventBus（同步分发 + 类型订阅 + owner 注销）/ AssistantBus（进程级单例）
+├── fuzzy/                       模糊匹配容错引擎
+│   ├── FuzzyEngine.kt               归一 → 纠错 → 模板 → 相似度 → 置信度
+│   ├── TextNormalizer.kt            全角/标点/语气词/同义词/同音字
+│   ├── Levenshtein.kt               编辑距离与相似度
+│   └── Intent.kt                    IntentKind / Slots / IntentResult
+├── dialog/                      多轮上下文对话管理
+│   ├── DialogueManager.kt           槽位补全 / 指代消解 / 模板回复
+│   └── DialogueSession.kt           会话上下文（内存 + 超时）
 ├── core/                        调度核心：决定「这一轮该问谁」
-│   ├── AssistantRouter.kt           串行调度总入口（plan / run / processAsync）
+│   ├── AssistantPipeline.kt         流水线：语音 → 容错 → 对话 → 问答链路
+│   ├── AssistantEvents.kt           RawText / IntentRecognized / TurnPlanned / ReplyReady
+│   ├── AssistantRouter.kt           串行调度（plan / run / runAsync）
 │   ├── RoutePlanner.kt              路线决策（纯函数：本地/联网/云端）
 │   ├── HistoryManager.kt            历史落盘 + 给云端准备上下文
 │   ├── TextCleaner.kt               文本清洗（归一化 / 截断 / 缓存键）
@@ -159,15 +229,22 @@ app/src/main/java/com/example/voiceassistant/
 │   ├── web/WebHandler.kt            按需联网
 │   └── llm/CloudLlmHandler.kt       云端大模型 + CloudCache
 ├── tool/                        工具层：本机能力，0 请求
-│   └── ToolHandler / ReminderTool / ReminderTime / TimerTool / DeviceTool
-│       Volume / Time / Calc / ToolReply
+│   └── ToolHandler / ReminderTool（关键词兜底）/ ReminderTime / TimerTool
+│       DeviceTool / Volume / Time / Calc / Echo / ToolReply
 ├── reminder/                    伴生模块 P3：通知提醒中心
-│   └── Reminders（唯一入口）/ ReminderStore（SharedPreferences 持久化）
-│       ReminderAlarm（精确闹钟 + 通知 + Action）/ ReminderReceiver / BootReceiver
+│   ├── ReminderCenter.kt            唯一业务入口（状态机 + 重复规则）
+│   ├── ReminderDb.kt                SQLite 表（content / trigger_at / repeat / status / ctx_id）
+│   ├── ReminderPort.kt              对话模块眼中的六个动作（接口）
+│   ├── ReminderRepeat.kt            下一次触发时刻（按日历加，含夏令时）
+│   ├── ReminderAlarm.kt             精确闹钟 + 通知 + Action
+│   ├── ReminderReceiver / BootReceiver
+│   └── Reminders.kt                 安装入口（建渠道 / 迁移旧数据 / 重排闹钟）
+├── installer/                   装完自动清理安装包（分区存储下的合规删法）
+│   └── ApkCleaner.kt
 ├── network/                     网络层
-│   └── Http.kt / SearchApi.kt / LlmRequest.kt
+│   └── Http.kt / SearchApi.kt / LlmRequest.kt / NetworkState.kt
 ├── service/                     语音服务层
-│   └── AsrManager / TtsManager / TtsTiming（播报兜底）/ AudioController
+│   └── AsrManager / TtsManager / TtsTiming（播报兜底）/ AudioController / DeviceController
 ├── assistant/                   规则与知识（纯逻辑，可直接单测）
 │   └── AssistantEngine / AssistantRules / DialogLogic / KnowledgeBase
 │       FuzzyMatcher / QueryUnderstanding / NgramModel / ChineseNumber …
@@ -176,8 +253,8 @@ app/src/main/java/com/example/voiceassistant/
     └── ChatSession / ChatHistoryStore（对话落盘）/ ChatMessage / AppSettings / JsonLite
 ```
 
-层与层之间靠 `core/Sources.kt` 里的四个接口解耦，
-所以换大模型、换搜索源、加新工具都不用碰 `AssistantRouter`。
+层与层之间靠 `core/Sources.kt` 里的四个接口 + `reminder/ReminderPort` 解耦，
+所以换大模型、换搜索源、换提醒存储、加新工具都不用碰调度核心。
 
 ## 开发进度
 
@@ -199,6 +276,12 @@ app/src/main/java/com/example/voiceassistant/
 - [x] v3.3：更名 **HardlySeek**（旧对话里的欢迎语自动刷新）；
       顶栏改为「软件名 + 当前在做什么」；新增**复读朗读**（「说出……」「帮我朗读……」
       后面的字原样念出来）；联网状态感知（没网直接回落本地，不做无谓超时等待）
+- [x] v3.4：按「**事件总线 + 四模块**」重构
+      （`bus/` 同步事件总线 · `fuzzy/` 模糊容错引擎含置信度闸门 · `dialog/` 多轮上下文
+      含槽位补全与指代消解 · `reminder/` 提醒中心迁 SQLite 并支持每天/每周重复与状态机）；
+      装完自动清理安装包（自己的文件静默删 / 别人的走系统确认 / 兜底 SAF 手选）；
+      新增外部调用入口（`--es query "…"` 或别的 App 直接把话说给它）；
+      `launchMode=singleTop` 保证多轮上下文不因重入而丢 + 单测（438 个）
 - [ ] 第 4 周：TTS 与 UI 打磨、异常处理、文档与演示视频
 
 ## 环境要求

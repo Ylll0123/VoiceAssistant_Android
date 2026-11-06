@@ -1,12 +1,17 @@
 package com.example.voiceassistant.tool
 
+import com.example.voiceassistant.reminder.Reminder
+
 /**
- * 工具层：提醒清单。
+ * 工具层：提醒清单（**关键词兜底通道**）。
+ *
+ * 提醒的主通道在「模糊容错引擎 → 对话管理器 → 提醒中心」这条线上；
+ * 这里保留的是最后一道兜底：万一某句话没能被引擎识别成意图
+ * （置信度不够），只要关键词明显，也能把提醒记下来。
  *
  * 负责三件事：记下、列出、删除。**到点响铃不在这一层**——
  * 这一层只产出「一条带触发时刻的提醒」，真正定时由
- * `reminder/ReminderAlarm`（AlarmManager + 通知）负责。
- * 这样判定与话术是纯逻辑、能单测，调度那部分是薄薄的系统胶水。
+ * `reminder/ReminderCenter` + `ReminderAlarm` 负责。
  *
  * ## 为什么要把时间抠出来
  * 「提醒我明天交报告」和「提醒我明天 8 点交报告」听起来差不多，
@@ -17,26 +22,11 @@ package com.example.voiceassistant.tool
  *
  * ## 落点（[Sink]）
  * 默认是内存实现（单测 / 没有 Android 环境时用）；
- * App 里会替换成 `reminder/ReminderStore`（持久化 + 排闹钟），
- * 换掉落点不用改这里的任何判定逻辑。
+ * App 里会替换成 `reminder/ReminderCenter`（SQLite + 排闹钟）。
  */
 object ReminderTool {
 
     const val NAME = "reminder"
-
-    /**
-     * 一条提醒。
-     *
-     * @param triggerAt 触发时刻（毫秒）；0 表示没说时间，只在清单里躺着
-     */
-    data class Reminder(
-        val id: Int,
-        val text: String,
-        val triggerAt: Long = 0L,
-        val createdAt: Long = System.currentTimeMillis()
-    ) {
-        val scheduled: Boolean get() = triggerAt > 0L
-    }
 
     /** 提醒的落点：存哪里、要不要排闹钟，由实现决定 */
     interface Sink {
@@ -112,7 +102,7 @@ object ReminderTool {
             // 按展示序号删：用户看到的是「1.」「2.」，编号未必连续
             val target = items[index - 1]
             sink.remove(target.id)
-            return reply("删掉了第 $index 条提醒（${target.text}）。")
+            return reply("删掉了第 $index 条提醒（${target.content}）。")
         }
 
         if (LIST_CUES.any { text.contains(it) }) {
@@ -143,15 +133,15 @@ object ReminderTool {
             }
         } else {
             reply(
-                "先记下了：${reminder.text}。" +
-                    "不过没说时间，我没法到点叫你——想定时的话说「明天 8 点提醒我${reminder.text}」。"
+                "先记下了：${reminder.content}。" +
+                    "不过没说时间，我没法到点叫你——想定时的话说「明天 8 点提醒我${reminder.content}」。"
             )
         }
     }
 
     /** 清单里一行：有时间就带上时间 */
     private fun describe(item: Reminder, now: Long): String =
-        if (item.scheduled) "${ReminderTime.describe(item.triggerAt, now)} ${item.text}" else item.text
+        if (item.scheduled) "${ReminderTime.describe(item.triggerAt, now)} ${item.content}" else item.content
 
     private fun reply(text: String) = ToolReply(text, ToolIntent.REMINDER, NAME)
 

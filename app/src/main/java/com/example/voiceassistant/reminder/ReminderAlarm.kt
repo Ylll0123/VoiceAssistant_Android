@@ -11,14 +11,14 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.voiceassistant.R
-import com.example.voiceassistant.tool.ReminderTool
+import com.example.voiceassistant.bus.AssistantBus
 import com.example.voiceassistant.ui.VoiceAssistantActivity
 
 /**
- * 提醒的**系统层**：排闹钟、发通知。
+ * 提醒的系统层：排闹钟、发通知、开机重排。
  *
- * 这一层刻意做得很薄——它只跟 Android 打交道，不含任何业务判断
- * （该提醒什么、什么时候提醒，都是 [ReminderTool] 和 [ReminderTime] 算好的）。
+ * 这一层刻意做得很薄**且不含业务判断**——该不该提醒、下一次是什么时候，
+ * 全在 [ReminderCenter] 里算好了，这里只负责跟 Android 打交道。
  *
  * ## 为什么用 AlarmManager 而不是 WorkManager
  * WorkManager 适合「不着急、能等系统攒批」的任务，实际触发时间可能漂移
@@ -26,10 +26,9 @@ import com.example.voiceassistant.ui.VoiceAssistantActivity
  * 所以用 `setExactAndAllowWhileIdle`。它能在 Doze 下准时唤醒。
  *
  * ## 降级：没有精确闹钟权限时改用「闹钟」
- * Android 14 起，新装的 App 默认**没有** `SCHEDULE_EXACT_ALARM`
- * （`canScheduleExactAlarms()` 返回 false）。这时若退回
- * `setAndAllowWhileIdle`，系统会给一个**一小时**的窗口——提醒可能晚一个小时，
- * 等于没提醒。所以改用 [AlarmManager.setAlarmClock]：
+ * Android 14 起，新装的 App 默认**没有** `SCHEDULE_EXACT_ALARM`。
+ * 这时若退回 `setAndAllowWhileIdle`，系统会给一个**一小时**的窗口——
+ * 提醒可能晚一个小时，等于没提醒。所以改用 [AlarmManager.setAlarmClock]：
  * 它不需要那个权限、本身就是精确的，代价只是状态栏多一个闹钟图标。
  */
 object ReminderAlarm {
@@ -65,10 +64,10 @@ object ReminderAlarm {
 
     // ------------------------------------------------------------------ 闹钟
 
-    fun schedule(context: Context, reminder: ReminderTool.Reminder) {
+    fun schedule(context: Context, reminder: Reminder) {
         if (!reminder.scheduled) return
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
-        val pending = fireIntent(context, reminder.id, reminder.text)
+        val pending = fireIntent(context, reminder.id, reminder.content)
         val at = reminder.triggerAt
 
         val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
@@ -116,15 +115,13 @@ object ReminderAlarm {
     }
 
     /** 把库里所有还没到点的提醒重新排一遍（开机 / 应用升级后调用） */
-    fun rescheduleAll(context: Context, now: Long = System.currentTimeMillis()) {
-        for (reminder in Reminders.store(context).all()) {
-            if (reminder.scheduled && reminder.triggerAt > now) schedule(context, reminder)
-        }
+    fun rescheduleAll(context: Context) {
+        runCatching { Reminders.center(context).rescheduleAll() }
     }
 
     // ------------------------------------------------------------------ 通知
 
-    fun notifyNow(context: Context, id: Int, text: String) {
+    fun notifyNow(context: Context, id: Int, text: String, repeat: Reminder.Repeat) {
         ensureChannel(context)
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
 
@@ -135,9 +132,15 @@ object ReminderAlarm {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val title = if (repeat == Reminder.Repeat.NONE) {
+            context.getString(R.string.notify_reminder_title)
+        } else {
+            context.getString(R.string.notify_reminder_repeat, repeat.label)
+        }
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(R.string.notify_reminder_title))
+            .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -196,34 +199,46 @@ object ReminderAlarm {
 }
 
 /**
- * 闹钟到点后的落点：发通知，并把这条提醒从清单里摘掉。
+ * 闹钟到点后的落点：交给提醒中心处理状态，然后发通知、广播事件。
  *
- * 摘掉是刻意的：闹钟已经响过，留在清单里只会变成一条永远「已过期」的记录；
- * 真想再提醒一次，用户说一句话就行，比在一堆过期项里翻要快。
+ * 「状态」和「通知」分开是有意的：
+ * - 状态（一次性 → 已触发；每天 → 算出下一次并重排）在 [ReminderCenter] 里，
+ *   有单测覆盖；
+ * - 通知这一层只负责让用户看见，失败（没权限）也不该影响状态流转。
+ *
+ * 处理完再往事件总线发一条 [ReminderFired]：前台界面收到就用 TTS 念一遍，
+ * 界面上再闪一下「提醒时间到了」——不需要界面去轮询数据库。
  */
 class ReminderReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getIntExtra(ReminderAlarm.EXTRA_ID, 0)
+        if (id <= 0) return
+
+        val center = runCatching { Reminders.center(context) }.getOrNull()
         val text = intent.getStringExtra(ReminderAlarm.EXTRA_TEXT).orEmpty()
-        if (id <= 0 || text.isBlank()) return
+            .ifBlank { center?.list()?.firstOrNull { it.id == id }?.content.orEmpty() }
+        if (text.isBlank()) return
 
         when (intent.action) {
             "com.example.voiceassistant.REMINDER_FIRE" -> {
-                // 先摘清单再发通知：用户看到通知时，清单已经干净了
-                runCatching { Reminders.store(context).remove(id) }
-                ReminderAlarm.notifyNow(context, id, text)
+                val next = runCatching { center?.fire(id) }.getOrNull()
+                val repeat = next?.repeat ?: Reminder.Repeat.NONE
+                runCatching { ReminderAlarm.notifyNow(context, id, text, repeat) }
+                // 通知发完再广播：界面可能正在前台，收到就播报
+                AssistantBus.publish(
+                    com.example.voiceassistant.reminder.ReminderFired(id, text, repeat)
+                )
             }
 
             "com.example.voiceassistant.REMINDER_SNOOZE" -> {
                 context.getSystemService(NotificationManager::class.java)?.cancel(id)
-                val at = System.currentTimeMillis() + ReminderAlarm.SNOOZE_MINUTES * 60_000L
-                runCatching { Reminders.store(context).add(text, at) }
+                runCatching { center?.snooze(id, ReminderAlarm.SNOOZE_MINUTES) }
             }
 
             "com.example.voiceassistant.REMINDER_DISMISS" -> {
                 context.getSystemService(NotificationManager::class.java)?.cancel(id)
-                runCatching { Reminders.store(context).remove(id) }
+                runCatching { center?.cancel(id) }
             }
         }
     }
@@ -233,8 +248,8 @@ class ReminderReceiver : BroadcastReceiver() {
  * 开机 / 应用升级后把还没到点的提醒重新排上。
  *
  * 闹钟不是持久化的：重启手机、覆盖安装 APK、被系统清理，
- * AlarmManager 里的登记都会丢。提醒本身存在 SharedPreferences 里，
- * 开机时照着重排一遍就恢复了。
+ * AlarmManager 里的登记都会丢。提醒本身在 SQLite 里，
+ * 开机时照着 `pending` 重排一遍就恢复了。
  */
 class BootReceiver : BroadcastReceiver() {
 

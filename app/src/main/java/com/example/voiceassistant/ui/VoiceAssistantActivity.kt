@@ -1,6 +1,7 @@
 package com.example.voiceassistant.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.os.Bundle
@@ -14,6 +15,7 @@ import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -21,6 +23,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import com.example.voiceassistant.R
+import com.example.voiceassistant.bus.AssistantBus
+import com.example.voiceassistant.dialog.DialogueManager
+import com.example.voiceassistant.fuzzy.FuzzyEngine
 import com.example.voiceassistant.handler.llm.CloudCache
 import com.example.voiceassistant.handler.llm.CloudLlmHandler
 import com.example.voiceassistant.tool.ToolIntent
@@ -33,9 +38,13 @@ import com.example.voiceassistant.assistant.NgramModel
 import com.example.voiceassistant.assistant.QueryUnderstanding
 import com.example.voiceassistant.assistant.ReplyCrafter
 import com.example.voiceassistant.assistant.ThoughtBank
+import com.example.voiceassistant.core.AssistantPipeline
 import com.example.voiceassistant.core.AssistantRouter
 import com.example.voiceassistant.core.HistoryManager
+import com.example.voiceassistant.core.RawText
+import com.example.voiceassistant.core.ReplyReady
 import com.example.voiceassistant.core.RoutePlanner
+import com.example.voiceassistant.core.TurnPlanned
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatHistoryStore
 import com.example.voiceassistant.data.ChatMessage
@@ -43,11 +52,13 @@ import com.example.voiceassistant.data.ChatSession
 import com.example.voiceassistant.handler.qa.QaLib
 import com.example.voiceassistant.handler.qa.QaLocalHandler
 import com.example.voiceassistant.handler.web.WebHandler
+import com.example.voiceassistant.installer.ApkCleaner
 import com.example.voiceassistant.memory.MemorySeed
 import com.example.voiceassistant.network.LlmResult
 import com.example.voiceassistant.network.NetworkState
 import com.example.voiceassistant.memory.SqliteMemoryRepository
 import com.example.voiceassistant.reminder.ReminderAlarm
+import com.example.voiceassistant.reminder.ReminderFired
 import com.example.voiceassistant.reminder.Reminders
 import com.example.voiceassistant.service.AndroidAudioController
 import com.example.voiceassistant.service.AndroidDeviceController
@@ -184,6 +195,40 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             }
         }
 
+    /**
+     * 系统「允许删除此文件？」的回执。
+     *
+     * 装机后清理安装包要用它：别人的文件（浏览器下载的）只能由系统弹框、
+     * 用户点一下才删得掉，这是分区存储的安全约束。
+     */
+    private val apkCleanLauncher =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            val deleted = result.resultCode == Activity.RESULT_OK
+            Toast.makeText(
+                this,
+                if (deleted) R.string.apk_clean_done else R.string.apk_clean_kept,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+    /**
+     * 手动兜底：用户自己在文件选择器里挑一个 APK 删掉。
+     *
+     * 浏览器下载的安装包在分区存储里对本应用不可见，
+     * 只有「用户亲手选中」这一步能拿到删除授权。
+     */
+    private val apkPickLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val uri = result.data?.data
+            if (uri == null) return@registerForActivityResult
+            val deleted = runCatching { ApkCleaner.deletePicked(this, uri) }.getOrDefault(false)
+            Toast.makeText(
+                this,
+                if (deleted) R.string.apk_clean_done else R.string.apk_clean_kept,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
     /** 会话状态（消息 + 引擎），整个应用共享一份 */
     val session: ChatSession by lazy {
         ChatSession(
@@ -215,6 +260,29 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             qaHandler = QaLocalHandler(session.engine, QaLib.load(applicationContext)),
             webHandler = WebHandler,
             llmHandler = CloudLlmHandler
+        )
+    }
+
+    /** 事件总线（进程级）：四个模块之间只通过它说话 */
+    private val bus = AssistantBus
+
+    /**
+     * 一轮输入的完整流水线：
+     * 语音链路 → 模糊容错引擎 → 对话管理器 →（必要时）问答链路。
+     *
+     * 界面只调用 [AssistantPipeline.submit]，然后听总线上的
+     * [TurnPlanned] / [ReplyReady]——不关心中间走了哪条路。
+     */
+    private val pipeline: AssistantPipeline by lazy {
+        AssistantPipeline(
+            bus = bus,
+            fuzzy = FuzzyEngine(),
+            dialog = DialogueManager(Reminders.center(applicationContext)),
+            router = router,
+            history = history,
+            executor = netExecutor,
+            main = mainHandler,
+            config = { config() }
         )
     }
 
@@ -272,6 +340,9 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         // 答不上来的话 → 收进待学习列表（记忆页可以一键教会）
         session.engine.onUnanswered = { question -> settings.addPending(question) }
 
+        // 总线订阅放在界面起来之后：事件回调里要碰 chatUi / tts
+        subscribeEvents()
+
         // 重建（旋转 / 分屏 / 被系统回收后恢复）时回到原来那一页，
         // 否则每次重建都跳回对话页，看起来像是「页面丢了」
         val restored = savedInstanceState?.getString(KEY_TAB)
@@ -281,7 +352,93 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         selectTab(restored)
 
         askNotificationPermission()
+
+        // 装完顺手把安装包清掉：等界面起来再干，别和首帧抢时间
+        mainHandler.postDelayed({ cleanInstallerOnce() }, 1200)
+
+        // 外部调用入口：别的 App / 快捷方式可以把一句话直接送进来
+        // （自动化测试也走这条路，否则 adb 没法输入中文）
+        if (savedInstanceState == null) handleExternalQuery(intent)
     }
+
+    /**
+     * 外部传入的一句话：「发送到 HardlySeek 说 xxx」。
+     *
+     * 用 extra 而不是自定义 scheme，是因为不想多开一个对外的入口面；
+     * 配合 `launchMode="singleTop"`，第二句话会回到同一个界面实例，
+     * 多轮上下文（「改成四点」指代上一条）才不会断。
+     */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleExternalQuery(intent)
+    }
+
+    private fun handleExternalQuery(intent: android.content.Intent?) {
+        val query = intent?.getStringExtra(EXTRA_QUERY)?.trim().orEmpty()
+        if (query.isEmpty()) return
+        // 用掉就清掉：否则旋转屏、从后台回来都会被重放一遍
+        intent?.removeExtra(EXTRA_QUERY)
+
+        selectTab(Tab.CHAT)
+        supportFragmentManager.executePendingTransactions()
+        mainHandler.postDelayed({ sendText(query) }, 350)
+    }
+
+    /**
+     * 装完自动清理安装包（每个版本只试一次）。
+     *
+     * 分两步：
+     * 1. 自己的文件（将来应用内升级下载的）→ 直接删，用户完全无感；
+     * 2. 浏览器下载的文件 → 只能发起系统删除请求，系统弹一句确认。
+     *
+     * 找不到本应用的安装包就什么都不做，也不会反复打扰。
+     */
+    private fun cleanInstallerOnce() {
+        if (isFinishing || isDestroyed) return
+        val prefs = getSharedPreferences(PREFS_ONBOARDING, MODE_PRIVATE)
+        val key = KEY_APK_CLEAN + versionName()
+        if (prefs.getBoolean(key, false)) return
+        prefs.edit().putBoolean(key, true).apply()
+
+        val found = runCatching { ApkCleaner.findInstallers(this) }.getOrNull().orEmpty()
+        val remaining = found.filterNot { ApkCleaner.deleteSilently(this, it) }
+        if (found.isNotEmpty() && remaining.isEmpty()) {
+            Toast.makeText(this, R.string.apk_clean_done, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (remaining.isNotEmpty()) {
+            val sender = ApkCleaner.deleteRequest(this, remaining)
+            if (sender != null) {
+                runCatching { apkCleanLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
+                return
+            }
+        }
+
+        // 最后一档：安装包是浏览器下载的，本应用既看不见也删不掉，
+        // 只能请用户自己选中——这也是分区存储下唯一合规的删法
+        if (ApkCleaner.wasSideLoaded(this)) askManualClean()
+    }
+
+    /** 问一次要不要手动清安装包（每个版本只问一次） */
+    private fun askManualClean() {
+        if (isFinishing || isDestroyed) return
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.apk_clean_title)
+            .setMessage(R.string.apk_clean_message)
+            .setPositiveButton(R.string.apk_clean_pick) { _, _ ->
+                runCatching { apkPickLauncher.launch(ApkCleaner.pickIntent()) }
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    /** 当前版本号，用来做「每个版本只清理一次」的键 */
+    @Suppress("DEPRECATION")
+    private fun versionName(): String = runCatching {
+        packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+    }.getOrDefault("")
 
     /** 第一次进来问一次通知权限；拒绝了就不再打扰 */
     private fun askNotificationPermission() {
@@ -289,7 +446,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         if (ReminderAlarm.canNotify(this)) return
 
         // 只问一次：反复弹系统权限框很烦，用户想开自己去系统设置里开
-        val prefs = getSharedPreferences("onboarding", MODE_PRIVATE)
+        val prefs = getSharedPreferences(PREFS_ONBOARDING, MODE_PRIVATE)
         if (prefs.getBoolean(KEY_NOTIFY_ASKED, false)) return
         prefs.edit().putBoolean(KEY_NOTIFY_ASKED, true).apply()
 
@@ -596,39 +753,49 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     }
 
     /** 处理一条用户输入（文字或识别结果） */
-    fun sendText(text: String) = sendCandidates(listOf(text))
+    fun sendText(text: String) = sendCandidates(listOf(text), RawText.SOURCE_TEXT)
 
     /**
      * 处理一次识别（可能有多条候选）。
      *
-     * 这里只做三件事：显示进度、把输入交给调度核心、把结果上屏播报。
-     * 「该问谁」的判断全部在 [AssistantRouter] 里。
+     * 界面在这里只做两件事：轮次号 +1（用来丢弃过期结果），
+     * 然后把输入丢进流水线。**中间怎么走一概不管**——
+     * 提醒域、本机工具、本地问答、联网、云端，都由流水线和各模块自己决定；
+     * 结果通过事件总线上的 [ReplyReady] 回来。
      */
-    fun sendCandidates(candidates: List<String>) {
+    fun sendCandidates(candidates: List<String>, source: String = RawText.SOURCE_ASR) {
         val cleaned = candidates.map { it.trim() }.filter { it.isNotEmpty() }
         if (cleaned.isEmpty()) return
 
         turnSeq++
-        val seq = turnSeq
+        pipeline.submit(turnSeq, cleaned, source)
+    }
 
-        // 本地阶段：理解 + 本地答案 + 路线决策（不碰网络，可主线程执行）
-        val plan = router.plan(cleaned, config())
-        if (!plan.needsNetwork) {
-            // 本地就能答：直接上屏播报，零等待
-            finishTurn(seq, router.replyOf(plan), cleaned.first())
-            return
+    /**
+     * 订阅事件总线。
+     *
+     * 三个事件的职责分得很清：
+     * - [TurnPlanned]：本地阶段算完了，界面据此决定要不要显示思考过程；
+     * - [ReplyReady]：最终答案，**只上屏一次**（不会再出现「先答一遍再改一遍」）；
+     * - [ReminderFired]：提醒到点，闪一下状态栏，前台时顺带念一句。
+     */
+    private fun subscribeEvents() {
+        bus.on<TurnPlanned>(owner = this) { event ->
+            if (event.turn == turnSeq) showThinking(event.turn, event.plan)
         }
+        bus.on<ReplyReady>(owner = this) { event ->
+            if (event.turn == turnSeq) finishTurn(event.turn, event.reply, event.primary)
+        }
+        bus.on<ReminderFired>(owner = this) { onReminderFired(it) }
+    }
 
-        // 需要联网 / 问云端：先显示思考过程，后台跑完再一次性上屏
-        // 注意走 runAsync 而不是 processAsync —— plan 已经算过了，
-        // 再走一遍会把用户这句写两次历史，屏幕上就是两个一样的提问气泡
-        showThinking(seq, plan)
-        router.runAsync(
-            executor = netExecutor,
-            main = mainHandler,
-            plan = plan,
-            config = config()
-        ) { reply -> finishTurn(seq, reply, cleaned.first()) }
+    /** 提醒到点：状态栏提示 +（前台且开着播报时）念一句 */
+    private fun onReminderFired(event: ReminderFired) {
+        if (isFinishing || isDestroyed) return
+        chatUi?.showStatus(getString(R.string.status_reminder_fired, event.content), highlight = true)
+        if (speakEnabled && isForeground && currentTab == Tab.CHAT && !tts.isSpeaking) {
+            tts.speak(getString(R.string.speak_reminder, event.content))
+        }
     }
 
     /** 当前文案的欢迎语气泡 */
@@ -862,6 +1029,8 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        // 一次注销全部订阅：只注销单个的话，旋转屏几次就会收到一堆重复回调
+        bus.off(this)
         asr.release()
         tts.release()
         super.onDestroy()
@@ -870,8 +1039,17 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private companion object {
         const val KEY_TAB = "current_tab"
 
+        /** 首次引导相关的偏好都放这一个文件 */
+        const val PREFS_ONBOARDING = "onboarding"
+
         /** 通知权限只问一次，问过就记下来 */
         const val KEY_NOTIFY_ASKED = "notify_asked"
+
+        /** 装完清理安装包的标记（后面拼版本号，每个版本各问一次） */
+        const val KEY_APK_CLEAN = "apk_clean_"
+
+        /** 外部传入一句话用的 extra 名 */
+        const val EXTRA_QUERY = "query"
 
         /** 本地小模型训练进度的存档文件名 */
         const val MODEL_FILE = "ngram_model.txt"

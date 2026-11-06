@@ -142,8 +142,19 @@
     <string name="notify_channel_reminder">提醒与计时</string>
     <string name="notify_channel_reminder_desc">到点提醒、计时结束的通知</string>
     <string name="notify_reminder_title">提醒</string>
+    <string name="notify_reminder_repeat">提醒 · %1$s</string>
     <string name="notify_action_snooze">10 分钟后再提醒</string>
-    <string name="notify_action_done">知道了</string>    <string name="status_cloud_thinking">交给 AI 想一想…</string>
+    <string name="notify_action_done">知道了</string>
+    <string name="status_reminder_fired">提醒时间到了：%1$s</string>
+    <string name="speak_reminder">提醒你：%1$s</string>
+
+    <!-- 装完自动清理安装包 -->
+    <string name="apk_clean_done">安装包已删除</string>
+    <string name="apk_clean_kept">安装包保留着，下次装完再问</string>
+    <string name="apk_clean_title">装好了 · 顺手清理安装包</string>
+    <string name="apk_clean_message">下载目录里的安装包已经用完了，删掉能省十几兆空间。\n系统不允许应用自己删除别的应用下载的文件，需要你选一下那个安装包。</string>
+    <string name="apk_clean_pick">选安装包删除</string>
+    <string name="status_cloud_thinking">交给 AI 想一想…</string>
     <string name="status_cloud_fail">AI 没接上（%1$s），已用本地回答</string>
 
     <!-- 设置页：AI 大脑 -->

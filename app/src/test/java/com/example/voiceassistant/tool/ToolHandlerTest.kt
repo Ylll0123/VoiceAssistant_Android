@@ -91,7 +91,7 @@ class ToolHandlerTest {
         val reply = handler.handle("提醒我明天八点交报告", local())
         assertTrue("应回出具体时刻，实际：${reply!!.text}", reply.text.contains("明天 08:00"))
         // 时间从正文里剥掉，不再重复念「明天八点」
-        assertEquals("交报告", ReminderTool.sink.all().single().text)
+        assertEquals("交报告", ReminderTool.sink.all().single().content)
         assertTrue("应排上闹钟", ReminderTool.sink.all().single().scheduled)
     }
 
