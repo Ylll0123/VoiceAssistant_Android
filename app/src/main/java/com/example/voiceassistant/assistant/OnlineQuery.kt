@@ -129,8 +129,6 @@ object OnlineQuery {
         val raw = input.trim()
         if (raw.isEmpty()) return null
         if (SKIP_KEYWORDS.any { raw.contains(it) }) return null
-        // 常识知识库已经答好（「为什么会下雨」讲的是原理，不是今天的天气）
-        if (intent == AssistantEngine.INTENT_KNOWLEDGE) return null
 
         weatherPlan(raw, fallbackCity)?.let { return it }
         if (wantsWeb(raw)) return searchPlan(raw)

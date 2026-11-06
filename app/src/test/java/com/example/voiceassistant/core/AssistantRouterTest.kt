@@ -109,7 +109,9 @@ class AssistantRouterTest {
     }
 
     @org.junit.Test
-    fun `百科问题联网没查到且配了云端时，才降级问云端`() {
+    fun `百科问题直接问云端，不先搜`() {
+        // 搜索只查条目，解释原理会答非所问（问「为什么会下雨」曾搜成「会」的字典释义），
+        // 所以本地没答上的解释类问题一律交给大模型，省掉一次白跑的搜索
         local.response = AssistantResponse("我本地的看法…", "fallback")
         web.result = null
         cloud.result = LlmResult.Ok("云端说：黑洞是大质量恒星坍缩形成的。", "doubao")
@@ -120,7 +122,7 @@ class AssistantRouterTest {
         )
         assertEquals("云端说：黑洞是大质量恒星坍缩形成的。", reply.text)
         assertEquals(AssistantRouter.Source.CLOUD, reply.source)
-        assertEquals(listOf("local", "web:SEARCH", "cloud"), log)
+        assertEquals(listOf("local", "cloud"), log)
     }
 
     @org.junit.Test

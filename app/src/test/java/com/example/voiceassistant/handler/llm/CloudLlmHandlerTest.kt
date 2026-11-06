@@ -155,7 +155,6 @@ class CloudLlmHandlerTest {
     fun `本地优先只在答不好时问`() {
         val cfg = config(mode = CloudLlmHandler.CloudMode.LOCAL_FIRST)
         assertTrue(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_FALLBACK, "这句我没太听懂", cfg))
-        assertTrue(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_THOUGHT, "可以这么想：先分清楚", cfg))
         // 本地答得挺好就不浪费额度
         assertFalse(CloudLlmHandler.shouldAsk("weather", "北京现在常年 12℃~20℃，出门带件外套。", cfg))
         // 本机多轮的中间状态永远不问
@@ -166,7 +165,7 @@ class CloudLlmHandlerTest {
     fun `AI 优先时除了本机功能都问`() {
         val cfg = config(mode = CloudLlmHandler.CloudMode.CLOUD_FIRST)
         assertTrue(CloudLlmHandler.shouldAsk("chat", "抱一下。想说就说。", cfg))
-        assertTrue(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_KNOWLEDGE, "光合作用是…", cfg))
+        assertTrue(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_FALLBACK, "这句我答不上来", cfg))
         // 反问补全是本地多轮中间状态，不交出去
         assertFalse(CloudLlmHandler.shouldAsk("slot", "你要翻译哪个词？", cfg))
     }
@@ -187,19 +186,29 @@ class CloudLlmHandlerTest {
     }
 
     @Test
-    fun `默认人设极简但保留 TTS 必需约束`() {
+    fun `默认人设带知识骨架但仍是 TTS 友好`() {
         val prompt = CloudLlmHandler.DEFAULT_SYSTEM_PROMPT
-        assertTrue("要口语化：$prompt", prompt.contains("口语化"))
         assertTrue("仍须禁止 Markdown（会被 TTS 原样念出）：$prompt", prompt.contains("Markdown"))
-        assertTrue("人设每轮都要发送，必须短，当前 ${prompt.length} 字：$prompt", prompt.length <= 60)
-        assertFalse("不该再写长篇套话：$prompt", prompt.contains("四句话以内"))
+        assertTrue("要说明回答会被朗读：$prompt", prompt.contains("朗读") || prompt.contains("短句"))
+        // 本地语料删掉后，语料里沉淀的要点改由人设携带，这几类必须在
+        listOf("天气", "健康", "学习", "情绪", "安全", "居家").forEach { key ->
+            assertTrue("人设里应保留「$key」类要点：$prompt", prompt.contains(key))
+        }
+        assertTrue("人设每轮都要发送，不能无限长，当前 ${prompt.length} 字：$prompt", prompt.length <= 2000)
     }
 
     @Test
-    fun `旧版长人设自动迁移成极简版`() {
-        val migrated = CloudLlmHandler.migratePrompt(CloudLlmHandler.LEGACY_SYSTEM_PROMPT)
-        assertEquals(CloudLlmHandler.DEFAULT_SYSTEM_PROMPT, migrated)
-        assertTrue("迁移后必须变短", migrated.length < CloudLlmHandler.LEGACY_SYSTEM_PROMPT.length)
+    fun `两个旧版默认人设都会迁移成知识骨架版`() {
+        // 3.0 之前的长人设
+        assertEquals(
+            CloudLlmHandler.DEFAULT_SYSTEM_PROMPT,
+            CloudLlmHandler.migratePrompt(CloudLlmHandler.LEGACY_SYSTEM_PROMPT)
+        )
+        // v3.6 的极简人设：语料删掉后它太单薄，也要换掉
+        assertEquals(
+            CloudLlmHandler.DEFAULT_SYSTEM_PROMPT,
+            CloudLlmHandler.migratePrompt(CloudLlmHandler.LEGACY_MINIMAL_PROMPT)
+        )
     }
 
     @Test
@@ -311,9 +320,11 @@ class CloudLlmHandlerTest {
     }
 
     @Test
-    fun `默认输出上限是 128`() {
+    fun `默认输出上限够说完一段话`() {
         val body = CloudLlmHandler.buildBody("m", listOf(LlmMessage.user("你好")))
-        assertTrue("输出 token 也要省，默认应为 128：$body", body.contains("\"max_tokens\":128"))
+        // 大模型现在是主力回答者，128 token 只够两句话，留到 512 才说得完整
+        assertEquals(512, CloudLlmHandler.DEFAULT_MAX_TOKENS)
+        assertTrue("默认上限应为 512：$body", body.contains("\"max_tokens\":512"))
     }
 
     @Test

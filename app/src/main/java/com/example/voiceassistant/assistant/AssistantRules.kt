@@ -27,14 +27,15 @@ object AssistantRules {
      * - 猜数字 / 连续计算 / 多轮追问必须在算数之前（它们的输入里也有数字）
      * - 世界时间必须在「现在几点」之前（「纽约现在几点」也含「几点」）
      * - 日期推算必须在日期之前（「下周三几号」也含「几号」）
-     * - 闲聊（[ChatRule]）必须放最后：日常语料关键词宽，功能性意图永远先走
+     * - 寒暄放最后：不带信息的客套话不该抢走功能性问句
+     *
+     * 只收**能算准**的能力（时间 / 日期 / 计算 / 换算 / 天气 / 娱乐 / 寒暄）。
+     * 需要知识或推理的问题一律不在这里排队，交给云端大模型。
      */
     fun all(): List<IntentRule> = listOf(
         GuessNumber,
         CalcContinue,
         FollowUp,
-        ContextCarry,
-        SlotClarify,
         Arithmetic,
         Timezone,
         Time,
@@ -47,72 +48,12 @@ object AssistantRules {
         Joke,
         Identity,
         Help,
-        Translate,
         Weather,
         Outing,
         Thanks,
         Farewell,
-        Greeting,
-        KnowledgeRule,
-        ChatRule
+        Greeting
     )
-
-    /**
-     * 上下文承接：把「为什么 / 还有吗 / 它多少钱 / 那里」这类**残缺的话**
-     * 补全成完整句子，再交给下面的具体规则去答。
-     *
-     * 好处是多轮追问不用在每条规则里各写一遍判断题：
-     * 这里的补全结果直接走 [RuleReply.rerun]，其余规则一个字都不用改。
-     * 上一轮没聊过任何东西（上下文失效）时自然返回 null，不会瞎补。
-     */
-    object ContextCarry : IntentRule {
-        override val intent = "context_carry"
-
-        override fun reply(request: AssistantRequest): RuleReply? {
-            if (!request.context.isAlive()) return null
-            val completed = DialogLogic.expand(request.raw, request.context) ?: return null
-            if (completed == request.raw.trim()) return null
-            return RuleReply("", intent, rerun = completed)
-        }
-    }
-
-    /**
-     * 缺参数反问：用户只说了「翻译」「什么意思」，没说对象。
-     *
-     * 与其硬答一句莫名其妙的话，不如把缺的东西问出来（[DialogContext.setSlot]），
-     * 用户下一句补上后，引擎会把答案填回槽位再执行真正的查询。
-     */
-    object SlotClarify : IntentRule {
-        override val intent = DialogContext.INTENT_SLOT
-
-        override fun reply(request: AssistantRequest): RuleReply? {
-            // 缺不缺参数是这句话本身的属性，跟上下文有没有过期无关
-            val slot = DialogLogic.missingSlot(request.raw) ?: return null
-            request.context.setSlot(slot)
-            return RuleReply(DialogLogic.slotQuestion(slot), intent)
-        }
-    }
-
-    /**
-     * 常识问答：把知识库提到规则层，排在闲聊之前。
-     *
-     * 为什么需要它：像「为什么会下雨」这种问原理的句子，含「下雨」二字，
-     * 闲聊语料里也有雨天话题，会被当成聊天接走；但它其实是一个有标准答案的
-     * 常识问题。这里只认**高相似度**（≥0.85，基本就是整句对得上）的问法，
-     * 低分的仍然留给闲聊和引擎末端的知识库兜底，不会抢情绪话题。
-     */
-    object KnowledgeRule : IntentRule {
-        override val intent = AssistantEngine.INTENT_KNOWLEDGE
-
-        override fun reply(request: AssistantRequest): RuleReply? {
-            val hit = KnowledgeBase.match(request.text, request.context) ?: return null
-            if (hit.score < MIN_RULE_SCORE) return null
-            request.context.rememberSubject(hit.qa.category)
-            return RuleReply(hit.answer, intent, mapOf("subject" to hit.qa.category))
-        }
-
-        private const val MIN_RULE_SCORE = 0.85
-    }
 
     // ------------------------------------------------------------------ 多轮对话
 
@@ -251,12 +192,6 @@ object AssistantRules {
             ) {
                 val city = CityClimate.find(text)!!
                 return RuleReply("", "weather", rerun = "${city.city}天气怎么样")
-            }
-
-            // 「那苹果呢」：沿用上一轮的翻译，只换词
-            if (context.hasIntent("translate") && text.endsWith("呢") && text.length <= 8) {
-                val word = text.trimEnd('呢').trim()
-                if (word.isNotEmpty()) return RuleReply("", "translate", rerun = "$word 用英语怎么说")
             }
 
             // 「那东京呢」：沿用上一次的世界时间，只换城市
@@ -640,9 +575,11 @@ object AssistantRules {
         override val intent = "identity"
 
         private val variants = listOf(
-            "我是 HardlySeek，一个跑在你手机上的本地语音助手。所有规则都在设备上执行，不联网也能用。",
-            "我是 HardlySeek，住在你手机里的本地语音助手。不上传、不联网，聊的每一句都留在设备上。",
-            "叫我 HardlySeek 就行。规则和语料都在本地，你教我的话我都记在这台手机里。"
+            "我是 HardlySeek，你手机里的语音助手。日常的事我自己算，比如时间、算数、提醒；" +
+                "要动脑子的问题会去问大模型。",
+            "叫我 HardlySeek 就行。报时、算数、设提醒、查天气这些我在本机就办了，" +
+                "别的就交给云端的大模型来想。",
+            "我是 HardlySeek。能算准的自己做，算不准的去问大模型，不瞎编。"
         )
 
         override fun reply(request: AssistantRequest): RuleReply? {
@@ -671,18 +608,19 @@ object AssistantRules {
                     append(SkillCatalog.byCategory(category).joinToString("、") { it.title })
                     append("\n")
                 }
-                append("点底部的「技能」页能看到每个功能的示例说法，点一下就能直接执行。")
+                append("点底部的「功能」页能看到每个功能的示例说法，点一下就能直接执行。")
             }
             return RuleReply(summary, intent)
         }
     }
 
     /**
-     * 天气 / 温度：用内置的城市常年气候数据回答。
+     * 天气 / 温度：本机这一条是**兜底**，用内置的城市常年气候数据回答。
      *
-     * 纯离线助手查不到实时天气，但能给出**这个城市这个月的常年气温区间 + 穿衣建议**，
-     * 这比一句「查不到」有用得多；回答里明确标注是常年平均、不是实时数据，不误导用户。
-     * 「为什么会下雨」这类问原理的交给常识知识库（那才是它该答的）。
+     * 实时天气由 [com.example.voiceassistant.core.RoutePlanner] 送去联网查；
+     * 断网、查不到、或者这句只是随口一提温度时，落到这里给**这个城市这个月的
+     * 常年气温区间 + 穿衣建议**，比一句「查不到」有用，并且明确标注是常年平均。
+     * 「为什么会下雨」这类问原理的直接交给大模型，不在这儿答。
      */
     object Weather : IntentRule {
         override val intent = "weather"
@@ -742,75 +680,7 @@ object AssistantRules {
         }
     }
 
-    /**
-     * 基础单词翻译：内置中英词典双向查询（纯离线）。
-     *
-     * 支持「苹果用英语怎么说」「翻译苹果」「apple 是什么意思」三种说法；
-     * 查不到就引导用户教一句（教的答案进记忆库，下次就会了）。
-     */
-    object Translate : IntentRule {
-        override val intent = "translate"
-
-        /** 中 → 英 的说法 */
-        private val TO_EN_CUES = listOf(
-            "用英语怎么说", "用英语怎么讲", "用英文怎么说", "英语怎么说", "英文怎么说",
-            "用英语怎么写", "英语怎么写", "英文怎么写", "用英语说", "用英文说",
-            "的英语是什么", "的英文是什么", "英语是什么", "英文是什么",
-            "翻译成英语", "翻译成英文", "用英语", "用英文"
-        )
-
-        /** 英 → 中 的说法 */
-        private val TO_ZH_CUES = listOf(
-            "是什么意思", "什么意思", "中文是什么", "怎么翻译", "翻译一下", "翻译成中文", "翻译"
-        )
-
-        override fun reply(request: AssistantRequest): RuleReply? {
-            val raw = request.raw.trim()
-            val text = request.text
-
-            // 整句是英文单词：英 → 中
-            if (Dictionary.isEnglish(raw)) {
-                request.context.rememberSubject(raw)
-                val chinese = Dictionary.toChinese(raw)
-                    ?: return RuleReply(
-                        "「$raw」不在我的内置词典里。你可以教我：说「记住：$raw = 中文意思」，我下次就会了。",
-                        intent
-                    )
-                return RuleReply("「$raw」的中文是「$chinese」。", intent)
-            }
-
-            val cue = TO_EN_CUES.firstOrNull { text.contains(it) }
-                ?: TO_ZH_CUES.firstOrNull { text.contains(it) }
-                ?: return null
-
-            var word = text
-            for (c in TO_EN_CUES + TO_ZH_CUES) word = word.replace(c, "")
-            word = word.trim()
-                .trim('的', '是', '说', '讲', '写', '成', '为', '在', '了', '啊', '呢', '呀', '？', '?', '！', '!', '，', ',', '。', '.', ' ')
-            if (word.length < 1 || word.length > 10) return null
-
-            // 记下这次翻译的对象：用户接着只报一个词（「电脑」）时，
-            // 上下文能认出这是"下一个要翻译的词"（见 DialogLogic.expand）
-            request.context.rememberSubject(word)
-
-            // 中文词里夹着英文（「翻译 apple」）时按英文查
-            val english = Dictionary.toEnglish(word)
-            if (english != null) {
-                return RuleReply("「$word」的英语是 $english。", intent)
-            }
-            val chinese = Dictionary.toChinese(word)
-            if (chinese != null) {
-                return RuleReply("「$word」的中文是「$chinese」。", intent)
-            }
-            return RuleReply(
-                "「$word」我的内置词典里还没有（词典收了 ${Dictionary.size()} 个常用词）。" +
-                    "你可以教我：说「记住：$word = 英文」，我马上就记住。",
-                intent
-            )
-        }
-    }
-
-    /** 谢谢：如果正在聊某个话题，回复会带上话题的影子，显得接得住上文 */
+    /** 谢谢 */
     object Thanks : IntentRule {
         override val intent = "thanks"
 
@@ -822,19 +692,7 @@ object AssistantRules {
 
         override fun reply(request: AssistantRequest): RuleReply? {
             if (!request.text.containsAny("谢谢", "多谢", "感谢", "辛苦")) return null
-            val base = PhraseBook.pick(intent, variants, request.context)
-            val topic = DialogCorpus.find(request.context.activeTopic())
-            val text = if (topic != null) {
-                when (topic.id) {
-                    "tired", "sleepy" -> "$base 累了一天，早点歇着。"
-                    "sad", "angry", "breakup" -> "$base 想说的时候随时找我。"
-                    "overtime", "work", "deadline" -> "$base 忙完这阵记得喘口气。"
-                    else -> base
-                }
-            } else {
-                base
-            }
-            return RuleReply(text, intent)
+            return RuleReply(PhraseBook.pick(intent, variants, request.context), intent)
         }
     }
 
@@ -874,11 +732,11 @@ object AssistantRules {
         }
 
         private val firstVariants = listOf(
-            "{greeting}！今天想聊点什么？问我天气、翻译个词、或者帮你把拿不准的事捋一捋都行。",
-            "嗨，我在。想先来点实用的，还是随便聊聊？我可以查天气、做翻译，也能陪你把一件事拆开想。",
-            "{greeting}。除了陪你聊天，我还能查天气、翻译单词、帮你分析问题——先来哪个？",
-            "你好呀。不知道从哪开始的话，可以问我「北京天气怎么样」「苹果用英语怎么说」，或者直接说你想解决的事。",
-            "{greeting}，我是 HardlySeek。我能查天气、做翻译、帮你理清思路，也能陪你闲聊。想从哪开始？",
+            "{greeting}！报时、算数、设提醒、查天气我都在行，别的也可以直接问我。",
+            "嗨，我在。想先来点实用的，还是随便聊聊？",
+            "{greeting}。有事直接说，能算准的我当场给你，要动脑子的我去问大模型。",
+            "你好呀。不知道从哪开始的话，可以问我「北京天气怎么样」「帮我算 12 乘以 8」。",
+            "{greeting}，我是 HardlySeek。每天几点、几号、多少度、要提醒你什么，这些我张口就来。",
             "嗨，来啦。今天有什么想聊的，或者需要我帮你拿个主意？"
         )
 

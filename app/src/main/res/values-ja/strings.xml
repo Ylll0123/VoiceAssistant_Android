@@ -71,7 +71,7 @@
     <string name="settings_about">このアプリについて</string>
     <string name="settings_version">バージョン %1$s · 全 %2$d 機能</string>
     <string name="settings_reset">既定の設定に戻す</string>
-    <string name="settings_reset_done">既定の設定に戻しました（記憶は残ります）</string>
+    <string name="settings_reset_done">既定の設定に戻しました</string>
 
     <!-- クラウド LLM -->
     <string name="settings_cloud_state_missing">未設定：%1$s</string>
@@ -104,7 +104,7 @@
 
     <!-- ログイン・登録 -->
     <string name="login_brand_sub">端末内の音声アシスタント</string>
-    <string name="login_subtitle">アカウントはこの端末にだけ保存され、会話と記憶を分けて管理します</string>
+    <string name="login_subtitle">アカウントはこの端末にだけ保存され、会話履歴とリマインダーを人ごとに分けます</string>
     <string name="login_tab_login">ログイン</string>
     <string name="login_tab_register">新規登録</string>
     <string name="login_hint_username">ユーザー名</string>
@@ -179,14 +179,8 @@
     <string name="skill_desc_weather">オンラインで実況と最高・最低。オフラインでも平年値で回答</string>
     <string name="skill_title_outing">お出かけのヒント</string>
     <string name="skill_desc_outing">月と都市に応じた服装・傘のアドバイス</string>
-    <string name="skill_title_translate">単語翻訳</string>
-    <string name="skill_desc_translate">中英の基本辞書を内蔵。中→英も英→中も</string>
-    <string name="skill_title_knowledge">一般知識</string>
-    <string name="skill_desc_knowledge">天気の仕組み・健康・勉強・生活のコツ・応急処置など数百問</string>
-    <string name="skill_title_decide">分析と意思決定</string>
-    <string name="skill_desc_decide">迷う選択に「目的—代償—逃げ道」の判断順序を提示</string>
     <string name="skill_title_online">ネット検索</string>
-    <string name="skill_desc_online">ローカルで答えられない時だけ検索し、出典付きで要約</string>
+    <string name="skill_desc_online">「調べて」と言われた時だけ検索し、出典付きで要約</string>
     <string name="skill_title_follow_up">追加の質問</string>
     <string name="skill_desc_follow_up">3 分以内なら「明後日は？」「もう一つ」で続けられます</string>
     <string name="features_examples_note">例文は中国語です。オフラインエンジンは現在、中国語の指示だけを理解します。</string>

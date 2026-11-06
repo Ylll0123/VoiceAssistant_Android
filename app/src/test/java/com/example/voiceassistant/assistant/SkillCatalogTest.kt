@@ -35,11 +35,11 @@ class SkillCatalogTest {
             .filterNot { it.tool }
             .forEach { skill ->
                 skill.examples.forEach { example ->
-                    val reply = newEngine().reply(example)
+                    val response = newEngine().respond(example)
                     assertNotEquals(
                         "技能「${skill.title}」的示例「$example」没命中任何规则",
-                        AssistantEngine.FALLBACK,
-                        reply
+                        AssistantEngine.INTENT_FALLBACK,
+                        response.intent
                     )
                 }
             }
@@ -83,7 +83,7 @@ class SkillCatalogTest {
         engine.reply("帮我算 12*8")
 
         val example = SkillCatalog.find("calc_continue")!!.examples.first()
-        assertNotEquals(AssistantEngine.FALLBACK, engine.reply(example))
+        assertNotEquals(AssistantEngine.INTENT_FALLBACK, engine.respond(example).intent)
     }
 
     @Test

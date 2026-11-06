@@ -14,16 +14,19 @@ import com.example.voiceassistant.assistant.QueryUnderstanding
  *
  * ## 短路顺序（顺序本身就是省 token 的手段，不能乱）
  * ```
- * ① 本机功能（教学/槽位/记忆）    -> TOOL     0 请求
+ * ① 本机功能（槽位补参）          -> TOOL     0 请求
  * ② 实时天气                     -> WEB      0 token（公开数据源免费）
  * ③ 用户明确说「帮我查/搜一下」   -> WEB      0 token
- * ④ 本地答得很好（知识库/闲聊…）  -> LOCAL    0 请求
- * ⑤ 本地没答好 且 是事实类问题    -> WEB      0 token（先免费搜，搜到就不问云端）
- * ⑥ 剩下的（情绪/主观/没搜到）    -> CLOUD   <- 唯一花钱的一步
+ * ④ 本地答得准（时间/计算/娱乐…） -> LOCAL    0 请求
+ * ⑤ 剩下的（解释、比较、情绪…）   -> CLOUD   <- 唯一花钱的一步
  * ```
  *
- * 每一步命中就返回，不再往下走。⑤ 是「按需搜索」的核心：
- * 联网搜索免费、云端按 token 付费，能搜到就绝不多花一次调用。
+ * 每一步命中就返回，不再往下走。
+ *
+ * **搜索只在用户明确要求时才用**（③）。v3.8 之前还有一档「本地没答好就先免费搜」，
+ * 本意是省 token，实际把解释类问题搞坏了：问「为什么会下雨」被提取成关键词「会下雨」，
+ * 搜索引擎当成「会」的字典释义返回，答得莫名其妙。搜索擅长查条目，不擅长解释原理，
+ * 这类判断本来就该由大模型来做。实时天气（②）仍然走联网，那是数据问题，模型不知道今天的雨。
  */
 object RoutePlanner {
 
@@ -83,26 +86,8 @@ object RoutePlanner {
     private val LOCAL_GOOD = setOf(
         "time", "date", "weekday_calc", "timezone",               // 时间日期
         "arithmetic", "calc_continue", "unit_convert",            // 计算换算
-        "translate",                                              // 内置词典
-        "joke", "quote", "random", "story",                       // 娱乐
-        "greeting", "farewell", "thanks", "support", "identity",  // 寒暄 / 身份
-        DialogContext.INTENT_CHAT,                                // 闲聊（语料 + 情感）
-        AssistantEngine.INTENT_KNOWLEDGE                          // 内置常识知识库命中
-    )
-
-    /**
-     * 本地答不好、值得**先搜再问**的意图。
-     *
-     * 只有问「事实 / 原因 / 比较 / 办法 / 天气」才值得联网搜——
-     * 情绪倾诉（「最近好累啊」）和求看法（「我该不该考研」）
-     * 搜索也搜不出答案，直接交给云端更合适。
-     */
-    private val SEARCHABLE = setOf(
-        QueryUnderstanding.Intent.FACT,
-        QueryUnderstanding.Intent.CAUSE,
-        QueryUnderstanding.Intent.COMPARE,
-        QueryUnderstanding.Intent.METHOD,
-        QueryUnderstanding.Intent.WEATHER
+        "joke", "quote", "random",                                // 娱乐
+        "greeting", "farewell", "thanks", "support", "identity"   // 寒暄 / 身份
     )
 
     // ------------------------------------------------------------------ 决策
@@ -141,12 +126,12 @@ object RoutePlanner {
             )
         }
 
-        // ① 本机功能：教学 / 槽位 / 记忆命中 → 永远本地
+        // ① 本机功能：槽位补参这类多轮中间状态 → 永远本地
         if (intent in LOCAL_ONLY) return local("本地功能")
 
         // ② 实时天气：本地只有常年平均值，这条必须联网。
         //    没说城市也照样查（按网络定位），查不到才用本地常年数据兜底。
-        if (intent != AssistantEngine.INTENT_KNOWLEDGE && isWeatherRequest(text, intent, understanding)) {
+        if (isWeatherRequest(text, intent, understanding)) {
             val plan = OnlineQuery.weatherPlan(text, fallbackCity)
             if (onlineEnabled && plan != null) {
                 return webDecision(
@@ -175,17 +160,11 @@ object RoutePlanner {
         //    即便本地也有答案（本机功能 ① 和天气 ② 仍然优先，那是正确性问题）。
         if (intent in LOCAL_GOOD && !cloudFirst) return local("本地已答")
 
-        // ⑤ 本地没答好：**先免费搜**
-        if (onlineEnabled && understanding.intent in SEARCHABLE) {
-            OnlineQuery.searchPlan(brief)?.let {
-                return webDecision(text, it, cloudReady, localText, intent)
-            }
-        }
-
-        // ⑥ 搜索不适用（情绪 / 主观）或没搜到：交给云端
+        // ⑤ 剩下的都交给云端：解释、比较、办法、情绪、主观判断。
+        //    搜索只查条目，解释不清原理，硬搜反而答非所问（见文件头说明）。
         if (cloudReady) return cloudDecision(text, brief, localText, intent, "问问 AI")
 
-        // ⑦ 没配云端：AI 优先也只能用本地答案
+        // ⑥ 没配云端：AI 优先也只能用本地答案
         return local(if (cloudFirst) "没配 AI 接口" else "本地兜底")
     }
 

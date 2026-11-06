@@ -138,7 +138,7 @@ class AppSettings(context: Context) {
         baseUrl = cloudEndpoint,
         apiKey = cloudKey,
         model = cloudModel,
-        // 人设保存过就写死在本机了，老版本那份长人设要靠 migratePrompt 换成极简版，
+        // 人设保存过就写死在本机了，历史版本留下的默认人设要靠 migratePrompt 换成新版，
         // 否则改常量对已经保存过配置的用户完全不生效
         systemPrompt = CloudLlmHandler.migratePrompt(
             cloudPrompt.ifBlank { CloudLlmHandler.DEFAULT_SYSTEM_PROMPT }
@@ -157,7 +157,7 @@ class AppSettings(context: Context) {
 
     // ----------------------------------------------------------------
 
-    /** 恢复出厂设置：只清设置，不动记忆库（记忆是用户资产） */
+    /** 恢复出厂设置：清掉本页设置（聊天记录与提醒由各自的存储管理） */
     fun reset() {
         prefs.edit().clear().apply()
     }

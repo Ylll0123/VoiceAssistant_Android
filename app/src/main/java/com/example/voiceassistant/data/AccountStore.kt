@@ -7,7 +7,7 @@ import android.content.SharedPreferences
  * 本地账号：注册、登录、游客、退出。
  *
  * 没有后端，也不打算有：需求是「加一个登录注册界面」，
- * 而这台手机上唯一需要区分的就是「谁的对话和记忆」。
+ * 而这台手机上唯一需要区分的就是「谁的对话和提醒」。
  * 所以账号信息全部落在 SharedPreferences，密码只存 [Passwords] 的加盐哈希。
  *
  * 三态：

@@ -9,11 +9,11 @@ package com.example.voiceassistant.assistant
  * 3. 如果上一轮在问「哪个 / 什么」，这句就是把缺的参数补上
  * 4. 剥掉纠错前缀（「不对，我是说…」）后重新理解
  * 5. 按顺序询问每条规则，第一条命中的采用其回复；规则可以要求「重讲一遍」（[RuleReply.rerun]）
- * 6. 规则都不命中时依次尝试：[DialogLogic.frameAnswer] 的分析框架 →
- *    [ReplyCrafter] 的思考路径；都接不住才交回给上层（云端大模型 / 联网 / 兜底话术）。
+ * 6. 规则都不命中时，找一句最像的示例说法反问确认；再不行就交回给上层
+ *    （云端大模型 / 联网 / 兜底话术）。
  *
  * 本机只保留**确定性能力**（时间、日期、计算、换算、天气、提醒等）。
- * 需要「想」的问题不在这里臆造答案——交给云端大模型。
+ * 需要知识或「想」的问题**不在这里臆造答案**——一律交给云端大模型。
  */
 class AssistantEngine(
     private val dialogContext: DialogContext = DialogContext(),
@@ -49,15 +49,6 @@ class AssistantEngine(
             }
         }
 
-        // ①b 上一轮在问「你要 xx 的哪个 / 什么」：这句就是把缺的参数补上了
-        if (dialogContext.hasIntent(DialogContext.INTENT_SLOT)) {
-            val slot = dialogContext.consumeSlot()
-            if (slot != null) {
-                val filled = DialogLogic.fillSlot(slot, cleaned.first())
-                if (filled != null) return respondInternal(filled, depth = 0)
-            }
-        }
-
         // ② 纠错说法：「不对，我是说讲个笑话」→ 只用后半句重新理解
         val corrected = stripCorrection(cleaned.first())
         if (corrected != null) {
@@ -73,30 +64,7 @@ class AssistantEngine(
         }
 
         if (firstMatched == null) {
-            // ④ 规则答不上来：本地确实不会，**不瞎编**，给一套有结构的思路
-            //    （决策 / 拆解 / 归因），比硬凑一句"像话但没逻辑"的话可靠得多
-            val framed = DialogLogic.frameAnswer(cleaned.first(), dialogContext)
-            if (framed != null) {
-                return commit(cleaned.first(), RuleReply(framed, INTENT_LOGIC_FRAME))
-            }
-
-            // ⑤ 还接不住：进入「思维模式」——先判断这句话在问什么（情绪 / 比较 /
-            //    归因 / 选择 / 求法 / 看法 / 讲解 / 事实），再给对应的思考路径。
-            //    每种都有 4~6 套说法轮换，并且明确说清哪些是我不确定的，不编事实。
-            //    识别不出提问类型（UNKNOWN，多半是陈述句）时不抢答，留给上层。
-            val mode = ReplyCrafter.detect(cleaned.first())
-            if (mode != ReplyCrafter.Mode.UNKNOWN) {
-                val thought = ReplyCrafter.craft(
-                    cleaned.first(),
-                    dialogContext,
-                    withStyle = AssistantConfig.replyStyle != AssistantConfig.ReplyStyle.CONCISE
-                )
-                if (thought != null) {
-                    return commit(cleaned.first(), RuleReply(thought, INTENT_THOUGHT))
-                }
-            }
-
-            // ⑥ 找最像的示例说法，反过来向用户确认（多轮的开端）
+            // ④ 找最像的示例说法，反过来向用户确认（多轮的开端）
             val suggestion = suggest(cleaned.first())
             return if (suggestion != null) {
                 dialogContext.setPending(suggestion)
@@ -105,9 +73,9 @@ class AssistantEngine(
                     INTENT_CLARIFY
                 )
             } else {
-                // ⑦ 实在接不住：换着花样把话头递回给用户（不再永远重复同一句）
-                val text = ReplyCrafter.fallbackReply(dialogContext)
-                // 记下来，下一轮换一种说法，避免连续两次一字不差
+                // ⑤ 实在接不住：明确说"本机不会"，换着花样递回话头。
+                //    这句只是本地兜底，上层会拿它去问云端大模型（见 RoutePlanner）。
+                val text = PhraseBook.pick(INTENT_FALLBACK, FALLBACKS, dialogContext)
                 dialogContext.markReply(text)
                 AssistantResponse(text, INTENT_FALLBACK)
             }
@@ -215,20 +183,19 @@ class AssistantEngine(
         const val INTENT_CLARIFY = DialogContext.INTENT_CLARIFY
         const val INTENT_CLARIFY_REJECTED = "clarify_rejected"
 
-        /** 回答是「推理框架」（不会答案，但给了思考 / 决策的步骤） */
-        const val INTENT_LOGIC_FRAME = "logic_frame"
-
-        /** 回答来自「思维模式」：按提问类型给对应的思考路径（ReplyCrafter） */
-        const val INTENT_THOUGHT = "thought"
+        /** 本机接不住时的几种说法，轮换着说，避免每次都一字不差 */
+        private val FALLBACKS = listOf(
+            "这句我没把握，本机大概答不了。要不我上网查查，或者你换个说法？",
+            "这个超出我能算准的范围了，怕说错。我试着上网找找看。",
+            "我没听懂，也不好瞎编。你再说具体一点，或者我去查一下。",
+            "这个我不确定，先不猜了。想让我查资料的话，说「帮我查一下…」就行。"
+        )
 
         /** 回答来自云端大模型 */
         const val INTENT_CLOUD = "cloud"
 
         /** 回答来自联网查询（实时天气 / 百科搜索） */
         const val INTENT_WEB = "web"
-
-        /** 回答来自内置常识知识库 */
-        const val INTENT_KNOWLEDGE = "knowledge"
 
         /** 建议的相似度门槛：太低会瞎猜，太高又救不回来 */
         private const val SUGGEST_THRESHOLD = 0.72

@@ -71,7 +71,7 @@
     <string name="settings_about">About</string>
     <string name="settings_version">Version %1$s · %2$d features</string>
     <string name="settings_reset">Restore defaults</string>
-    <string name="settings_reset_done">Defaults restored (memory kept)</string>
+    <string name="settings_reset_done">Defaults restored</string>
 
     <!-- Cloud LLM -->
     <string name="settings_cloud_state_missing">Missing: %1$s</string>
@@ -104,7 +104,7 @@
 
     <!-- Sign in / sign up -->
     <string name="login_brand_sub">On-device voice assistant</string>
-    <string name="login_subtitle">Accounts stay on this phone and keep your chats and memory separate</string>
+    <string name="login_subtitle">Accounts stay on this phone and keep chats and reminders separate for each account</string>
     <string name="login_tab_login">Sign in</string>
     <string name="login_tab_register">Sign up</string>
     <string name="login_hint_username">Username</string>
@@ -179,14 +179,8 @@
     <string name="skill_desc_weather">Live temperature and today\'s high and low online; offline uses climate averages</string>
     <string name="skill_title_outing">Going out</string>
     <string name="skill_desc_outing">Month and city based advice on clothing and umbrellas</string>
-    <string name="skill_title_translate">Word translation</string>
-    <string name="skill_desc_translate">Built-in Chinese-English dictionary, both directions</string>
-    <string name="skill_title_knowledge">Common knowledge</string>
-    <string name="skill_desc_knowledge">Hundreds of answered questions: weather, health, study, safety</string>
-    <string name="skill_title_decide">Analysis and decisions</string>
-    <string name="skill_desc_decide">A goal, cost, fallback order for choices you cannot settle</string>
     <string name="skill_title_online">Web lookup</string>
-    <string name="skill_desc_online">When local answers run out it searches the web and cites the source</string>
+    <string name="skill_desc_online">Searches the web only when you say so, and cites the source</string>
     <string name="skill_title_follow_up">Follow-ups</string>
     <string name="skill_desc_follow_up">Within 3 minutes, and the day after or one more keeps the thread</string>
     <string name="features_examples_note">Examples are in Chinese: the offline engine only understands Chinese commands.</string>

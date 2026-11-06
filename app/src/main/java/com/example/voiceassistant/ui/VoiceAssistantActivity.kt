@@ -47,7 +47,6 @@ import com.example.voiceassistant.data.LocaleHelper
 import com.example.voiceassistant.data.ChatHistoryStore
 import com.example.voiceassistant.data.ChatMessage
 import com.example.voiceassistant.data.ChatSession
-import com.example.voiceassistant.handler.qa.QaLib
 import com.example.voiceassistant.handler.qa.QaLocalHandler
 import com.example.voiceassistant.handler.web.WebHandler
 import com.example.voiceassistant.installer.ApkCleaner
@@ -214,7 +213,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 AndroidAudioController(applicationContext),
                 AndroidDeviceController(applicationContext)
             ),
-            qaHandler = QaLocalHandler(session.engine, QaLib.load(applicationContext)),
+            qaHandler = QaLocalHandler(session.engine),
             webHandler = WebHandler,
             llmHandler = CloudLlmHandler
         )

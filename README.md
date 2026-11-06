@@ -33,8 +33,8 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
 
 ```
 ① 本机工具   提醒 / 计时 / 音量 / 时间 / 计算 / 复读 → 0 请求 0 token
-② 本地问答   规则 / 闲聊 / 记忆 / 知识库          → 0 请求 0 token
-③ 按需联网   天气 / 百科（公开免费数据源）        → 0 token
+② 本地问答   规则（时间/计算/天气/娱乐）          → 0 请求 0 token
+③ 按需联网   实时天气 / 用户明说「帮我查一下」    → 0 token
 ④ 云端大模型 唯一花钱的一步
 ⑤ 兜底       上面全失败 → 用本地那条答案，绝不空屏
 ```
@@ -86,13 +86,17 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
 - ✅ 音量 / 静音 / 取消静音 / 调大调小：直接改系统音量
 - ✅ 停止播报：说「别说了」立刻闭嘴
 - ✅ 中文数字算术：支持「帮我算一下十二乘以八」= 96
-- ✅ 教学保护：「记住：提醒我喝水」是教学，不会被当成真的去建提醒
+- ✅ 口吻守卫生效：「记住：提醒我喝水」是要记一件事，不会被当成真的去建提醒
 
 ### 五、联网与云端
 
-- ✅ 按需联网：只有本地答不好、且确实是事实类问题才联网
-  - 天气：Open-Meteo（有城市）/ wttr.in（按 IP 定位），支持明天、后天
-  - 百科：必应搜索 RSS，免 Key
+- ✅ 按需联网：**只在这两种情况下联网**，其余判断交给大模型
+  - 实时天气：Open-Meteo（有城市）/ wttr.in（按 IP 定位），支持明天、后天；
+    模型不知道今天下不下雨，这必须是数据
+  - 用户明确说「帮我查 / 搜一下」：必应搜索 RSS，免 Key
+  - ⚠️ v3.8 去掉了「本地答不上来就自动先搜」那一档：搜索擅长查条目、不擅长解释原理，
+    问「为什么会下雨」会被提取成关键词「会下雨」搜成「会」的字典释义。
+    解释、比较、给办法这类现在直接问大模型，还省一次白跑的网络往返
   - 全部失败 → 回落本地答案，话术是「这次没查到」而不是「我不联网」
   - 权限：`INTERNET` + `ACCESS_NETWORK_STATE`；没网时网络层直接失败回落，
     不让用户干等超时
@@ -111,24 +115,34 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
   - 会话内 LRU 缓存（换服务商 / 模型时清空）
   - system 提示瘦身到约 50 字
 
-### 六、本地学习（越聊越会）
+### 六、本地只留确定性能力（v3.8 起）
 
-- ✅ `memory` 包 + 底部「记忆」页
-  - 本地 SQLite 记忆库（零新增依赖），预置 26 条常识对话，教一条长一条
-  - 三种教法：`记住：下班了 = 早点回家` / `当我说…的时候你就说…` / 答不上时说「我教你」
-  - 检索三层证据：完全相同 → 包含关系 → 编辑距离 + 字符二元组 + 关键词覆盖率
-  - 记忆页可视化：来源（内置 / 我教的）、删除、对话框教学
-  - 内置规则优先于记忆，教错的内容可以在记忆页删掉
-- ✅ 云端的好答案会回灌给本地小模型（学的是「人怎么问」，所以用原话）
+以前为了「没网也能答」，本机塞了三套东西：Sqlite 记忆库 + 教学、几百条常识、
+字符级 n-gram 小模型。接入大模型之后它们全撤了——
+**本机负责算得准的，大模型负责想得明白的**，两边不重叠：
+
+| 谁来做 | 做什么 | 代价 |
+| --- | --- | --- |
+| 本机规则 | 报时、日期推算、算数、单位换算、世界时间、天气（离线常年气候）、 | 0 请求 |
+| | 提醒 / 计时、电量、手电筒、打开应用、随机决定、笑话名言、寒暄 | |
+| 云端大模型 | 常识、解释、分析、决策、写东西、闲聊 | 1 次请求 |
+| 联网搜索 | 明确说「帮我查一下…」的事实问题 | 1 次请求 |
+
+- ✅ 删掉的：`memory/` 整包与记忆页、教学入口、`NgramModel`、`KnowledgeBase` 与五个
+  `Kb*` 分组、`DialogCorpus` / `SmallTalk` / `ThoughtBank` / `ReplyCrafter` /
+  `Dictionary`、`assets/qa_lib.json`
+- ✅ **语料里的经验没有丢**：每类问题该讲哪些要点、什么语气、边界在哪，
+  压成一段约 1.5KB 的人设（`CloudLlmHandler.DEFAULT_SYSTEM_PROMPT`），随请求一起发。
+  老用户存过的旧人设会被 `migratePrompt` 自动换成新版
+- ✅ 本机不会的**不瞎编**：直接给一句「这句我没把握」，交给上层去查或去问，
+  四种说法轮换，不会每次都一字不差
 
 ### 七、界面：三项导航 + 多语言 + 账号
 
 - ✅ 底部导航三页：**对话** / **功能** / **设置**
-  - 对话页：消息气泡列表（用户/助手）、状态栏、麦克风与发送；
-    输入框**上方**常驻「教学」入口（教一句 / 看记忆 / 补答没答上来的）
+  - 对话页：消息气泡列表（用户/助手）、状态栏、麦克风与发送
   - 功能页：一行一行按分类列出，点开一行才展开该类技能，再点一条才展开示例说法
-    （两级折叠，一屏看得到全部能力又不拥挤）；「我的记忆」是这里的二级页，
-    带返回箭头并接管系统返回键
+    （两级折叠，一屏看得到全部能力又不拥挤）
   - 设置页只留必要项：回答方式（精简 / 详细）、界面语言、清空对话、账号、恢复默认设置。
     **不摆「是否接入大模型」的开关**——默认就接着 GLM-4-Flash-250414，
     只在「关于」里留一行模型名，点开才填 Key / 换服务商 / 测试连接
@@ -164,12 +178,12 @@ Android 课程大作业 —— C 档「挑战级」课题 C3：本地智能语�
 | 架构 | 单 Activity + 三 Fragment；**事件总线 + 四大模块**（语音链路 / 模糊容错 / 对话管理 / 提醒中心），模块间只走 `bus/EventBus` |
 | 多语言 | 自有 `LocaleHelper`（`attachBaseContext`）+ `values-en / -ja / -ko`，不依赖系统语言 |
 | 账号 | 本地账号：PBKDF2WithHmacSHA256 加盐哈希，不联网、不上传 |
-| 本地存储 | SQLite（自建极简封装，零新增依赖）：记忆库 + 提醒表；SharedPreferences：设置与最近 40 条对话 |
+| 本地存储 | SQLite（自建极简封装，零新增依赖）：提醒表（按账号分库）；SharedPreferences：设置、对话记录与账号 |
 | 后台任务 | AlarmManager 精确闹钟（`setExactAndAllowWhileIdle` / `setAlarmClock`）+ 通知 Action，开机自动重排 |
 | 语音 | Android `SpeechRecognizer` / `TextToSpeech` |
 | 联网 | `HttpURLConnection` + 项目自带极简 JSON 解析（`JsonLite`） |
 | 云端 | OpenAI 兼容 `/chat/completions`，默认智谱 GLM-4-Flash-250414；共享 Key 编译期从 `local.properties` 注入 `BuildConfig`，不入库 |
-| 测试 | JUnit4（446 个单测，覆盖事件分发、模糊容错、多轮上下文、提醒状态机、重复规则、调度顺序、路线决策、语义理解、工具、对话落盘、联网、云端、记忆、密码哈希） |
+| 测试 | JUnit4（319 个单测，覆盖事件分发、模糊容错、多轮上下文、提醒状态机、重复规则、调度顺序、路线决策、语义理解、工具、对话落盘、联网、云端人设迁移、按账号分库、密码哈希） |
 | 构建 | Gradle 9.5 + AGP 9.3，minSdk 28 / targetSdk 37 |
 
 ## 分层与目录结构
@@ -225,9 +239,7 @@ app/src/main/java/com/example/voiceassistant/
 │   ├── VoiceAssistantActivity.kt    应用外壳 + 语音入口（订阅总线，调 pipeline）
 │   ├── LoginActivity.kt             登录 / 注册 / 游客进入（门禁在 onCreate）
 │   ├── ChatFragment.kt / FeaturesFragment.kt / SettingsFragment.kt
-│   ├── MemoryFragment.kt            记忆页（从功能页进入的二级页）
-│   ├── TeachDialog.kt               教学入口（教一句 / 看记忆 / 补答没答上来的）
-│   └── ChatAdapter.kt / MemoryAdapter.kt
+│   └── ChatAdapter.kt
 ├── bus/                         事件总线：模块之间唯一的通信方式
 │   └── EventBus（同步分发 + 类型订阅 + owner 注销）/ AssistantBus（进程级单例）
 ├── fuzzy/                       模糊匹配容错引擎
@@ -247,8 +259,7 @@ app/src/main/java/com/example/voiceassistant/
 │   ├── TextCleaner.kt               文本清洗（归一化 / 截断 / 缓存键）
 │   └── Sources.kt                   四个接口契约（core 只认接口不认实现）
 ├── handler/                     处理器层：真正干活的三条路
-│   ├── qa/QaLocalHandler.kt         本地问答（规则/闲聊/记忆/知识库）
-│   ├── qa/QaLib.kt                  可编辑问答表（assets/qa_lib.json）
+│   ├── qa/QaLocalHandler.kt         本地问答（规则：时间/计算/天气/娱乐）
 │   ├── web/WebHandler.kt            按需联网
 │   └── llm/CloudLlmHandler.kt       云端大模型 + CloudCache
 ├── tool/                        工具层：本机能力，0 请求
@@ -268,10 +279,9 @@ app/src/main/java/com/example/voiceassistant/
 │   └── Http.kt / SearchApi.kt / LlmRequest.kt / NetworkState.kt
 ├── service/                     语音服务层
 │   └── AsrManager / TtsManager / TtsTiming（播报兜底）/ AudioController / DeviceController
-├── assistant/                   规则与知识（纯逻辑，可直接单测）
-│   └── AssistantEngine / AssistantRules / DialogLogic / KnowledgeBase
-│       FuzzyMatcher / QueryUnderstanding / NgramModel / ChineseNumber …
-├── memory/                      记忆库（SQLite + 检索 + 内置语料）
+├── assistant/                   规则引擎（纯逻辑，可直接单测）
+│   └── AssistantEngine / AssistantRules / SkillCatalog / FuzzyMatcher
+│       QueryUnderstanding / CityClimate / OnlineQuery / ChineseNumber …
 └── data/                        会话、设置与账号
     ├── ChatSession / ChatHistoryStore（对话落盘）/ ChatMessage
     ├── AppSettings（设置 + 语言 + 云端配置）
@@ -317,6 +327,21 @@ app/src/main/java/com/example/voiceassistant/
 - [x] v3.6：**默认接入智谱 GLM-4-Flash-250414**（免费模型，Key 随包注入，
       源码仓库不含 Key）；设置页不再摆「接入大模型」开关，只在「关于 → AI 模型」
       留一行入口，想换服务商 / 换 Key 时再点进去 + 单测（446 个）
+- [x] v3.7：**个人数据按账号隔离** —— 对话记录、待办提醒各自按账号分库
+      （`data/UserScope` 提供分区键，游客固定 `guest`），退出登录时先摘掉提醒中心
+      再清身份；分库文件名带 `.db` 后缀 + 单测
+- [x] v3.8（本次）：**撤掉本地那套「假装会思考」的东西**，答案交给大模型
+      - 删除教学与本地记忆（`memory/` 整包、记忆页、教学入口、自学习开关）
+      - 删除本地 n-gram 小模型（`NgramModel` + 训练存档），它把每轮对话都当样本
+      - 删除全部本地语料（`KnowledgeBase` 与五个 `Kb*` 分组约 1700 行、
+        `DialogCorpus` 1410 行、`SmallTalk`、`ThoughtBank`、`ReplyCrafter`、
+        内置词典、`qa_lib.json`）
+      - 语料沉淀的经验压成约 1.5KB 人设随请求发送；旧人设自动迁移；
+        输出上限从 128 提到 512（大模型成了主力，128 只够两句）
+      - 30 条技能收到 23 条，留下的每一条都真能执行（去掉教说话 / 闲聊 /
+        自学习 / 接上文 / 翻译 / 常识 / 决策）；本机只留 0 请求就能算准的能力
+      - 设置页的「回答方式 / 主动追问」原本只喂给语料层，改由调度层转达给大模型
+      + 单测（319 个）
 - [ ] 第 4 周：TTS 与 UI 打磨、异常处理、文档与演示视频
 
 ## 环境要求

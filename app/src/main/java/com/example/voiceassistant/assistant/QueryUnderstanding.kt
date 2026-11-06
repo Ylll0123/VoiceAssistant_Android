@@ -337,12 +337,28 @@ object QueryUnderstanding {
             CityClimate.find(line)?.let { return it.city }
         }
         for (line in memory.asReversed()) {
-            val topic = DialogLogic.stripToTopic(line)
+            val topic = stripToTopic(line)
                 .trim('？', '?', '！', '!', '。', '.', '，', ',', '啊', '呢', '呀', '吧', '嘛', ' ')
             if (topic.length in 2..8) return topic
         }
         return null
     }
+
+    /** 从原始问句里剥出「事情本身」：去掉客套话、语气词和句尾标点 */
+    fun stripToTopic(raw: String): String =
+        raw.trim()
+            .trim('？', '?', '！', '!', '。', '.', '，', ',', '啊', '呢', '呀', '吧', '嘛', ' ')
+            .removePrefix("你说")
+            .removePrefix("我想问")
+            .removePrefix("问一下")
+            .removePrefix("请问")
+            .removePrefix("我想知道")
+            .removePrefix("帮我查一下")
+            .removePrefix("给我讲讲")
+            .removePrefix("介绍一下")
+            .removePrefix("讲讲")
+            .removePrefix("说说")
+            .trim()
 
     /** 把代词换成记住的实体；没有代词或没有实体时原样返回 */
     fun resolve(text: String, entity: String?): String {

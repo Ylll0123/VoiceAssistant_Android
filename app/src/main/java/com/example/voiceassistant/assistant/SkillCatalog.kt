@@ -204,32 +204,11 @@ object SkillCatalog {
             examples = listOf("出行有什么建议", "今天出门要带伞吗", "这个月穿什么")
         ),
         Skill(
-            id = "translate",
-            title = "单词翻译",
-            description = "内置中英基础词典双向查询，中翻英、英翻中都能用",
-            category = CATEGORY_KNOWLEDGE,
-            examples = listOf("苹果用英语怎么说", "apple 是什么意思", "翻译老师")
-        ),
-        Skill(
-            id = "knowledge",
-            title = "常识问答",
-            description = "天气原理、健康、学习、生活窍门、安全急救等几百条有标准答案的问题",
-            category = CATEGORY_KNOWLEDGE,
-            examples = listOf("为什么会下雨", "感冒了怎么办", "怎么缓解焦虑", "手机进水怎么办")
-        ),
-        Skill(
-            id = "decide",
-            title = "分析与决策",
-            description = "拿不准的选择、找不到头绪的问题，给一套「目的—代价—退路」的判断顺序",
-            category = CATEGORY_KNOWLEDGE,
-            examples = listOf("我该不该考研", "论文写不出来怎么办", "为什么最近总是失眠")
-        ),
-        Skill(
             id = "online",
             title = "联网查资料",
-            description = "本地答不上来时上网搜索，把查到的摘要连同来源一起说给你（没网自动回落）",
+            description = "说「帮我查一下…」才上网，把查到的摘要连同来源一起说给你（没网自动回落）",
             category = CATEGORY_KNOWLEDGE,
-            examples = listOf("帮我查一下量子纠缠", "光合作用是什么", "介绍一下 metaverse"),
+            examples = listOf("帮我查一下量子纠缠", "查一下今天的新闻", "百度百科 台风"),
             requiresNetwork = true
         ),
         Skill(

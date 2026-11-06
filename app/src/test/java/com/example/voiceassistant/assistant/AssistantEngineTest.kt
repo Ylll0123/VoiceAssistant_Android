@@ -78,7 +78,7 @@ class AssistantEngineTest {
     @Test
     fun `只有数字没有运算符时不当作算术`() {
         val response = engine.respond("12345")
-        // 数字没有可识别的提问类型，不该走「思考框架」，落到最终兜底
-        assertNotEquals(AssistantEngine.INTENT_THOUGHT, response.intent)
+        // 数字没有运算符，不该被算成算术题，落到兜底交给上层
+        assertEquals(AssistantEngine.INTENT_FALLBACK, response.intent)
     }
 }

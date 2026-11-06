@@ -76,11 +76,10 @@ class OnlineQueryTest {
     }
 
     @Test
-    fun `本地答好了就不联网：时间 计算 闲聊 知识`() {
+    fun `本地答好了就不联网：时间 计算 娱乐`() {
         assertNull(OnlineQuery.plan("现在几点了", "time"))
         assertNull(OnlineQuery.plan("12 加 8 等于多少", "arithmetic"))
-        assertNull(OnlineQuery.plan("我好累", DialogContext.INTENT_CHAT))
-        assertNull(OnlineQuery.plan("为什么会下雨", AssistantEngine.INTENT_KNOWLEDGE))
+        assertNull(OnlineQuery.plan("讲个笑话", "joke"))
     }
 
     @Test

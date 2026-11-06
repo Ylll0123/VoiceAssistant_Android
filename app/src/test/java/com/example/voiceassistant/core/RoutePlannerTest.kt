@@ -16,8 +16,8 @@ import org.junit.Test
  *
  * 这些断言直接对应三类线上问题：
  * - 本地和云端抢回答（一条消息只允许有一条最终路线）；
- * - 该联网的没联网（天气 / 事实）；
- * - token 花得快（能搜到的就不问云端，联网路线不带云端兜底）。
+ * - 该联网的没联网（实时天气）；
+ * - 该问模型的被搜索引擎接走（解释类问题搜出一堆词条，答非所问）。
  */
 class RoutePlannerTest {
 
@@ -48,9 +48,9 @@ class RoutePlannerTest {
         val cases = listOf(
             "现在几点了" to "time",
             "12 加 8 等于多少" to "arithmetic",
-            "苹果用英语怎么说" to "translate",
-            "我好累" to DialogContext.INTENT_CHAT,
-            "为什么会下雨" to AssistantEngine.INTENT_KNOWLEDGE
+            "明天是几号" to "date",
+            "来句名言" to "quote",
+            "讲个笑话" to "joke"
         )
         for ((raw, intent) in cases) {
             val d = decide(raw, intent)
@@ -112,18 +112,18 @@ class RoutePlannerTest {
     }
 
     @Test
-    fun `本地答不上来的事实问题：先免费搜，再付费问云端`() {
-        val raw = "量子纠缠到底是什么"
-        val d = decide(raw, AssistantEngine.INTENT_FALLBACK)
-        assertEquals(RoutePlanner.Route.WEB, d.route)
-        assertEquals(OnlineQuery.Kind.SEARCH, d.plan!!.kind)
-        assertTrue("搜不到时应该还能降级到云端", d.cloudFallback)
-        assertFalse("搜索词不该是整句话：${d.plan!!.query}", d.plan!!.query.contains("到底"))
+    fun `解释类问题不搜索，直接问云端`() {
+        // 搜索擅长查条目，解释原理、比较、给办法只会搜出一堆无关词条
+        listOf("量子纠缠到底是什么", "为什么会下雨", "光合作用是什么").forEach { raw ->
+            val d = decide(raw, AssistantEngine.INTENT_FALLBACK)
+            assertEquals("「$raw」不该被搜索接走", RoutePlanner.Route.CLOUD, d.route)
+            assertNull("「$raw」不该生成搜索计划", d.plan)
+        }
     }
 
     @Test
     fun `主观和情绪问题不搜索：直接问云端`() {
-        val opinion = decide("我到底该不该换个环境", AssistantEngine.INTENT_THOUGHT)
+        val opinion = decide("我到底该不该换个环境", AssistantEngine.INTENT_FALLBACK)
         assertEquals(RoutePlanner.Route.CLOUD, opinion.route)
         assertNull(opinion.plan)
     }

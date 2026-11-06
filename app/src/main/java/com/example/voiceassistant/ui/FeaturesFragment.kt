@@ -166,9 +166,6 @@ class FeaturesFragment : Fragment() {
             "quote" -> R.string.skill_title_quote
             "weather" -> R.string.skill_title_weather
             "outing" -> R.string.skill_title_outing
-            "translate" -> R.string.skill_title_translate
-            "knowledge" -> R.string.skill_title_knowledge
-            "decide" -> R.string.skill_title_decide
             "online" -> R.string.skill_title_online
             "follow_up" -> R.string.skill_title_follow_up
             else -> 0
@@ -199,9 +196,6 @@ class FeaturesFragment : Fragment() {
             "quote" -> R.string.skill_desc_quote
             "weather" -> R.string.skill_desc_weather
             "outing" -> R.string.skill_desc_outing
-            "translate" -> R.string.skill_desc_translate
-            "knowledge" -> R.string.skill_desc_knowledge
-            "decide" -> R.string.skill_desc_decide
             "online" -> R.string.skill_desc_online
             "follow_up" -> R.string.skill_desc_follow_up
             else -> 0

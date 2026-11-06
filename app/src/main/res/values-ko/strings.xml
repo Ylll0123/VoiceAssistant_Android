@@ -71,7 +71,7 @@
     <string name="settings_about">정보</string>
     <string name="settings_version">버전 %1$s · 기능 %2$d개</string>
     <string name="settings_reset">기본 설정으로 복원</string>
-    <string name="settings_reset_done">기본 설정으로 복원했습니다(기억은 유지)</string>
+    <string name="settings_reset_done">기본 설정으로 복원했습니다</string>
 
     <!-- 클라우드 LLM -->
     <string name="settings_cloud_state_missing">설정 필요: %1$s</string>
@@ -104,7 +104,7 @@
 
     <!-- 로그인 · 가입 -->
     <string name="login_brand_sub">기기 내 음성 비서</string>
-    <string name="login_subtitle">계정은 이 기기에만 저장되며 대화와 기억을 구분해 관리합니다</string>
+    <string name="login_subtitle">계정은 이 기기에만 저장되며 대화 기록과 알림을 사람별로 구분합니다</string>
     <string name="login_tab_login">로그인</string>
     <string name="login_tab_register">회원가입</string>
     <string name="login_hint_username">사용자 이름</string>
@@ -179,14 +179,8 @@
     <string name="skill_desc_weather">온라인에서 실시간 기온과 최고·최저. 오프라인은 평년값으로 답변</string>
     <string name="skill_title_outing">외출 조언</string>
     <string name="skill_desc_outing">월과 도시에 맞춘 옷차림·우산 조언</string>
-    <string name="skill_title_translate">단어 번역</string>
-    <string name="skill_desc_translate">중영 기본 사전 내장. 중→영, 영→중 모두</string>
-    <string name="skill_title_knowledge">상식 Q&amp;A</string>
-    <string name="skill_desc_knowledge">날씨 원리, 건강, 공부, 생활 팁, 응급처치 등 수백 문항</string>
-    <string name="skill_title_decide">분석과 결정</string>
-    <string name="skill_desc_decide">망설이는 선택에 목적—대가—퇴로 판단 순서를 제시</string>
     <string name="skill_title_online">인터넷 검색</string>
-    <string name="skill_desc_online">로컬에서 답이 없을 때만 검색해 출처와 함께 요약</string>
+    <string name="skill_desc_online">「찾아봐」라고 할 때만 검색해 출처와 함께 요약</string>
     <string name="skill_title_follow_up">추가 질문</string>
     <string name="skill_desc_follow_up">3분 안에는 모레는?, 하나 더 로 이어서 물을 수 있습니다</string>
     <string name="features_examples_note">예시 문장은 중국어입니다. 오프라인 엔진은 현재 중국어 명령만 이해합니다.</string>

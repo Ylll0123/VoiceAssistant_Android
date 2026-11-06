@@ -38,7 +38,6 @@
     <string name="error_no_recognizer">这台设备没有可用的语音识别服务，请用文字输入</string>
     <string name="error_empty_input">先说点什么吧</string>
 
-    <!-- 教学入口（对话页输入框上方） -->
 
     <!-- 功能页 -->
     <string name="features_title">功能</string>
@@ -71,7 +70,7 @@
     <string name="settings_about">关于</string>
     <string name="settings_version">版本 %1$s · 共 %2$d 项功能</string>
     <string name="settings_reset">恢复默认设置</string>
-    <string name="settings_reset_done">已恢复默认设置（记忆库保留）</string>
+    <string name="settings_reset_done">已恢复默认设置</string>
 
     <!-- 设置页：云端大模型 -->
     <string name="settings_cloud_state_missing">还差配置：%1$s</string>
@@ -104,7 +103,7 @@
 
     <!-- 登录注册 -->
     <string name="login_brand_sub">本地语音助手</string>
-    <string name="login_subtitle">账号只存在这台手机上，用于区分本地的对话与记忆</string>
+    <string name="login_subtitle">账号只存在这台手机上，用来把每个人的对话记录和提醒分开</string>
     <string name="login_tab_login">登录</string>
     <string name="login_tab_register">注册</string>
     <string name="login_hint_username">用户名</string>
@@ -121,7 +120,6 @@
     <string name="login_error_wrong_password">密码不对</string>
     <string name="login_welcome">欢迎你，%1$s</string>
 
-    <!-- 本地记忆（教学）页 -->
 
     <!-- 提醒通知 -->
     <string name="notify_channel_reminder">提醒与计时</string>
@@ -179,14 +177,8 @@
     <string name="skill_desc_weather">联网给出实时气温体感和当日高低（没网就用常年气候数据，照样有答案）</string>
     <string name="skill_title_outing">出行建议</string>
     <string name="skill_desc_outing">按月份和城市给出出行、穿衣、带伞这类能照做的提醒</string>
-    <string name="skill_title_translate">单词翻译</string>
-    <string name="skill_desc_translate">内置中英基础词典双向查询，中翻英、英翻中都能用</string>
-    <string name="skill_title_knowledge">常识问答</string>
-    <string name="skill_desc_knowledge">天气原理、健康、学习、生活窍门、安全急救等几百条有标准答案的问题</string>
-    <string name="skill_title_decide">分析与决策</string>
-    <string name="skill_desc_decide">拿不准的选择、找不到头绪的问题，给一套「目的—代价—退路」的判断顺序</string>
     <string name="skill_title_online">联网查资料</string>
-    <string name="skill_desc_online">本地答不上来时上网搜索，把查到的摘要连同来源一起说给你（没网自动回落）</string>
+    <string name="skill_desc_online">你说「帮我查一下…」才上网，把查到的摘要连同来源一起说给你（没网自动回落）</string>
     <string name="skill_title_follow_up">多轮追问</string>
     <string name="skill_desc_follow_up">3 分钟内可以用「那后天呢」「再来一个」这种省略说法接着聊</string>
     <string name="features_examples_note">示例说法是中文：离线引擎目前只认中文指令。</string>

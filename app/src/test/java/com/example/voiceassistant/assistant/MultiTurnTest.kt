@@ -32,32 +32,12 @@ class MultiTurnTest {
     }
 
     @Test
-    fun `翻译之后只报一个词，会接着翻译`() {
-        val engine = AssistantEngine()
-        engine.reply("苹果用英语怎么说")
-
-        val reply = engine.reply("电脑")
-        assertTrue("应该接着翻译这个词，实际：$reply", reply.contains("computer"))
-    }
-
-    @Test
-    fun `翻译之后说一句情绪话，不会被当成单词去翻译`() {
-        val engine = AssistantEngine()
-        engine.reply("北京天气怎么样")
-        engine.reply("苹果用英语怎么说")
-
-        val reply = engine.reply("我好累")
-        assertEquals("这句是情绪表达，不是要翻译的词：实际 $reply", DialogContext.INTENT_CHAT, engine.respond("我好累").intent)
-        assertTrue("不该出现翻译结果，实际：$reply", !reply.contains("英语是"))
-    }
-
-    @Test
     fun `笑话可以再来一个`() {
         val engine = AssistantEngine()
         engine.reply("讲个笑话")
 
-        val reply = engine.reply("再来一个")
-        assertNotEquals(AssistantEngine.FALLBACK, reply)
+        val response = engine.respond("再来一个")
+        assertNotEquals(AssistantEngine.INTENT_FALLBACK, response.intent)
     }
 
     @Test
@@ -132,9 +112,9 @@ class MultiTurnTest {
         engine.resetContext()
 
         val response = engine.respond("那后天呢")
-        assertNotEquals(
-            "上下文过期了就不该给『追thinking框架』这类有内容的回答",
-            AssistantEngine.INTENT_THOUGHT,
+        assertEquals(
+            "上下文过期了就不该再拿旧日期来补",
+            AssistantEngine.INTENT_FALLBACK,
             response.intent
         )
     }
@@ -169,7 +149,7 @@ class MultiTurnTest {
     @Test
     fun `同义词也能落到同一意图`() {
         val engine = AssistantEngine()
-        assertNotEquals(AssistantEngine.FALLBACK, engine.reply("讲个段子"))
+        assertNotEquals(AssistantEngine.INTENT_FALLBACK, engine.respond("讲个段子").intent)
 
         val weekday = engine.reply("今天礼拜几")
         assertTrue("「礼拜几」应归一成「星期几」，实际：$weekday", weekday.contains("星期"))
@@ -178,7 +158,11 @@ class MultiTurnTest {
     @Test
     fun `纠错说法会按后半句重新理解`() {
         val engine = AssistantEngine()
-        val reply = engine.reply("不对，我是说讲个笑话")
-        assertTrue("应该讲笑话，实际：$reply", reply.length > 4 && reply != AssistantEngine.FALLBACK)
+        val response = engine.respond("不对，我是说讲个笑话")
+        assertNotEquals(
+            "应该按后半句讲笑话，实际：${response.text}",
+            AssistantEngine.INTENT_FALLBACK,
+            response.intent
+        )
     }
 }

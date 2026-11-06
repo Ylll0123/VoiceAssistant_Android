@@ -1,6 +1,7 @@
 package com.example.voiceassistant.core
 
 import android.os.Handler
+import com.example.voiceassistant.assistant.AssistantConfig
 import com.example.voiceassistant.assistant.AssistantEngine
 import com.example.voiceassistant.assistant.AssistantResponse
 import com.example.voiceassistant.assistant.CityClimate
@@ -19,7 +20,7 @@ import com.example.voiceassistant.handler.llm.CloudLlmHandler
  *
  * ```
  * ① ToolHandler     本机工具（提醒 / 音量 / 时间 / 计算）  -> 0 请求
- * ② QaLocalHandler  本地问答（规则/闲聊/记忆/知识库）    -> 0 请求
+ * ② QaLocalHandler  本地问答（规则：时间/计算/天气/娱乐）  -> 0 请求
  * ③ WebHandler      按需联网（天气 / 百科）            -> 0 token
  * ④ CloudLlmHandler 云端大模型                        -> 唯一花钱的一步
  * ⑤ 兜底             上面全失败 -> 本地那条答案
@@ -50,7 +51,7 @@ class AssistantRouter(
         /** 本机工具 */
         TOOL,
 
-        /** 本地知识 / 规则 / 小模型 */
+        /** 本地规则 */
         LOCAL,
 
         /** 联网查到的 */
@@ -114,7 +115,7 @@ class AssistantRouter(
         val cleaned = input.map { it.trim() }.filter { it.isNotEmpty() }
         val raw = cleaned.firstOrNull().orEmpty()
 
-        // 记忆要在把这一句写进历史**之前**取，否则指代消解会拿当前这句当上下文
+        // 指代消解要用「这句之前」说过的话，所以先取历史再记录当前这句
         val memory = history.userLines()
         history.recordUser(raw)
 
@@ -140,7 +141,7 @@ class AssistantRouter(
         val local = qaHandler.answer(cleaned)
 
         // ① 本机工具：提醒 / 音量 / 停止播报，命中就直接执行
-        //    （教学指令由 ToolHandler 内部挡掉，不会被误抢）
+        //    （「记住：…」这类要记下来的话由 ToolHandler 内部挡掉，不会被误抢）
         val tool = if (toolHandler.claims(raw, local)) toolHandler.handle(raw, local) else null
         if (tool != null) {
             return TurnPlan(
@@ -324,14 +325,13 @@ class AssistantRouter(
         }
 
     /**
-     * 组装附加到 system 提示里的上下文：当前时间 + 用户教过的说法。
+     * 组装附加到 system 提示里的上下文：当前时间 + 用户选的说话风格。
      *
-     * 时间让模型答得出「今天」「明天」指的是哪一天；
-     * 教过的说法保证云端不会和用户亲手教的内容唱反调。
+     * 时间让模型答得出「今天」「明天」指的是哪一天——这条不能省，
+     * 模型自己不知道今天几号。
      *
-     * 这段每轮都要跟着请求发出去，是 system 里最贵的一段，所以只带 2 条、
-     * 并且去掉引导套话。不整个去掉的原因是它能防止云端和用户教的内容打架——
-     * 这是功能性需要，不是装饰性的上下文。
+     * 风格原本只喂给本地语料层，语料删掉后改由这里转达，
+     * 否则设置页那三个按钮就成了摆设。两种情况各一句，控制长度。
      */
     private fun buildExtraSystem(): String {
         val now = java.time.LocalDateTime.now()
@@ -339,6 +339,16 @@ class AssistantRouter(
         sb.append("现在是 ${now.year} 年 ${now.monthValue} 月 ${now.dayOfMonth} 日，")
             .append("${now.hour} 点 ${String.format("%02d", now.minute)} 分左右。")
 
+        when (AssistantConfig.replyStyle) {
+            AssistantConfig.ReplyStyle.CONCISE ->
+                sb.append("\n这次回答要更短：一两句说到点上，不解释、不反问。")
+            AssistantConfig.ReplyStyle.DETAILED ->
+                sb.append("\n这次可以多说一点：给结论，再补一两条理由或做法。")
+            else -> Unit
+        }
+        if (!AssistantConfig.proactiveFollowUp) {
+            sb.append("\n这次不要反问，说完就停。")
+        }
         return sb.toString()
     }
 }

@@ -3,11 +3,11 @@ package com.example.voiceassistant.assistant
 /**
  * 对话行为配置（纯 Kotlin，不依赖 Android，可在单元测试里直接改）。
  *
- * 设置页改的「回答风格 / 主动追问 / 自学习」最终都落到这里：
+ * 设置页改的「回答风格 / 主动追问」最终都落到这里：
  * 界面写 [AppSettings]，Activity 启动时把值灌进本对象，
- * 闲聊引擎和对话引擎读本对象决定怎么说话。
+ * 调度层再按它决定给大模型追加什么风格指令（见 AssistantRouter.buildExtraSystem）。
  *
- * 分成两层的理由：规则 / 语料 / 引擎是纯逻辑，不应该知道 SharedPreferences 的存在，
+ * 分成两层的理由：规则 / 引擎是纯逻辑，不应该知道 SharedPreferences 的存在，
  * 否则每个用例都要先造一个 Context。
  */
 object AssistantConfig {
@@ -31,7 +31,7 @@ object AssistantConfig {
 
     /**
      * 联网查询：实时天气、百科问答会去网上查，并用查到的内容替换本地答案。
-     * 关掉之后完全离线（只给常年气候数据和本地知识库），没网也能正常用。
+     * 关掉之后完全离线（只给常年气候数据），没网也能用基础功能。
      */
     var onlineSearch: Boolean = true
 
