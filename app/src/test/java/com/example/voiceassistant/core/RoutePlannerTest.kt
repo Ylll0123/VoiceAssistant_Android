@@ -143,13 +143,6 @@ class RoutePlannerTest {
     }
 
     @Test
-    fun `教学流程永远不联网不问云端`() {
-        val raw = "记住：下班了 = 早点回家"
-        val d = decide(raw, AssistantEngine.INTENT_TAUGHT, cloudFirst = true)
-        assertEquals(RoutePlanner.Route.LOCAL, d.route)
-    }
-
-    @Test
     fun `AI 优先时本地答好的也过一遍大模型，但天气仍然先联网`() {
         assertEquals(
             RoutePlanner.Route.CLOUD,

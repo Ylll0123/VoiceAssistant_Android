@@ -1,6 +1,5 @@
 package com.example.voiceassistant.assistant
 
-import com.example.voiceassistant.memory.InMemoryMemoryRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -115,7 +114,7 @@ class ReplyCrafterTest {
 
     @Test
     fun `本地答不上来的选择题走思维模式，而且不去联网`() {
-        val engine = AssistantEngine(memory = InMemoryMemoryRepository())
+        val engine = AssistantEngine()
         val input = "我到底该不该换个环境"
 
         val response = engine.respond(input)
@@ -133,27 +132,10 @@ class ReplyCrafterTest {
 
     @Test
     fun `情绪问题先接住再说，不装作没听见`() {
-        val engine = AssistantEngine(memory = InMemoryMemoryRepository())
+        val engine = AssistantEngine()
         val response = engine.respond("最近压力好大")
         assertNotEquals(AssistantEngine.INTENT_FALLBACK, response.intent)
         assertTrue("应该有承接语，实际：${response.text}", response.text.length >= 12)
-    }
-
-    @Test
-    fun `具体提问不会被闲聊语料抢走`() {
-        // 「为什么最近总是失眠」里有闲聊关键词（担心），以前会被闲聊接走，
-        // 得到「把担心的事写下来」这种偏题回复；现在应该落到真正有内容的答案上
-        val first = AssistantEngine(memory = InMemoryMemoryRepository())
-        assertEquals(
-            AssistantEngine.INTENT_KNOWLEDGE,
-            first.respond("为什么最近总是失眠").intent
-        )
-
-        val second = AssistantEngine(memory = InMemoryMemoryRepository())
-        assertEquals(
-            AssistantEngine.INTENT_KNOWLEDGE,
-            second.respond("论文写不出来怎么办").intent
-        )
     }
 
     @Test

@@ -39,21 +39,12 @@
     <string name="error_empty_input">Say something first</string>
 
     <!-- Teach entry -->
-    <string name="teach_action">Teach</string>
-    <string name="teach_title">Teach</string>
-    <string name="teach_action_new">Teach a sentence: how should I answer it</string>
-    <string name="teach_action_memory">View my memory (%1$d items)</string>
-    <string name="teach_action_pending">Answer what I could not (%1$d)</string>
 
     <!-- Features page -->
     <string name="features_title">Features</string>
     <string name="features_subtitle">Tap a row to expand, tap an item to see examples, tap an example to run it in chat.</string>
     <string name="features_empty">Nothing to show yet.</string>
     <string name="features_count">%1$d items</string>
-    <string name="features_memory_group">Memory and teaching</string>
-    <string name="features_memory_open">Open my memory</string>
-    <string name="features_memory_hint">Taught, learned and built-in entries all stay on this phone</string>
-    <string name="features_memory_count">%1$d memories</string>
 
     <string name="group_time">Time and date</string>
     <string name="group_calc">Calculation</string>
@@ -131,28 +122,6 @@
     <string name="login_welcome">Welcome, %1$s</string>
 
     <!-- Local memory -->
-    <string name="memory_title">Local memory</string>
-    <string name="memory_subtitle">Everything you taught stays on this phone. The more it knows, the better it talks.</string>
-    <string name="memory_teach">Teach one</string>
-    <string name="memory_empty">No memories yet. Tap “Teach one” and tell the assistant how to reply.</string>
-    <string name="memory_source_taught">Taught</string>
-    <string name="memory_source_seed">Built-in</string>
-    <string name="memory_source_learned">Learned</string>
-    <string name="memory_count_full">%1$d in total (taught %2$d / learned %3$d / built-in %4$d)</string>
-    <string name="memory_pending_group">Unanswered phrases (%1$d)</string>
-    <string name="memory_pending_hint">Things you said that I did not know. Tap one to teach me.</string>
-    <string name="memory_pending_empty">Nothing here. Phrases I cannot answer during chat land here automatically.</string>
-    <string name="memory_teach_pending_title">How should I answer this</string>
-    <string name="memory_teach_pending_saved">Learned: when I hear “%1$s”, I say “%2$s”</string>
-    <string name="memory_clear_pending">Clear unanswered</string>
-    <string name="memory_delete_title">Delete this memory?</string>
-    <string name="memory_delete_message">The assistant will not understand this phrase afterwards. You can teach it again.</string>
-    <string name="memory_unavailable">The local memory database failed to open; using temporary memory for this run.</string>
-    <string name="memory_teach_dialog_title">Teach the assistant a sentence</string>
-    <string name="memory_teach_question_hint">What I say (e.g. 下班了)</string>
-    <string name="memory_teach_answer_hint">How it should answer (e.g. 早点回家)</string>
-    <string name="memory_teach_saved">Remembered: %1$s → %2$s</string>
-    <string name="memory_teach_incomplete">Both fields are required.</string>
 
     <!-- Reminder notifications -->
     <string name="notify_channel_reminder">Reminders and timers</string>
@@ -206,14 +175,6 @@
     <string name="skill_desc_joke">A random one from the offline joke bank</string>
     <string name="skill_title_quote">A quote</string>
     <string name="skill_desc_quote">A random quote or line of poetry</string>
-    <string name="skill_title_teach">Teach it a phrase</string>
-    <string name="skill_desc_teach">Teach a new phrase, saved locally; separate answers with |</string>
-    <string name="skill_title_chat">Small talk</string>
-    <string name="skill_desc_chat">Built-in everyday replies: tired, overtime, dorm, parcels</string>
-    <string name="skill_title_self_learn">Self-learning</string>
-    <string name="skill_desc_self_learn">After one lesson it generalises to similar phrasings; unknown lines wait in Memory</string>
-    <string name="skill_title_continue_chat">Follow-up chat</string>
-    <string name="skill_desc_continue_chat">Why, and then, what should I do — keeps the same topic</string>
     <string name="skill_title_weather">Weather</string>
     <string name="skill_desc_weather">Live temperature and today\'s high and low online; offline uses climate averages</string>
     <string name="skill_title_outing">Going out</string>

@@ -57,7 +57,6 @@ class FeaturesFragment : Fragment() {
 
     private fun build(box: LinearLayout) {
         val inflater = LayoutInflater.from(requireContext())
-        box.addView(buildMemoryGroup(inflater, box))
 
         SkillCatalog.categories.forEach { category ->
             val skills = SkillCatalog.byCategory(category)
@@ -78,29 +77,6 @@ class FeaturesFragment : Fragment() {
         if (host.appSettings().language != AppSettings.LANGUAGE_ZH) {
             box.addView(messageView(getString(R.string.features_examples_note)))
         }
-    }
-
-    /** 固定的第一组：记忆与教学。它不来自技能目录，而是本地记忆的入口 */
-    private fun buildMemoryGroup(inflater: LayoutInflater, parent: ViewGroup): View {
-        val count = host.session.engine.memoryRepository()?.entries()?.size ?: 0
-        val card = inflater.inflate(R.layout.item_feature_group, parent, false)
-        card.findViewById<TextView>(R.id.tvGroupTitle).text =
-            getString(R.string.features_memory_group)
-        card.findViewById<TextView>(R.id.tvGroupCount).text =
-            getString(R.string.features_memory_count, count)
-
-        val body = card.findViewById<LinearLayout>(R.id.groupBody)
-        val row = inflater.inflate(R.layout.item_feature_skill, body, false)
-        row.findViewById<TextView>(R.id.tvSkillTitle).text =
-            getString(R.string.features_memory_open)
-        row.findViewById<TextView>(R.id.tvSkillDesc).text =
-            getString(R.string.features_memory_hint)
-        row.findViewById<View>(R.id.divider).visibility = View.GONE
-        row.findViewById<View>(R.id.skillHeader).setOnClickListener { host.openMemory() }
-        body.addView(row)
-
-        bindToggle(card, body)
-        return card
     }
 
     private fun buildSkillRow(
@@ -188,10 +164,6 @@ class FeaturesFragment : Fragment() {
             "guess" -> R.string.skill_title_guess
             "joke" -> R.string.skill_title_joke
             "quote" -> R.string.skill_title_quote
-            "teach" -> R.string.skill_title_teach
-            "chat" -> R.string.skill_title_chat
-            "self_learn" -> R.string.skill_title_self_learn
-            "continue_chat" -> R.string.skill_title_continue_chat
             "weather" -> R.string.skill_title_weather
             "outing" -> R.string.skill_title_outing
             "translate" -> R.string.skill_title_translate
@@ -225,10 +197,6 @@ class FeaturesFragment : Fragment() {
             "guess" -> R.string.skill_desc_guess
             "joke" -> R.string.skill_desc_joke
             "quote" -> R.string.skill_desc_quote
-            "teach" -> R.string.skill_desc_teach
-            "chat" -> R.string.skill_desc_chat
-            "self_learn" -> R.string.skill_desc_self_learn
-            "continue_chat" -> R.string.skill_desc_continue_chat
             "weather" -> R.string.skill_desc_weather
             "outing" -> R.string.skill_desc_outing
             "translate" -> R.string.skill_desc_translate

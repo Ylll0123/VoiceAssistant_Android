@@ -39,21 +39,12 @@
     <string name="error_empty_input">まず何か話してください</string>
 
     <!-- ティーチ入口 -->
-    <string name="teach_action">ティーチ</string>
-    <string name="teach_title">ティーチ</string>
-    <string name="teach_action_new">一言教える：この言葉にどう答えるか</string>
-    <string name="teach_action_memory">自分の記憶を見る（%1$d 件）</string>
-    <string name="teach_action_pending">答えられなかった言葉に答える（%1$d 件）</string>
 
     <!-- 機能ページ -->
     <string name="features_title">機能</string>
     <string name="features_subtitle">行を押すと展開し、項目を押すと例文が出ます。例文を押すと会話で実行します。</string>
     <string name="features_empty">表示できる機能がありません。</string>
     <string name="features_count">%1$d 件</string>
-    <string name="features_memory_group">記憶とティーチ</string>
-    <string name="features_memory_open">自分の記憶を開く</string>
-    <string name="features_memory_hint">教えた記憶・自学した記憶・内蔵の記憶はすべて端末内にあります</string>
-    <string name="features_memory_count">全 %1$d 件の記憶</string>
 
     <string name="group_time">時刻と日付</string>
     <string name="group_calc">計算と換算</string>
@@ -131,28 +122,6 @@
     <string name="login_welcome">ようこそ、%1$s さん</string>
 
     <!-- ローカル記憶 -->
-    <string name="memory_title">ローカル記憶</string>
-    <string name="memory_subtitle">教えた言葉は端末内に保存されます。増えるほど会話が上手になります。</string>
-    <string name="memory_teach">一言教える</string>
-    <string name="memory_empty">まだ記憶がありません。右上の「一言教える」から「この言葉にどう答えるか」を教えてください。</string>
-    <string name="memory_source_taught">教えた</string>
-    <string name="memory_source_seed">内蔵</string>
-    <string name="memory_source_learned">自学</string>
-    <string name="memory_count_full">全 %1$d 件（教えた %2$d / 自学 %3$d / 内蔵 %4$d）</string>
-    <string name="memory_pending_group">答えられなかった言葉（%1$d）</string>
-    <string name="memory_pending_hint">あなたが言ったのに、まだ覚えていない言葉です。押すと教えられます。</string>
-    <string name="memory_pending_empty">今はありません。会話で答えられない言葉は自動でここに入ります。</string>
-    <string name="memory_teach_pending_title">この言葉にどう答えるか</string>
-    <string name="memory_teach_pending_saved">覚えました：「%1$s」と聞いたら「%2$s」と答えます</string>
-    <string name="memory_clear_pending">未学習を消去</string>
-    <string name="memory_delete_title">この記憶を削除しますか</string>
-    <string name="memory_delete_message">削除するとこの言い方には答えられなくなります。もう一度教えれば戻せます。</string>
-    <string name="memory_unavailable">ローカル記憶庫を開けませんでした。今回の実行は一時記憶を使います。</string>
-    <string name="memory_teach_dialog_title">アシスタントに一言教える</string>
-    <string name="memory_teach_question_hint">私が言う言葉（例：下班了）</string>
-    <string name="memory_teach_answer_hint">どう答えるか（例：早点回家）</string>
-    <string name="memory_teach_saved">覚えました：%1$s → %2$s</string>
-    <string name="memory_teach_incomplete">両方の欄を埋めてください。</string>
 
     <!-- リマインダー通知 -->
     <string name="notify_channel_reminder">リマインダーとタイマー</string>
@@ -206,14 +175,6 @@
     <string name="skill_desc_joke">ローカルのジョーク集からランダムに一つ</string>
     <string name="skill_title_quote">名言</string>
     <string name="skill_desc_quote">名言や詩の一節をランダムに</string>
-    <string name="skill_title_teach">言葉を教える</string>
-    <string name="skill_desc_teach">新しい言い方を教えるとローカルに保存。「|」で複数回答</string>
-    <string name="skill_title_chat">雑談</string>
-    <string name="skill_desc_chat">日常話題の返答を内蔵。疲れた・残業・寮・宅配など</string>
-    <string name="skill_title_self_learn">自己学習</string>
-    <string name="skill_desc_self_learn">一度教えると似た言い方を覚えます。答えられない言葉はメモリに溜まります</string>
-    <string name="skill_title_continue_chat">文脈で続ける</string>
-    <string name="skill_desc_continue_chat">「なぜ」「それで」「どうすれば」も話題を引き継ぎます</string>
     <string name="skill_title_weather">天気と気温</string>
     <string name="skill_desc_weather">オンラインで実況と最高・最低。オフラインでも平年値で回答</string>
     <string name="skill_title_outing">お出かけのヒント</string>

@@ -190,34 +190,6 @@ object SkillCatalog {
             examples = listOf("来句名言", "背句诗")
         ),
         Skill(
-            id = "teach",
-            title = "教我说话",
-            description = "教我一句新说法，记进本地记忆库；用「|」可以教多种回答，我会换着说",
-            category = CATEGORY_DIALOG,
-            examples = listOf("我教你", "记住：下班了 = 早点回家|路上慢点")
-        ),
-        Skill(
-            id = "chat",
-            title = "日常聊天",
-            description = "内置日常话题语料：同一句话多种回答，累了、加班、宿舍、快递都能接得住",
-            category = CATEGORY_DIALOG,
-            examples = listOf("我好累", "今天加班到十点", "宿舍太吵了", "快递还没到")
-        ),
-        Skill(
-            id = "self_learn",
-            title = "自学习",
-            description = "教过一句之后，相似的新说法它自己就学会了；答不上来的话会收进记忆页等你教",
-            category = CATEGORY_DIALOG,
-            examples = listOf("记住：下班了 = 早点回家", "我下班了啊")
-        ),
-        Skill(
-            id = "continue_chat",
-            title = "接着上文聊",
-            description = "「为什么」「然后呢」「那怎么办」会顺着刚才的话题继续说，不会答非所问",
-            category = CATEGORY_DIALOG,
-            examples = listOf("我好累", "为什么", "那我该怎么办")
-        ),
-        Skill(
             id = "weather",
             title = "天气与气温",
             description = "联网给出实时气温体感和当日高低（没网就用常年气候数据，照样有答案）",

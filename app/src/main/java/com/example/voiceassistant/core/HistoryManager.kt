@@ -54,25 +54,6 @@ class HistoryManager(
         session.recentUserLines(max)
 
     /**
-     * 用户亲手教过的说法，取最近几条。
-     *
-     * 会跟着云端请求一起发出去，作用是让云端**不要和用户教过的内容唱反调**
-     * （比如用户教了「下班了 = 早点回家」，云端就不能回「还在上班」）。
-     */
-    fun taughtMemories(max: Int = DEFAULT_TAUGHT_LIMIT): List<Pair<String, String>> {
-        val repo = session.engine.memoryRepository() ?: return emptyList()
-        return repo.entries()
-            .filter { it.isTaught }
-            .take(max)
-            .map { it.question to it.answer.split('|', '｜').first().trim() }
-    }
-
-    /** 云端的好答案回灌给本地小模型（要学的是「人怎么问」，所以用原话） */
-    fun observeCloudPair(user: String, assistant: String) {
-        session.engine.localModel()?.observePair(user, assistant)
-    }
-
-    /**
      * 这一轮要不要带历史上下文。
      *
      * 两种情况需要：
@@ -96,9 +77,6 @@ class HistoryManager(
 
         /** 每条上下文最多几个字 */
         const val DEFAULT_CLIP_CHARS = 40
-
-        /** 注入 system 的教学记忆条数 */
-        const val DEFAULT_TAUGHT_LIMIT = 2
 
         private val FOLLOW_UP_CUES = listOf(
             "它", "他", "她", "这个", "那个", "那里", "这边", "上面",

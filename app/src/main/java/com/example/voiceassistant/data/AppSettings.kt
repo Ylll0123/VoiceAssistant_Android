@@ -61,18 +61,6 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_THINKING, true)
         set(value) = prefs.edit().putBoolean(KEY_THINKING, value).apply()
 
-    // ---------------------------------------------------------------- 自学习
-
-    /** 是否开启自学习：相似说法自动迁移答案，并自动记住新说法 */
-    var autoLearn: Boolean
-        get() = prefs.getBoolean(KEY_AUTO_LEARN, true)
-        set(value) = prefs.edit().putBoolean(KEY_AUTO_LEARN, value).apply()
-
-    /** 是否启用内置本地小模型（n-gram 生成兜底，完全离线） */
-    var localModel: Boolean
-        get() = prefs.getBoolean(KEY_LOCAL_MODEL, true)
-        set(value) = prefs.edit().putBoolean(KEY_LOCAL_MODEL, value).apply()
-
     /**
      * 是否联网查询：实时天气走 Open-Meteo，答不上来的问题查维基百科。
      * 默认开启，但**联网失败不影响使用**——会退回本地内置内容。
@@ -167,36 +155,6 @@ class AppSettings(context: Context) {
         cloudPrompt = config.systemPrompt
     }
 
-    /**
-     * 待学习问题也按账号分开：那是「我问过但没答上来的话」，
-     * 换个账号还看到别人的问题就很奇怪了（见 [UserScope]）。
-     */
-    private val pendingKey = KEY_PENDING + "_" + UserScope.of(context)
-
-    /** 答不上来的话先收进这里，用户在记忆页一键教会 */
-    var pendingQuestions: List<String>
-        get() {
-            val raw = prefs.getString(pendingKey, "").orEmpty()
-            if (raw.isEmpty()) return emptyList()
-            return raw.split(SEP).filter { it.isNotBlank() }
-        }
-        set(value) {
-            val raw = value.map { it.replace(SEP, " ") }.distinct()
-                .take(MAX_PENDING).joinToString(SEP)
-            prefs.edit().putString(pendingKey, raw).apply()
-        }
-
-    fun addPending(question: String) {
-        val cleaned = question.trim()
-        if (cleaned.length < 2) return
-        if (pendingQuestions.any { it == cleaned }) return
-        pendingQuestions = listOf(cleaned) + pendingQuestions
-    }
-
-    fun removePending(question: String) {
-        pendingQuestions = pendingQuestions.filter { it != question }
-    }
-
     // ----------------------------------------------------------------
 
     /** 恢复出厂设置：只清设置，不动记忆库（记忆是用户资产） */
@@ -212,10 +170,7 @@ class AppSettings(context: Context) {
         private const val KEY_STYLE = "reply_style"
         private const val KEY_FOLLOW_UP = "proactive_follow_up"
         private const val KEY_THINKING = "show_thinking"
-        private const val KEY_AUTO_LEARN = "auto_learn"
-        private const val KEY_LOCAL_MODEL = "local_model"
         private const val KEY_ONLINE = "online_search"
-        private const val KEY_PENDING = "pending_questions"
         private const val KEY_CLOUD = "cloud_enabled"
         private const val KEY_LANGUAGE = "language"
         private const val KEY_CLOUD_MODE = "cloud_mode"
@@ -225,7 +180,6 @@ class AppSettings(context: Context) {
         private const val KEY_CLOUD_PROMPT = "cloud_prompt"
 
         private const val SEP = "␟"
-        private const val MAX_PENDING = 40
 
         /** 默认界面语言：中文 */
         const val LANGUAGE_ZH = "zh"

@@ -1,6 +1,5 @@
 package com.example.voiceassistant.assistant
 
-import com.example.voiceassistant.memory.InMemoryMemoryRepository
 import com.example.voiceassistant.service.AudioController
 import com.example.voiceassistant.service.DeviceController
 import com.example.voiceassistant.tool.ReminderTool
@@ -26,7 +25,7 @@ class SkillCatalogTest {
     private val networkDependent = setOf("online")
 
     /** 和真机一致的引擎：带一个本地记忆库（测试用内存实现） */
-    private fun newEngine() = AssistantEngine(memory = InMemoryMemoryRepository())
+    private fun newEngine() = AssistantEngine()
 
     @Test
     fun `技能页的每个示例都能被引擎执行`() {

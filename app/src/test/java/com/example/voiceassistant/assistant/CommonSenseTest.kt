@@ -122,24 +122,4 @@ class CommonSenseTest {
         // 两条都属于天气常识之外的不同分类时不强求，这里只验证第二条仍由知识库作答
         assertTrue(second.isNotEmpty())
     }
-
-    // ------------------------------------------------------------------ 小模型
-
-    @Test
-    fun `模型优先用检索问答而不是随机游走`() {
-        val model = NgramModel()
-        model.observePair("天气怎么样", "今天有雨，出门记得带伞。")
-        val reply = model.generate("今天天气怎么样")
-        assertEquals("今天有雨，出门记得带伞。", reply)
-        assertEquals(1, model.pairCount())
-    }
-
-    @Test
-    fun `灌入知识库后模型参数和问答对都变大`() {
-        val before = NgramModel()
-        val model = NgramModel()
-        model.observePairs(KnowledgeBase.trainingPairs())
-        assertTrue(model.pairCount() > 100)
-        assertTrue(model.nodeCount() > before.nodeCount())
-    }
 }

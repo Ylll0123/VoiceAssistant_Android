@@ -40,8 +40,6 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
     private lateinit var btnMute: ImageButton
     private lateinit var btnContinuous: ImageButton
     private lateinit var btnClear: ImageButton
-    private lateinit var btnTeach: TextView
-    private lateinit var tvTeachHint: TextView
     private lateinit var tvStatus: TextView
     private lateinit var root: LinearLayout
 
@@ -66,7 +64,6 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
         host.bindChatUi(this)
         host.session.attach(this)   // 立即回调一次，重建视图后也能恢复全部消息
         refreshToolbar()
-        refreshTeachHint()
         status(getString(R.string.status_idle))
     }
 
@@ -79,8 +76,6 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
         btnMute = view.findViewById(R.id.btnMute)
         btnContinuous = view.findViewById(R.id.btnContinuous)
         btnClear = view.findViewById(R.id.btnClear)
-        btnTeach = view.findViewById(R.id.btnTeach)
-        tvTeachHint = view.findViewById(R.id.tvTeachHint)
         tvStatus = view.findViewById(R.id.tvStatus)
     }
 
@@ -142,11 +137,6 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
         }
 
         btnClear.setOnClickListener { host.clearChat() }
-
-        // 教学入口：教一句 / 看记忆 / 补答没答上来的，都在这个菜单里
-        btnTeach.setOnClickListener {
-            TeachDialog.showMenu(this) { host.openMemory() }
-        }
     }
 
     // ---------------------------------------------------------------- 气泡操作
@@ -168,7 +158,6 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
                     else -> {
                         if (host.deleteTurn(index)) {
                             toast(getString(R.string.bubble_delete_done))
-                            refreshTeachHint()
                         }
                     }
                 }
@@ -255,12 +244,6 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
         )
     }
 
-    /** 教学按钮旁边那行小字：让用户知道「记忆里已经有多少条」 */
-    private fun refreshTeachHint() {
-        val count = host.session.engine.memoryRepository()?.entries()?.size ?: 0
-        tvTeachHint.text = getString(R.string.features_memory_count, count)
-    }
-
     private fun scrollToBottom() {
         val lastIndex = adapter.itemCount - 1
         if (lastIndex >= 0) rvMessages.smoothScrollToPosition(lastIndex)
@@ -277,7 +260,6 @@ class ChatFragment : Fragment(), VoiceAssistantActivity.ChatUi, ChatSession.List
         // 从设置页改了开关再回来，图标要跟着更新
         if (isAdded) {
             refreshToolbar()
-            refreshTeachHint()
             host.session.attach(this)
         }
     }

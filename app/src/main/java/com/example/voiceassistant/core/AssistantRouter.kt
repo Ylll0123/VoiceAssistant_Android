@@ -218,8 +218,6 @@ class AssistantRouter(
             }.getOrElse { LlmResult.Fail(Http.describe(it, config.cloud.timeoutMs)) }
 
             if (result is LlmResult.Ok) {
-                // 云端的好答案也喂给本地小模型：要学的是「人怎么问」，所以用原话
-                history.observeCloudPair(plan.raw, result.text)
                 return Reply(
                     text = result.text,
                     source = Source.CLOUD,
@@ -341,18 +339,6 @@ class AssistantRouter(
         sb.append("现在是 ${now.year} 年 ${now.monthValue} 月 ${now.dayOfMonth} 日，")
             .append("${now.hour} 点 ${String.format("%02d", now.minute)} 分左右。")
 
-        val taught = history.taughtMemories(TAUGHT_MEMORY_LIMIT)
-        if (taught.isNotEmpty()) {
-            sb.append("\n教过：")
-            for ((question, answer) in taught) {
-                sb.append("\n「$question」→「$answer」")
-            }
-        }
         return sb.toString()
-    }
-
-    private companion object {
-        /** 注入 system 的教学记忆条数（每轮都重发，尽量少） */
-        const val TAUGHT_MEMORY_LIMIT = 2
     }
 }

@@ -92,45 +92,6 @@
         android:paddingBottom="8dp"
         android:scrollbars="none" />
 
-    <!-- 教学入口：紧贴输入框上方 -->
-    <LinearLayout
-        android:id="@+id/teachBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="14dp"
-        android:paddingTop="2dp"
-        android:paddingEnd="14dp"
-        android:paddingBottom="4dp">
-
-        <TextView
-            android:id="@+id/btnTeach"
-            android:layout_width="wrap_content"
-            android:layout_height="28dp"
-            android:background="@drawable/bg_chip"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:text="@string/teach_action"
-            android:textColor="@color/brand_primary"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/tvTeachHint"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:text="@string/features_memory_hint"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp" />
-    </LinearLayout>
-
     <!-- 底部输入区 -->
     <LinearLayout
         android:id="@+id/inputBar"

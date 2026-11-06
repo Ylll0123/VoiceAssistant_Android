@@ -39,21 +39,12 @@
     <string name="error_empty_input">先说点什么吧</string>
 
     <!-- 教学入口（对话页输入框上方） -->
-    <string name="teach_action">教学</string>
-    <string name="teach_title">教学</string>
-    <string name="teach_action_new">教一句：这句话该怎么回答</string>
-    <string name="teach_action_memory">查看我的记忆（%1$d 条）</string>
-    <string name="teach_action_pending">补上没答上来的话（%1$d 句）</string>
 
     <!-- 功能页 -->
     <string name="features_title">功能</string>
     <string name="features_subtitle">点一行展开，再点一条看示例说法；点示例直接在对话页执行。</string>
     <string name="features_empty">暂时没有可展示的功能。</string>
     <string name="features_count">%1$d 项</string>
-    <string name="features_memory_group">记忆与教学</string>
-    <string name="features_memory_open">打开我的记忆</string>
-    <string name="features_memory_hint">教过的、自学到的、内置的都存在手机本地</string>
-    <string name="features_memory_count">共 %1$d 条记忆</string>
 
     <string name="group_time">时间与日期</string>
     <string name="group_calc">计算与换算</string>
@@ -131,28 +122,6 @@
     <string name="login_welcome">欢迎你，%1$s</string>
 
     <!-- 本地记忆（教学）页 -->
-    <string name="memory_title">本地记忆</string>
-    <string name="memory_subtitle">教过我的话都存在手机本地，越多越会聊。点「教一句」可以随时补一条。</string>
-    <string name="memory_teach">教一句</string>
-    <string name="memory_empty">还没有记忆。点右上角「教一句」，告诉助手「这句话该怎么回答」。</string>
-    <string name="memory_source_taught">我教的</string>
-    <string name="memory_source_seed">内置</string>
-    <string name="memory_source_learned">自学的</string>
-    <string name="memory_count_full">共 %1$d 条（教 %2$d / 自学 %3$d / 内置 %4$d）</string>
-    <string name="memory_pending_group">没答上来的话（%1$d）</string>
-    <string name="memory_pending_hint">这些是你说过、我还没学会的。点一下就能教会我。</string>
-    <string name="memory_pending_empty">暂时没有。聊天时遇到我答不上来的，会自动收进这里。</string>
-    <string name="memory_teach_pending_title">教这句该怎么回答</string>
-    <string name="memory_teach_pending_saved">学会了：当我听到「%1$s」，就说「%2$s」</string>
-    <string name="memory_clear_pending">清空待学习</string>
-    <string name="memory_delete_title">删除这条记忆？</string>
-    <string name="memory_delete_message">删除后助手就答不上这个说法了，可以再教一遍。</string>
-    <string name="memory_unavailable">本地记忆库打开失败，本次运行使用临时记忆（重启后清空）。</string>
-    <string name="memory_teach_dialog_title">教助手一句话</string>
-    <string name="memory_teach_question_hint">我说什么（例如：下班了）</string>
-    <string name="memory_teach_answer_hint">它该怎么回答（例如：早点回家）</string>
-    <string name="memory_teach_saved">已记住：%1$s → %2$s</string>
-    <string name="memory_teach_incomplete">问法和回答都要填。</string>
 
     <!-- 提醒通知 -->
     <string name="notify_channel_reminder">提醒与计时</string>
@@ -206,14 +175,6 @@
     <string name="skill_desc_joke">本地笑话库，随机一条</string>
     <string name="skill_title_quote">来句名言</string>
     <string name="skill_desc_quote">随机一句名言或诗句</string>
-    <string name="skill_title_teach">教我说话</string>
-    <string name="skill_desc_teach">教我一句新说法，记进本地记忆库；用「|」可以教多种回答</string>
-    <string name="skill_title_chat">日常聊天</string>
-    <string name="skill_desc_chat">内置日常话题语料：同一句话多种回答，累了、加班、宿舍、快递都能接得住</string>
-    <string name="skill_title_self_learn">自学习</string>
-    <string name="skill_desc_self_learn">教过一句之后，相似的新说法它自己就学会了；答不上来的话会收进记忆页等你教</string>
-    <string name="skill_title_continue_chat">接着上文聊</string>
-    <string name="skill_desc_continue_chat">「为什么」「然后呢」「那怎么办」会顺着刚才的话题继续说，不会答非所问</string>
     <string name="skill_title_weather">天气与气温</string>
     <string name="skill_desc_weather">联网给出实时气温体感和当日高低（没网就用常年气候数据，照样有答案）</string>
     <string name="skill_title_outing">出行建议</string>

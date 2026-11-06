@@ -338,26 +338,18 @@ object CloudLlmHandler : CloudSource {
 
     /**
      * 这些意图是**本机功能**，永远不问云端：
-     *
-     * - 教学过程（教 / 被教 / 取消）一旦被大模型接走，用户就再也教不会本地助手了；
-     * - 反问补全（clarify / slot）是本地多轮的中间状态，让大模型插嘴会打断流程；
-     * - 记忆命中是用户亲手教的内容，必须原样答。
+     * 反问补全（clarify / slot）是本地多轮的中间状态，让大模型插嘴会打断流程。
      */
     private val LOCAL_ONLY_INTENTS = setOf(
         AssistantEngine.INTENT_EMPTY,
-        AssistantEngine.INTENT_TEACH_PROMPT,
-        AssistantEngine.INTENT_TAUGHT,
-        AssistantEngine.INTENT_TEACH_CANCEL,
         AssistantEngine.INTENT_CLARIFY,
         AssistantEngine.INTENT_CLARIFY_REJECTED,
-        DialogContext.INTENT_SLOT,
-        AssistantEngine.INTENT_MEMORY
+        DialogContext.INTENT_SLOT
     )
 
-    /** 本地「明显没答好」的意图：说明规则、知识库、模型都没接住 */
+    /** 本地「明显没答好」的意图：说明规则和思考框架都没接住 */
     private val WEAK_INTENTS = setOf(
         AssistantEngine.INTENT_FALLBACK,
-        AssistantEngine.INTENT_LOCAL_MODEL,
         AssistantEngine.INTENT_THOUGHT,
         AssistantEngine.INTENT_LOGIC_FRAME,
         AssistantEngine.INTENT_CLARIFY

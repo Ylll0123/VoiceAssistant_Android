@@ -33,12 +33,7 @@ import com.example.voiceassistant.tool.ToolIntent
 import com.example.voiceassistant.assistant.AssistantConfig
 import com.example.voiceassistant.assistant.AssistantEngine
 import com.example.voiceassistant.assistant.CityClimate
-import com.example.voiceassistant.assistant.DialogCorpus
-import com.example.voiceassistant.assistant.KnowledgeBase
-import com.example.voiceassistant.assistant.NgramModel
 import com.example.voiceassistant.assistant.QueryUnderstanding
-import com.example.voiceassistant.assistant.ReplyCrafter
-import com.example.voiceassistant.assistant.ThoughtBank
 import com.example.voiceassistant.core.AssistantPipeline
 import com.example.voiceassistant.core.AssistantRouter
 import com.example.voiceassistant.core.HistoryManager
@@ -56,10 +51,8 @@ import com.example.voiceassistant.handler.qa.QaLib
 import com.example.voiceassistant.handler.qa.QaLocalHandler
 import com.example.voiceassistant.handler.web.WebHandler
 import com.example.voiceassistant.installer.ApkCleaner
-import com.example.voiceassistant.memory.MemorySeed
 import com.example.voiceassistant.network.LlmResult
 import com.example.voiceassistant.network.NetworkState
-import com.example.voiceassistant.memory.SqliteMemoryRepository
 import com.example.voiceassistant.reminder.ReminderAlarm
 import com.example.voiceassistant.reminder.ReminderFired
 import com.example.voiceassistant.reminder.Reminders
@@ -96,15 +89,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private lateinit var settings: AppSettings
 
     /**
-     * 内置本地小模型（字符级 n-gram，纯 Kotlin）。
-     *
-     * 启动时先读上次的训练进度（filesDir/ngram_model.txt）；
-     * 第一次没有存档，就用内置语料打底训练并存档。
-     * 之后每轮对话都会增量学习，退到后台时把新学的写盘。
-     */
-    private lateinit var localModel: NgramModel
-
-    /**
      * 最近一次查过天气的城市。
      * 用户接着说「那上海呢 / 那里呢」时用它兜底，
      * 否则 OnlineQuery 拿不到城市就不联网。
@@ -139,12 +123,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     /** 是否展示本地「理解过程」（淡色小字，答案出现即移除） */
     var showThinking: Boolean = true
-        private set
-
-    var autoLearn: Boolean = true
-        private set
-
-    var localModelEnabled: Boolean = true
         private set
 
     var onlineSearchEnabled: Boolean = true
@@ -215,12 +193,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     /** 会话状态（消息 + 引擎），整个应用共享一份 */
     val session: ChatSession by lazy {
-        ChatSession(
-            AssistantEngine(
-                memory = SqliteMemoryRepository(applicationContext),
-                model = localModel
-            )
-        )
+        ChatSession(AssistantEngine())
     }
 
     /** 对话历史：只负责"记几轮、给云端时截多长" */
@@ -315,9 +288,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         // 联网状态：没网时网络层直接失败回落本地，不再干等超时
         NetworkState.init(this)
 
-        // 小模型要先于会话创建（会话的引擎里要引用它）
-        localModel = createLocalModel()
-
         // 上次的对话先恢复出来，再补欢迎语：
         // 否则重启后屏幕上只剩一句自我介绍，追问「那明天呢」就接不上了。
         //
@@ -338,9 +308,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         // 先把持久化下来的设置整体灌回去，再创建界面，
         // 否则设置页会先按默认值画一遍，再被覆盖，看着像闪一下
         restoreSettings()
-
-        // 答不上来的话 → 收进待学习列表（记忆页可以一键教会）
-        session.engine.onUnanswered = { question -> settings.addPending(question) }
 
         // 总线订阅放在界面起来之后：事件回调里要碰 chatUi / tts
         subscribeEvents()
@@ -517,22 +484,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         updateTabUi()
     }
 
-    /**
-     * 打开本地记忆页。
-     *
-     * 底部导航只有三项，记忆不是独立 tab，而是功能页里的二级页面——
-     * 所以用 addToBackStack，系统返回时回到功能页，底栏高亮仍是「功能」。
-     */
-    fun openMemory() {
-        asr.cancel()
-        tts.stop()
-        chatUi?.setMicActive(false)
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, MemoryFragment())
-            .addToBackStack(BACK_MEMORY)
-            .commit()
-    }
-
     /** 退出登录：清掉身份，回到登录页（任务栈整体重置） */
     fun gotoLogin() {
         startActivity(
@@ -621,8 +572,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         replyStyle = settings.replyStyle
         proactiveFollowUp = settings.proactiveFollowUp
         showThinking = settings.showThinking
-        autoLearn = settings.autoLearn
-        localModelEnabled = settings.localModel
         onlineSearchEnabled = settings.onlineSearch
         cloudConfig = settings.cloudConfig()
         syncAssistantConfig()
@@ -636,51 +585,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             else -> AssistantConfig.ReplyStyle.STANDARD
         }
         AssistantConfig.proactiveFollowUp = proactiveFollowUp
-        AssistantConfig.autoLearn = autoLearn
-        AssistantConfig.localModel = localModelEnabled
         AssistantConfig.onlineSearch = onlineSearchEnabled
-    }
-
-    /**
-     * 加载本地小模型：有存档读存档，没有就用内置语料打底并存档。
-     * 打底语料 = 闲聊话题的全部应答 + 预置常识的答案。
-     */
-    private fun createLocalModel(): NgramModel {
-        val file = File(filesDir, MODEL_FILE)
-        val model = NgramModel()
-        val loaded = runCatching {
-            if (file.exists()) model.loadInto(file.readText()) else false
-        }.getOrDefault(false)
-        if (!loaded) {
-            model.observeAll(
-                DialogCorpus.topics.flatMap { it.replies + it.more + it.advice + it.followUps + it.samples }
-            )
-            model.observeAll(MemorySeed.pairs.map { it.second })
-            // 常识知识库的问答对是模型的"主课"：问句和答案配对训练，
-            // 模型才学得到「问句的尾巴接答案的开头」，续写才有因果
-            model.observePairs(MemorySeed.pairs)
-            model.observePairs(KnowledgeBase.trainingPairs())
-            // 思维模式语料：让模型学到这种「接住 + 给路径 + 抛回来」的说话方式
-            model.observeAll(ThoughtBank.allSentences())
-            model.observePairs(ReplyCrafter.trainingPairs())
-            saveLocalModel()
-        } else if (model.pairCount() == 0) {
-            // 旧存档没有问答对，补齐再存一次
-            model.observePairs(MemorySeed.pairs)
-            model.observePairs(KnowledgeBase.trainingPairs())
-            model.observeAll(ThoughtBank.allSentences())
-            model.observePairs(ReplyCrafter.trainingPairs())
-            saveLocalModel()
-        }
-        return model
-    }
-
-    /** 把小模型当前的训练进度写盘（退后台 / 退出时调用） */
-    private fun saveLocalModel() {
-        runCatching {
-            File(filesDir, MODEL_FILE).writeText(localModel.serialize())
-            localModel.markSaved()
-        }
     }
 
     fun setSpeakEnabled(enabled: Boolean) {
@@ -722,18 +627,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     fun setShowThinking(enabled: Boolean) {
         showThinking = enabled
         settings.showThinking = enabled
-    }
-
-    fun setAutoLearn(enabled: Boolean) {
-        autoLearn = enabled
-        settings.autoLearn = enabled
-        syncAssistantConfig()
-    }
-
-    fun setLocalModelEnabled(enabled: Boolean) {
-        localModelEnabled = enabled
-        settings.localModel = enabled
-        syncAssistantConfig()
     }
 
     fun setOnlineSearchEnabled(enabled: Boolean) {
@@ -1077,7 +970,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         if (::asr.isInitialized) asr.cancel()
         if (::tts.isInitialized) tts.stop()
         chatUi?.setMicActive(false)
-        if (::localModel.isInitialized) saveLocalModel()
         super.onPause()
     }
 
@@ -1105,10 +997,5 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         /** 外部传入一句话用的 extra 名 */
         const val EXTRA_QUERY = "query"
 
-        /** 记忆页在返回栈里的名字 */
-        const val BACK_MEMORY = "memory"
-
-        /** 本地小模型训练进度的存档文件名 */
-        const val MODEL_FILE = "ngram_model.txt"
     }
 }

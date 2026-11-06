@@ -67,18 +67,13 @@ object RoutePlanner {
     /**
      * 本机功能：**任何时候都不交给联网或云端**。
      *
-     * 教学、槽位追问这类一旦被大模型接手，用户就再也教不会本地助手了；
-     * 记忆命中同理——那是用户亲手教的内容，必须原样答。
+     * 槽位追问这类一旦被大模型接手，多轮补参的流程就断了。
      */
     private val LOCAL_ONLY = setOf(
         AssistantEngine.INTENT_EMPTY,
-        AssistantEngine.INTENT_TEACH_PROMPT,
-        AssistantEngine.INTENT_TAUGHT,
-        AssistantEngine.INTENT_TEACH_CANCEL,
         DialogContext.INTENT_CLARIFY,
         AssistantEngine.INTENT_CLARIFY_REJECTED,
-        DialogContext.INTENT_SLOT,
-        AssistantEngine.INTENT_MEMORY
+        DialogContext.INTENT_SLOT
     )
 
     /**

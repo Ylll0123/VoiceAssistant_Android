@@ -158,8 +158,7 @@ class CloudLlmHandlerTest {
         assertTrue(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_THOUGHT, "可以这么想：先分清楚", cfg))
         // 本地答得挺好就不浪费额度
         assertFalse(CloudLlmHandler.shouldAsk("weather", "北京现在常年 12℃~20℃，出门带件外套。", cfg))
-        // 本机功能永远不问
-        assertFalse(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_TAUGHT, "记住了。", cfg))
+        // 本机多轮的中间状态永远不问
         assertFalse(CloudLlmHandler.shouldAsk("slot", "你要翻译哪个词？", cfg))
     }
 
@@ -168,8 +167,7 @@ class CloudLlmHandlerTest {
         val cfg = config(mode = CloudLlmHandler.CloudMode.CLOUD_FIRST)
         assertTrue(CloudLlmHandler.shouldAsk("chat", "抱一下。想说就说。", cfg))
         assertTrue(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_KNOWLEDGE, "光合作用是…", cfg))
-        // 教学流程不交出去，否则用户再也教不会本地助手
-        assertFalse(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_TEACH_PROMPT, "那这句该怎么回答？", cfg))
+        // 反问补全是本地多轮中间状态，不交出去
         assertFalse(CloudLlmHandler.shouldAsk("slot", "你要翻译哪个词？", cfg))
     }
 
