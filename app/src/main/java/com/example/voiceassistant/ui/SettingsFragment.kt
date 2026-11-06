@@ -15,6 +15,7 @@ import com.example.voiceassistant.assistant.SkillCatalog
 import com.example.voiceassistant.data.AccountStore
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.handler.llm.CloudLlmHandler
+import com.example.voiceassistant.reminder.Reminders
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -309,6 +310,9 @@ class SettingsFragment : Fragment() {
             .setTitle(R.string.settings_logout)
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(R.string.action_ok) { _, _ ->
+                // 先撤销这个账号排的闹钟、丢掉提醒中心，再清身份：
+                // 否则下一个账号登进来还会收到上一个人的提醒
+                Reminders.detach(requireContext())
                 AccountStore(requireContext()).signOut()
                 host.gotoLogin()
             }

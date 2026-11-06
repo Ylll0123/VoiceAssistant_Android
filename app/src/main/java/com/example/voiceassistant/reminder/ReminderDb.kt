@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
+import com.example.voiceassistant.data.UserScope
 
 /**
  * 提醒的 SQLite 持久化（零新增依赖）。
@@ -28,7 +29,14 @@ import android.util.Log
  */
 class ReminderDb(context: Context) : ReminderRepository {
 
-    private val helper = Helper(context.applicationContext)
+    /** 每个账号一本提醒账：换账号就看不到别人的提醒（见 [UserScope]） */
+    private val dbName = DB_NAME_PREFIX + UserScope.of(context)
+
+    init {
+        UserScope.adoptLegacyDb(context.applicationContext, DB_NAME_LEGACY, dbName)
+    }
+
+    private val helper = Helper(context.applicationContext, dbName)
 
     override fun all(): List<Reminder> {
         val list = mutableListOf<Reminder>()
@@ -111,7 +119,8 @@ class ReminderDb(context: Context) : ReminderRepository {
         )
     }.getOrDefault(0)
 
-    private class Helper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
+    private class Helper(context: Context, name: String) :
+        SQLiteOpenHelper(context, name, null, DB_VERSION) {
 
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
@@ -137,7 +146,8 @@ class ReminderDb(context: Context) : ReminderRepository {
 
     private companion object {
         const val TAG = "ReminderDb"
-        const val DB_NAME = "assistant_reminder.db"
+        const val DB_NAME_PREFIX = "assistant_reminder_"
+        const val DB_NAME_LEGACY = "assistant_reminder.db"
         const val DB_VERSION = 1
         const val TABLE = "reminder"
         const val COL_ID = "id"

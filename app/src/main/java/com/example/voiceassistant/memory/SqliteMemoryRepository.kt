@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
+import com.example.voiceassistant.data.UserScope
 import com.example.voiceassistant.assistant.FuzzyMatcher
 
 /**
@@ -19,7 +20,13 @@ import com.example.voiceassistant.assistant.FuzzyMatcher
  */
 class SqliteMemoryRepository(context: Context) : MemoryRepository {
 
-    private val helper = Helper(context.applicationContext)
+    private val dbName = DB_NAME_PREFIX + UserScope.of(context)
+
+    init {
+        UserScope.adoptLegacyDb(context.applicationContext, DB_NAME_LEGACY, dbName)
+    }
+
+    private val helper = Helper(context.applicationContext, dbName)
 
     @Volatile
     private var cache: List<MemoryEntry>? = null
@@ -125,7 +132,8 @@ class SqliteMemoryRepository(context: Context) : MemoryRepository {
         }.onFailure { Log.w(TAG, "预置记忆失败", it) }
     }
 
-    private class Helper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
+    private class Helper(context: Context, name: String) :
+        SQLiteOpenHelper(context, name, null, DB_VERSION) {
 
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
@@ -150,7 +158,8 @@ class SqliteMemoryRepository(context: Context) : MemoryRepository {
 
     private companion object {
         const val TAG = "MemoryStore"
-        const val DB_NAME = "assistant_memory.db"
+        const val DB_NAME_PREFIX = "assistant_memory_"
+        const val DB_NAME_LEGACY = "assistant_memory.db"
         const val DB_VERSION = 1
         const val TABLE = "memory"
         const val COL_ID = "id"

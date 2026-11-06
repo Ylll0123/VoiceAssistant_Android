@@ -1,6 +1,7 @@
 package com.example.voiceassistant.reminder
 
 import android.content.Context
+import com.example.voiceassistant.data.UserScope
 import com.example.voiceassistant.tool.ReminderTool
 
 /**
@@ -18,6 +19,10 @@ object Reminders {
 
     @Volatile
     private var instance: ReminderCenter? = null
+
+    /** 当前这份中心属于哪个账号；账号一变就重建（见 [UserScope]） */
+    @Volatile
+    private var owner: String? = null
 
     /**
      * 装上提醒能力（幂等，重复调用只是复用同一个中心）。
@@ -37,19 +42,44 @@ object Reminders {
         runCatching { center.rescheduleAll() }
     }
 
-    /** 提醒中心（进程级单例） */
+    /**
+     * 提醒中心（按账号分区的进程级单例）。
+     *
+     * 账号变了就换一本账：否则 A 登录时建的中心会一直拿着 A 的数据库，
+     * B 登进来看到的是 A 的提醒。判断放在这里而不是登录按钮上，
+     * 是因为广播接收器、工具层也都会走 `center()`，都得拿到对的那一份。
+     */
     fun center(context: Context): ReminderCenter {
-        instance?.let { return it }
+        val app = context.applicationContext
+        val current = UserScope.of(app)
+        instance?.let { if (owner == current) return it }
         synchronized(this) {
-            instance?.let { return it }
-            val app = context.applicationContext
+            instance?.let { if (owner == current) return it }
             val created = ReminderCenter(
                 repo = ReminderDb(app),
                 schedule = { ReminderAlarm.schedule(app, it) },
                 cancelAlarm = { ReminderAlarm.cancel(app, it) }
             )
             instance = created
+            owner = current
+            // 关键词兜底通道也得跟着换，否则还会往上一本账里写
+            ReminderTool.sink = created
             return created
+        }
+    }
+
+    /**
+     * 登出前调用：把当前账号已排的闹钟全部撤掉，再丢掉中心。
+     *
+     * 不撤的话，A 的闹钟会留在 AlarmManager 里，到点却去 B 的库里找 id，
+     * 轻则找不到、重则弹出一条不是自己的提醒。
+     */
+    fun detach(context: Context) {
+        val app = context.applicationContext
+        runCatching { center(app).list().forEach { ReminderAlarm.cancel(app, it.id) } }
+        synchronized(this) {
+            instance = null
+            owner = null
         }
     }
 

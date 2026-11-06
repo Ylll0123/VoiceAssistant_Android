@@ -167,17 +167,23 @@ class AppSettings(context: Context) {
         cloudPrompt = config.systemPrompt
     }
 
+    /**
+     * 待学习问题也按账号分开：那是「我问过但没答上来的话」，
+     * 换个账号还看到别人的问题就很奇怪了（见 [UserScope]）。
+     */
+    private val pendingKey = KEY_PENDING + "_" + UserScope.of(context)
+
     /** 答不上来的话先收进这里，用户在记忆页一键教会 */
     var pendingQuestions: List<String>
         get() {
-            val raw = prefs.getString(KEY_PENDING, "").orEmpty()
+            val raw = prefs.getString(pendingKey, "").orEmpty()
             if (raw.isEmpty()) return emptyList()
             return raw.split(SEP).filter { it.isNotBlank() }
         }
         set(value) {
             val raw = value.map { it.replace(SEP, " ") }.distinct()
                 .take(MAX_PENDING).joinToString(SEP)
-            prefs.edit().putString(KEY_PENDING, raw).apply()
+            prefs.edit().putString(pendingKey, raw).apply()
         }
 
     fun addPending(question: String) {

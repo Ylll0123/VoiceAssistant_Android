@@ -22,23 +22,50 @@ class ChatHistoryStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
+    /**
+     * 每个账号一份历史：键名带上分区名（见 [UserScope]）。
+     *
+     * 不这么做的话，换个账号登进来第一眼看到的是上一个人的对话，
+     * 「区分个人数据」就成了一句空话。
+     */
+    private val keyItems = "items_" + UserScope.of(context)
+
+    init {
+        migrateLegacy()
+    }
+
     /** 读出上次的对话；文件损坏 / 为空时返回空表 */
-    fun load(): List<ChatMessage> = decode(prefs.getString(KEY_ITEMS, null))
+    fun load(): List<ChatMessage> = decode(prefs.getString(keyItems, null))
 
     /** 覆盖保存（只留最近若干条） */
     fun save(messages: List<ChatMessage>) {
-        prefs.edit().putString(KEY_ITEMS, encode(messages)).apply()
+        prefs.edit().putString(keyItems, encode(messages)).apply()
     }
 
     /** 清空对话时一并把落盘内容删掉，否则重启会「复活」 */
     fun clear() {
-        prefs.edit().remove(KEY_ITEMS).apply()
+        prefs.edit().remove(keyItems).apply()
+    }
+
+    /**
+     * v3.6 及更早版本只有一个 `items` 键，没有归属。
+     *
+     * 升级后把它判给**当前登录的人**（没有归属的旧数据给人，比扔掉更合理），
+     * 搬完就删，避免下次换账号时又被搬一遍。
+     */
+    private fun migrateLegacy() {
+        val legacy = prefs.getString(LEGACY_KEY, null) ?: return
+        if (!prefs.contains(keyItems)) {
+            prefs.edit().putString(keyItems, legacy).remove(LEGACY_KEY).apply()
+        } else {
+            prefs.edit().remove(LEGACY_KEY).apply()
+        }
     }
 
     companion object {
 
         private const val PREF_NAME = "chat_history"
-        private const val KEY_ITEMS = "items"
+        private const val LEGACY_KEY = "items"
 
         /** 最多保留多少条：够接上下文、又不至于把 prefs 撑大 */
         const val MAX_MESSAGES = 40
