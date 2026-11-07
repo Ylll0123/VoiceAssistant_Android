@@ -4,7 +4,11 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.view.inputmethod.InputMethodManager
 import android.content.res.ColorStateList
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -120,6 +124,11 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private lateinit var scrim: View
     private lateinit var rvConversations: RecyclerView
     private lateinit var drawerAdapter: ConversationAdapter
+    private lateinit var btnEditChats: TextView
+    private lateinit var contentRoot: View
+
+    /** 抽屉打开时内容区被模糊；记一下当前状态，避免重复设置 */
+    private var contentBlurred = false
 
     private var chatView: ChatFragment? = null
     private var settingsOpen = false
@@ -216,7 +225,11 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
         // 先挂上对话页：session 装载完要有人接住回调，否则列表永远是空的
         showChatFragment()
-        openConversation(conversations.current())
+        if (conversations.list().isEmpty()) {
+            startBlankConversation()
+        } else {
+            openConversation(conversations.current())
+        }
 
         subscribeReminder()
 
@@ -252,6 +265,8 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         drawerPanel = findViewById(R.id.drawerPanel)
         scrim = findViewById(R.id.scrim)
         rvConversations = findViewById(R.id.rvConversations)
+        btnEditChats = findViewById(R.id.btnEditChats)
+        contentRoot = findViewById(R.id.contentRoot)
     }
 
     private fun applyInsets() {
@@ -309,8 +324,13 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     private fun bindDrawer() {
         drawerAdapter = ConversationAdapter(
-            onClick = { openConversation(it) },
-            onLongClick = { confirmDeleteConversation(it) }
+            onOpen = { openConversation(it) },
+            onDelete = { confirmDeleteConversation(it) },
+            onAdd = {
+                closeDrawer()
+                newConversation()
+            },
+            onEnterEdit = { setChatsEditing(true) }
         )
         rvConversations.layoutManager = LinearLayoutManager(this)
         rvConversations.adapter = drawerAdapter
@@ -318,11 +338,43 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         findViewById<TextView>(R.id.tvDrawerUser).text =
             AccountStore(this).currentUser.orEmpty()
 
-        findViewById<View>(R.id.btnNewChat).setOnClickListener {
-            closeDrawer()
-            newConversation()
-        }
+        btnEditChats.setOnClickListener { setChatsEditing(!drawerAdapter.isEditing()) }
         scrim.setOnClickListener { closeDrawer() }
+    }
+
+    /**
+     * 进出「编辑对话记录」。
+     *
+     * 编辑状态下每条的右侧露出删除按钮，右上角那颗白色小气泡的文案换成「完成」。
+     */
+    private fun setChatsEditing(editing: Boolean) {
+        if (!::drawerAdapter.isInitialized) return
+        drawerAdapter.setEditing(editing)
+        btnEditChats.setText(if (editing) R.string.drawer_done else R.string.drawer_edit)
+    }
+
+    /**
+     * 背景模糊。
+     *
+     * Android 12 起可以直接给内容区挂 [RenderEffect]——抽屉拉出来时，
+     * 后面的对话是真的糊掉，而不是压一层灰。老系统没有这个能力，
+     * 就退回「加深遮罩」，观感差点但至少不会显得没层次。
+     */
+    private fun setContentBlurred(blurred: Boolean) {
+        if (!::contentRoot.isInitialized) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            scrim.setBackgroundColor(if (blurred) 0x8C000000.toInt() else 0x66000000)
+            return
+        }
+        if (contentBlurred == blurred) return
+        contentBlurred = blurred
+        contentRoot.setRenderEffect(
+            if (blurred) {
+                RenderEffect.createBlurEffect(BLUR_RADIUS, BLUR_RADIUS, Shader.TileMode.CLAMP)
+            } else {
+                null
+            }
+        )
     }
 
     private fun refreshDrawer() {
@@ -330,8 +382,16 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         drawerAdapter.submit(list, current?.id)
     }
 
+    private fun hideKeyboard() {
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(window.decorView.windowToken, 0)
+        currentFocus?.clearFocus()
+    }
+
     private fun openDrawer() {
         drawerOpen = true
+        // 键盘收起来：不然抽屉只有半屏高，列表被顶掉一截
+        hideKeyboard()
         refreshDrawer()
         // 抽屉占屏宽 4/5，比侧栏宽、比全屏窄，露出后面的对话
         val width = (resources.displayMetrics.widthPixels * 0.8f).toInt()
@@ -342,6 +402,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         scrim.visibility = View.VISIBLE
         drawerPanel.animate().translationX(0f).setDuration(220).start()
         scrim.animate().alpha(1f).setDuration(220).start()
+        setContentBlurred(true)
     }
 
     private fun closeDrawer() {
@@ -354,24 +415,32 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         scrim.animate().alpha(0f).setDuration(180)
             .withEndAction { scrim.visibility = View.GONE }
             .start()
+        setContentBlurred(false)
     }
 
     // ------------------------------------------------------------------ 对话记录
 
     private fun openConversation(conversation: Conversation) {
+        loadConversation(conversation)
+        setChatsEditing(false)
+        refreshDrawer()
+        closeDrawer()
+    }
+
+    /**
+     * 只换对话内容，**不关抽屉**。
+     *
+     * 删掉一条记录之后要接着留在列表里（用户可能还要删下一条），
+     * 所以不能借用 [openConversation]——那样会被弹回对话框。
+     */
+    private fun loadConversation(conversation: Conversation) {
         turnSeq++
         current = conversation
         conversations.select(conversation.id)
 
         val saved = conversations.messages(conversation.id)
-        if (saved.isEmpty()) {
-            session.load(listOf(welcome()))
-        } else {
-            session.load(saved)
-        }
+        session.load(if (saved.isEmpty()) listOf(welcome()) else saved)
         chatView?.refresh()
-        refreshDrawer()
-        closeDrawer()
         setThinking(null)
     }
 
@@ -390,22 +459,53 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 val wasCurrent = current?.id == conversation.id
                 conversations.delete(conversation.id)
 
-                // 全删光了就立刻补一段新的：抽屉里不该出现「一条都没有」的空状态
-                if (conversations.list().isEmpty()) {
-                    openConversation(conversations.create(getString(R.string.conv_new_title)))
-                    toast(getString(R.string.conv_deleted))
-                    return@setPositiveButton
+                when {
+                    // 删光了就停在空白态：不立刻补一条「新对话」，
+                    // 等用户真的再问时才建——抽屉里空着比多一条假的干净
+                    conversations.list().isEmpty() -> startBlankConversation()
+
+                    // 删的是当前这条：后台换到最近的一段，抽屉照旧开着
+                    wasCurrent -> loadConversation(conversations.current())
+
+                    else -> Unit
                 }
                 refreshDrawer()
-                if (wasCurrent) openConversation(conversations.current()) else toast(
-                    getString(R.string.conv_deleted)
-                )
+                toast(getString(R.string.conv_deleted))
             }
             .show()
     }
 
     private fun welcome(): ChatMessage =
         ChatMessage(text = getString(R.string.welcome), isUser = false)
+
+    /**
+     * 空白态：一条记录都没有，界面上只有欢迎语。
+     *
+     * 这份欢迎语**不属于任何会话**，所以不落盘；用户真的开口了才建会话
+     * （见 [ensureConversation]）。这样删完最后一条之后，抽屉里就是干净的，
+     * 不会凭空空出一条「新对话」。
+     */
+    private fun startBlankConversation() {
+        turnSeq++
+        current = null
+        setChatsEditing(false)
+        session.load(listOf(welcome()))
+        chatView?.refresh()
+        setThinking(null)
+    }
+
+    /**
+     * 有会话说就接着用，没有就现在建一条。
+     *
+     * 删光记录后的第一句话走这条路：抽屉里这时候才出现新的对话记录。
+     */
+    private fun ensureConversation(): Conversation {
+        current?.let { return it }
+        val created = conversations.create(getString(R.string.conv_new_title))
+        current = created
+        refreshDrawer()
+        return created
+    }
 
     private fun saveCurrent() {
         val conversation = current ?: return
@@ -436,6 +536,9 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             setThinking(null)
             return
         }
+
+        // 删空之后的第一句：这时候才建会话，保证消息有地方落
+        ensureConversation()
 
         // 上下文要在「这句进列表之前」取，否则它自己会被当成上一轮
         val history = session.recentTurns(HISTORY_TURNS)
@@ -826,5 +929,8 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
         /** 带几轮上下文：3 轮够接住「它 / 那明天呢」，再多只是烧 token */
         const val HISTORY_TURNS = 3
+
+        /** 抽屉打开时内容区的模糊半径：够糊、又能看清大致轮廓 */
+        const val BLUR_RADIUS = 22f
     }
 }

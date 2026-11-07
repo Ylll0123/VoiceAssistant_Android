@@ -13,8 +13,7 @@
     <string name="desc_avatar">HardlySeek 头像</string>
 
     <!-- 提示信息 -->
-    <string name="welcome">你好，我是 HardlySeek。长按输入框说话，松手收录，上滑取消；也可以直接打字。
-试试问我：现在几点、帮我算 12 乘 8、提醒我八点交作业，或者「帮我查一下量子纠缠」。</string>
+    <string name="welcome">你好，我是 HardlySeek。按住输入框说话，或者直接打字。</string>
     <string name="error_no_permission">没有麦克风权限，先用文字输入吧</string>
     <string name="error_no_recognizer">这台设备没有可用的语音识别服务，请用文字输入</string>
     <string name="error_empty_input">先说点什么吧</string>
@@ -107,8 +106,11 @@
     <string name="net_online">在线</string>
     <string name="net_offline">离线</string>
     <string name="drawer_subtitle">对话记录按账号保存，点一条就能接着聊</string>
+    <string name="drawer_edit">编辑</string>
+    <string name="drawer_done">完成</string>
+    <string name="desc_new_chat">新建对话</string>
+    <string name="desc_delete_chat">删除对话</string>
     <string name="drawer_title">对话记录</string>
-    <string name="drawer_new">新建</string>
     <string name="conv_new_title">新对话</string>
     <string name="conv_deleted">已删除这条对话记录</string>
     <string name="hint_input_hold">说点什么… 长按可以说话</string>

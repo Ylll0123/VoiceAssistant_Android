@@ -44,4 +44,16 @@
             android:textSize="11sp" />
     </LinearLayout>
 
+    <!-- 编辑模式下才出现；平时整块藏起来，列表看起来还是干净的 -->
+    <ImageView
+        android:id="@+id/btnDelete"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="8dp"
+        android:background="@drawable/bg_delete_circle"
+        android:contentDescription="@string/desc_delete_chat"
+        android:padding="7dp"
+        android:src="@drawable/ic_trash"
+        android:visibility="gone" />
+
 </LinearLayout>

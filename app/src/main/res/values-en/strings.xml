@@ -13,8 +13,7 @@
     <string name="desc_avatar">HardlySeek avatar</string>
 
     <!-- Messages -->
-    <string name="welcome">Hi, I am HardlySeek. Hold the input box to talk, release to finish, swipe up to cancel — or just type.
-Try: 现在几点 (time), 帮我算 12 乘 8 (math), 提醒我八点交作业 (reminder), or 帮我查一下量子纠缠 (look it up).</string>
+    <string name="welcome">Hi, I\'m HardlySeek. Hold the box to talk, or just type.</string>
     <string name="error_no_permission">No microphone permission, please type instead</string>
     <string name="error_no_recognizer">No speech recognition service on this device, please type</string>
     <string name="error_empty_input">Say something first</string>
@@ -109,8 +108,11 @@ Try: 现在几点 (time), 帮我算 12 乘 8 (math), 提醒我八点交作业 (r
     <string name="net_online">Online</string>
     <string name="net_offline">Offline</string>
     <string name="drawer_subtitle">Chats are saved per account — tap one to continue</string>
+    <string name="drawer_edit">Edit</string>
+    <string name="drawer_done">Done</string>
+    <string name="desc_new_chat">New chat</string>
+    <string name="desc_delete_chat">Delete chat</string>
     <string name="drawer_title">Chats</string>
-    <string name="drawer_new">New</string>
     <string name="conv_new_title">New chat</string>
     <string name="conv_deleted">Chat deleted</string>
     <string name="hint_input_hold">Say something… hold to talk</string>

@@ -98,8 +98,8 @@ class ChatFragment : Fragment(), ChatSessionView {
                 }
             }
         )
+        // 从上方排：第一句贴着顶部，多了往下长；不 stackFromEnd 就不会出现「只有一句却蹲在底部」
         val manager = LinearLayoutManager(requireContext())
-        manager.stackFromEnd = true
         rvMessages.layoutManager = manager
         rvMessages.adapter = adapter
         // 行内编辑时高度会跳，关掉动画免得像抽了一下

@@ -13,8 +13,7 @@
     <string name="desc_avatar">HardlySeek のアイコン</string>
 
     <!-- メッセージ -->
-    <string name="welcome">こんにちは、HardlySeek です。入力欄を長押しして話し、離すと確定、上にスワイプすると取り消します。文字入力もできます。
-例：现在几点（時刻）、帮我算 12 乘 8（計算）、提醒我八点交作业（リマインダー）、帮我查一下量子纠缠（調べもの）。</string>
+    <string name="welcome">こんにちは、HardlySeek です。入力欄を長押しして話すか、そのまま入力してください。</string>
     <string name="error_no_permission">マイクの権限がありません。文字で入力してください</string>
     <string name="error_no_recognizer">この端末には音声認識サービスがありません。文字で入力してください</string>
     <string name="error_empty_input">まず何か話してください</string>
@@ -109,8 +108,11 @@
     <string name="net_online">オンライン</string>
     <string name="net_offline">オフライン</string>
     <string name="drawer_subtitle">会話はアカウントごとに保存され、タップで続きから話せます</string>
+    <string name="drawer_edit">編集</string>
+    <string name="drawer_done">完了</string>
+    <string name="desc_new_chat">新しい会話</string>
+    <string name="desc_delete_chat">会話を削除</string>
     <string name="drawer_title">会話履歴</string>
-    <string name="drawer_new">新規</string>
     <string name="conv_new_title">新しい会話</string>
     <string name="conv_deleted">会話を削除しました</string>
     <string name="hint_input_hold">話しかける… 長押しで音声入力</string>
