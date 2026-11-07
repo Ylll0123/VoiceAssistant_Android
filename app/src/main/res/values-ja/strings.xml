@@ -3,37 +3,18 @@
     <string name="app_name">HardlySeek</string>
 
     <!-- ボトムナビ -->
-    <string name="tab_chat">会話</string>
-    <string name="tab_features">機能</string>
-    <string name="tab_settings">設定</string>
 
     <!-- ステータス -->
-    <string name="status_idle">マイクを押して話すか、文字で入力してください</string>
-    <string name="status_listening">聞いています…</string>
     <string name="status_recognizing">認識中…</string>
-    <string name="status_speaking">答えています…</string>
-    <string name="status_muted">読み上げをオフにしました</string>
-    <string name="status_continuous_on">連続会話オン：答え終わると自動で聞き直します</string>
-    <string name="status_continuous_off">連続会話オフ：マイクを押すと聞きます</string>
-    <string name="status_heard">「%1$s」と聞こえました</string>
-    <string name="status_online">ネットで検索しています…</string>
     <string name="status_notify_denied">通知権限がないため、リマインダーは通知バーに出ません（システム設定で許可できます）</string>
-    <string name="status_reminder_fired">リマインダーの時刻です：%1$s</string>
-    <string name="status_cloud_thinking">AI に考えさせています…</string>
-    <string name="status_cloud_fail">AI に接続できません（%1$s）。ローカルの答えを使いました</string>
 
     <!-- 入力欄 -->
-    <string name="hint_input">文字を入力するか、左のマイクを押してください</string>
-    <string name="desc_mic">音声入力</string>
     <string name="desc_send">送信</string>
-    <string name="desc_mute">読み上げの切り替え</string>
-    <string name="desc_continuous_on">連続会話：オン</string>
-    <string name="desc_continuous_off">連続会話：オフ</string>
-    <string name="desc_clear">会話を消去</string>
     <string name="desc_avatar">HardlySeek のアイコン</string>
 
     <!-- メッセージ -->
-    <string name="welcome">こんにちは、HardlySeek です。左下のマイクを押して話すか、入力欄に文字を打ってください。\n例：现在几点（時刻）、今天几号（日付）、帮我算 12*8（計算）、我们玩猜数字（数当てゲーム）。</string>
+    <string name="welcome">こんにちは、HardlySeek です。入力欄を長押しして話し、離すと確定、上にスワイプすると取り消します。文字入力もできます。
+例：现在几点（時刻）、帮我算 12 乘 8（計算）、提醒我八点交作业（リマインダー）、帮我查一下量子纠缠（調べもの）。</string>
     <string name="error_no_permission">マイクの権限がありません。文字で入力してください</string>
     <string name="error_no_recognizer">この端末には音声認識サービスがありません。文字で入力してください</string>
     <string name="error_empty_input">まず何か話してください</string>
@@ -41,18 +22,7 @@
     <!-- ティーチ入口 -->
 
     <!-- 機能ページ -->
-    <string name="features_title">機能</string>
-    <string name="features_subtitle">行を押すと展開し、項目を押すと例文が出ます。例文を押すと会話で実行します。</string>
-    <string name="features_empty">表示できる機能がありません。</string>
-    <string name="features_count">%1$d 件</string>
 
-    <string name="group_time">時刻と日付</string>
-    <string name="group_calc">計算と換算</string>
-    <string name="group_life">天気と外出</string>
-    <string name="group_knowledge">一般知識</string>
-    <string name="group_tool">生活ツール</string>
-    <string name="group_fun">娯楽と雑談</string>
-    <string name="group_dialog">複数ターンの会話</string>
 
     <!-- 設定 -->
     <string name="settings_title">設定</string>
@@ -66,10 +36,9 @@
     <string name="settings_clear_chat">会話履歴を消去</string>
     <string name="settings_clear_chat_done">会話を消去しました</string>
     <string name="settings_account">アカウント</string>
-    <string name="settings_account_guest">ゲスト</string>
     <string name="settings_logout">ログアウト</string>
     <string name="settings_about">このアプリについて</string>
-    <string name="settings_version">バージョン %1$s · 全 %2$d 機能</string>
+    <string name="settings_version">バージョン %1$s</string>
     <string name="settings_reset">既定の設定に戻す</string>
     <string name="settings_reset_done">既定の設定に戻しました</string>
 
@@ -96,10 +65,8 @@
     <string name="action_edit">修正</string>
 
     <!-- メッセージ操作 -->
-    <string name="bubble_actions_title">このメッセージ</string>
-    <string name="bubble_edit_title">この言葉を修正</string>
     <string name="bubble_edit_hint">もう一度入力</string>
-    <string name="bubble_edited">修正しました。もう一度送ると新しい答えになります。</string>
+    <string name="bubble_edited">修正しました。もう一度回答します…</string>
     <string name="bubble_delete_done">このやり取りを削除しました</string>
 
     <!-- ログイン・登録 -->
@@ -112,7 +79,6 @@
     <string name="login_hint_confirm">パスワードをもう一度</string>
     <string name="login_submit_login">ログイン</string>
     <string name="login_submit_register">登録する</string>
-    <string name="login_guest">ゲストとして使う</string>
     <string name="login_error_empty">ユーザー名とパスワードを入力してください</string>
     <string name="login_error_short_password">パスワードは 6 文字以上にしてください</string>
     <string name="login_error_mismatch">パスワードが一致しません</string>
@@ -137,55 +103,32 @@
     <string name="apk_clean_kept">インストール用ファイルを削除できませんでした。ファイル管理から削除できます</string>
 
     <!-- 功能页技能条目（四语言） -->
-    <string name="skill_title_time">今何時</string>
-    <string name="skill_desc_time">現在の時刻を読み上げます</string>
-    <string name="skill_title_date">今日の日付</string>
-    <string name="skill_desc_date">日付と曜日。昨日・明日・明後日も使えます</string>
-    <string name="skill_title_weekday_calc">日付の計算</string>
-    <string name="skill_desc_weekday_calc">来週の水曜が何日か、ある日まで何日か</string>
-    <string name="skill_title_timezone">世界の時刻</string>
-    <string name="skill_desc_timezone">ニューヨーク・ロンドン・東京などの現在時刻</string>
-    <string name="skill_title_arithmetic">計算</string>
-    <string name="skill_desc_arithmetic">四則演算・かっこ・パーセント。式をそのまま言うだけ</string>
-    <string name="skill_title_calc_continue">続けて計算</string>
-    <string name="skill_desc_calc_continue">前回の結果から続けて計算</string>
-    <string name="skill_title_unit_convert">単位変換</string>
-    <string name="skill_desc_unit_convert">km・マイル、摂氏・華氏、斤・kg など</string>
-    <string name="skill_title_age">年齢計算</string>
-    <string name="skill_desc_age">生まれた年を言えば今年の年齢を計算</string>
-    <string name="skill_title_random">決めてもらう</string>
-    <string name="skill_desc_random">コイン・サイコロ・乱数・二択</string>
-    <string name="skill_title_support">できること</string>
-    <string name="skill_desc_support">今できる機能の一覧</string>
-    <string name="skill_title_reminder">リマインダー</string>
-    <string name="skill_desc_reminder">指定時刻に通知。再起動しても消えません。一覧・削除も可</string>
-    <string name="skill_title_timer">タイマー</string>
-    <string name="skill_desc_timer">終了時に通知。途中で止めることもできます</string>
-    <string name="skill_title_torch">ライト</string>
-    <string name="skill_desc_torch">スマホのフラッシュを直接オン・オフ</string>
-    <string name="skill_title_battery">バッテリー</string>
-    <string name="skill_desc_battery">残量パーセントと充電中かどうか</string>
-    <string name="skill_title_open_app">アプリ起動</string>
-    <string name="skill_desc_open_app">WeChat・カメラ・設定などを名前で起動</string>
-    <string name="skill_title_echo">復唱</string>
-    <string name="skill_desc_echo">「言って」「読み上げて」の後ろをそのまま読み上げ</string>
-    <string name="skill_title_guess">数字当て</string>
-    <string name="skill_desc_guess">1〜100 の数字当て。大小ヒント付きで何回でも</string>
-    <string name="skill_title_joke">ジョーク</string>
-    <string name="skill_desc_joke">ローカルのジョーク集からランダムに一つ</string>
-    <string name="skill_title_quote">名言</string>
-    <string name="skill_desc_quote">名言や詩の一節をランダムに</string>
-    <string name="skill_title_weather">天気と気温</string>
-    <string name="skill_desc_weather">オンラインで実況と最高・最低。オフラインでも平年値で回答</string>
-    <string name="skill_title_outing">お出かけのヒント</string>
-    <string name="skill_desc_outing">月と都市に応じた服装・傘のアドバイス</string>
-    <string name="skill_title_online">ネット検索</string>
-    <string name="skill_desc_online">「調べて」と言われた時だけ検索し、出典付きで要約</string>
-    <string name="skill_title_follow_up">追加の質問</string>
-    <string name="skill_desc_follow_up">3 分以内なら「明後日は？」「もう一つ」で続けられます</string>
-    <string name="features_examples_note">例文は中国語です。オフラインエンジンは現在、中国語の指示だけを理解します。</string>
 
     <!-- 设置页底部：模型入口（默认已接入，只有一个入口） -->
     <string name="settings_model_row">AI モデル</string>
     <string name="settings_model_missing_key">%1$s · API キー未設定</string>
+
+    <!-- v4.0 新 UI -->
+    <string name="desc_menu">会話履歴を開く</string>
+    <string name="desc_settings">設定</string>
+    <string name="net_online">オンライン</string>
+    <string name="net_offline">オフライン</string>
+    <string name="drawer_subtitle">会話はアカウントごとに保存され、タップで続きから話せます</string>
+    <string name="drawer_title">会話履歴</string>
+    <string name="drawer_new">新規</string>
+    <string name="conv_new_title">新しい会話</string>
+    <string name="conv_deleted">会話を削除しました</string>
+    <string name="hint_input_hold">話しかける… 長押しで音声入力</string>
+    <string name="status_thinking">考えています…</string>
+    <string name="offline_after_edit">まだネットにつながっていないので、この質問には答えられません。つながってからもう一度送ってください。</string>
+    <string name="status_offline_hint">オフラインです。先にネットワークに接続してください</string>
+    <string name="status_listening_hold">離すと送信、上にスワイプでキャンセル</string>
+    <string name="status_listening_cancel">離すとキャンセル</string>
+    <string name="bubble_delete_confirm_title">この発言を削除しますか？</string>
+    <string name="bubble_delete_confirm_msg">質問とその回答がまとめて消えます。</string>
+    <string name="action_confirm">確定</string>
+
+    <string name="bubble_only_last">編集・削除できるのは最後の発言だけです</string>
+    <string name="settings_speak">読み上げ</string>
+    <string name="settings_speak_desc">回答を音声で読み上げます。オフにすると文字だけ</string>
 </resources>

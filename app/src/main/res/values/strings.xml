@@ -3,55 +3,25 @@
     <string name="app_name">HardlySeek</string>
 
     <!-- 底部导航 -->
-    <string name="tab_chat">对话</string>
-    <string name="tab_features">功能</string>
-    <string name="tab_settings">设置</string>
 
     <!-- 状态栏文案 -->
-    <string name="status_idle">点麦克风说话，或直接输入文字</string>
-    <string name="status_listening">正在聆听…</string>
     <string name="status_recognizing">正在识别…</string>
-    <string name="status_speaking">正在回答…</string>
-    <string name="status_muted">已关闭语音播报</string>
-    <string name="status_continuous_on">连续对话已开启，回答完会自动听你说话</string>
-    <string name="status_continuous_off">连续对话已关闭，需要点麦克风才会听</string>
-    <string name="status_heard">我听到的是「%1$s」</string>
-    <string name="status_online">正在联网查询…</string>
     <string name="status_notify_denied">没给通知权限，提醒到点只会显示在通知栏外（可在系统设置里打开）</string>
-    <string name="status_reminder_fired">提醒时间到了：%1$s</string>
-    <string name="status_cloud_thinking">交给 AI 想一想…</string>
-    <string name="status_cloud_fail">AI 没接上（%1$s），已用本地回答</string>
 
     <!-- 输入区 -->
-    <string name="hint_input">输入文字，或点左侧麦克风</string>
-    <string name="desc_mic">语音输入</string>
     <string name="desc_send">发送</string>
-    <string name="desc_mute">语音播报开关</string>
-    <string name="desc_continuous_on">连续对话：已开启</string>
-    <string name="desc_continuous_off">连续对话：已关闭</string>
-    <string name="desc_clear">清空对话</string>
     <string name="desc_avatar">HardlySeek 头像</string>
 
     <!-- 提示信息 -->
-    <string name="welcome">你好，我是 HardlySeek。点左下角的麦克风说话，或者直接在输入框里打字。\n试试问我：现在几点、今天几号、帮我算 12*8，或者「我们玩猜数字」。</string>
+    <string name="welcome">你好，我是 HardlySeek。长按输入框说话，松手收录，上滑取消；也可以直接打字。
+试试问我：现在几点、帮我算 12 乘 8、提醒我八点交作业，或者「帮我查一下量子纠缠」。</string>
     <string name="error_no_permission">没有麦克风权限，先用文字输入吧</string>
     <string name="error_no_recognizer">这台设备没有可用的语音识别服务，请用文字输入</string>
     <string name="error_empty_input">先说点什么吧</string>
 
 
     <!-- 功能页 -->
-    <string name="features_title">功能</string>
-    <string name="features_subtitle">点一行展开，再点一条看示例说法；点示例直接在对话页执行。</string>
-    <string name="features_empty">暂时没有可展示的功能。</string>
-    <string name="features_count">%1$d 项</string>
 
-    <string name="group_time">时间与日期</string>
-    <string name="group_calc">计算与换算</string>
-    <string name="group_life">天气与出行</string>
-    <string name="group_knowledge">常识问答</string>
-    <string name="group_tool">生活小工具</string>
-    <string name="group_fun">娱乐与闲聊</string>
-    <string name="group_dialog">多轮对话</string>
 
     <!-- 设置页 -->
     <string name="settings_title">设置</string>
@@ -65,10 +35,9 @@
     <string name="settings_clear_chat">清空对话记录</string>
     <string name="settings_clear_chat_done">对话已清空</string>
     <string name="settings_account">账号</string>
-    <string name="settings_account_guest">游客</string>
     <string name="settings_logout">退出登录</string>
     <string name="settings_about">关于</string>
-    <string name="settings_version">版本 %1$s · 共 %2$d 项功能</string>
+    <string name="settings_version">版本 %1$s</string>
     <string name="settings_reset">恢复默认设置</string>
     <string name="settings_reset_done">已恢复默认设置</string>
 
@@ -95,10 +64,8 @@
     <string name="action_edit">修改</string>
 
     <!-- 气泡长按/点击 -->
-    <string name="bubble_actions_title">这条消息</string>
-    <string name="bubble_edit_title">修改这句话</string>
     <string name="bubble_edit_hint">重新说一遍</string>
-    <string name="bubble_edited">已修改。需要重新回答的话，把它再发一次。</string>
+    <string name="bubble_edited">已改好，正在重新回答…</string>
     <string name="bubble_delete_done">已删除这一轮</string>
 
     <!-- 登录注册 -->
@@ -111,7 +78,6 @@
     <string name="login_hint_confirm">再输一次密码</string>
     <string name="login_submit_login">登录</string>
     <string name="login_submit_register">注册</string>
-    <string name="login_guest">先以游客身份进入</string>
     <string name="login_error_empty">用户名和密码都要填</string>
     <string name="login_error_short_password">密码至少 6 位</string>
     <string name="login_error_mismatch">两次输入的密码不一样</string>
@@ -135,55 +101,32 @@
     <string name="apk_clean_kept">安装包没删掉，可在文件管理里手动清理</string>
 
     <!-- 功能页技能条目（四语言） -->
-    <string name="skill_title_time">现在几点</string>
-    <string name="skill_desc_time">报出当前的时分</string>
-    <string name="skill_title_date">今天几号</string>
-    <string name="skill_desc_date">日期、星期，也支持昨天 / 明天 / 后天</string>
-    <string name="skill_title_weekday_calc">日期推算</string>
-    <string name="skill_desc_weekday_calc">算下周几是几号、距离某个日子还有几天</string>
-    <string name="skill_title_timezone">世界时间</string>
-    <string name="skill_desc_timezone">纽约、伦敦、东京等城市现在几点</string>
-    <string name="skill_title_arithmetic">算数</string>
-    <string name="skill_desc_arithmetic">四则运算、括号、百分号，直接说算式就行</string>
-    <string name="skill_title_calc_continue">接着算</string>
-    <string name="skill_desc_calc_continue">在上一次结果上继续加减乘除</string>
-    <string name="skill_title_unit_convert">单位换算</string>
-    <string name="skill_desc_unit_convert">公里/英里、摄氏度/华氏度、斤/千克等</string>
-    <string name="skill_title_age">年龄计算</string>
-    <string name="skill_desc_age">说出出生年份，算今年多大</string>
-    <string name="skill_title_random">做个决定</string>
-    <string name="skill_desc_random">抛硬币、掷骰子、随机数、二选一</string>
-    <string name="skill_title_support">能力清单</string>
-    <string name="skill_desc_support">看看助手现在会做什么</string>
-    <string name="skill_title_reminder">定时提醒</string>
-    <string name="skill_desc_reminder">说到点就弹通知，重启手机也不会丢；也支持查看和删除清单</string>
-    <string name="skill_title_timer">计时器</string>
-    <string name="skill_desc_timer">倒计时结束弹通知，说「取消计时」可以中途停掉</string>
-    <string name="skill_title_torch">手电筒</string>
-    <string name="skill_desc_torch">直接开关手机的闪光灯</string>
-    <string name="skill_title_battery">剩余电量</string>
-    <string name="skill_desc_battery">报出电量百分比，顺便说一句在不在充电</string>
-    <string name="skill_title_open_app">打开应用</string>
-    <string name="skill_desc_open_app">按名字拉起微信、相机、设置这些常用应用</string>
-    <string name="skill_title_echo">复读朗读</string>
-    <string name="skill_desc_echo">让它照着念：说「说出……」「帮我朗读……」，后面的字原样说出来</string>
-    <string name="skill_title_guess">猜数字游戏</string>
-    <string name="skill_desc_guess">1 到 100 之间猜数，助手会提示大小，可以连猜多轮</string>
-    <string name="skill_title_joke">讲个笑话</string>
-    <string name="skill_desc_joke">本地笑话库，随机一条</string>
-    <string name="skill_title_quote">来句名言</string>
-    <string name="skill_desc_quote">随机一句名言或诗句</string>
-    <string name="skill_title_weather">天气与气温</string>
-    <string name="skill_desc_weather">联网给出实时气温体感和当日高低（没网就用常年气候数据，照样有答案）</string>
-    <string name="skill_title_outing">出行建议</string>
-    <string name="skill_desc_outing">按月份和城市给出出行、穿衣、带伞这类能照做的提醒</string>
-    <string name="skill_title_online">联网查资料</string>
-    <string name="skill_desc_online">你说「帮我查一下…」才上网，把查到的摘要连同来源一起说给你（没网自动回落）</string>
-    <string name="skill_title_follow_up">多轮追问</string>
-    <string name="skill_desc_follow_up">3 分钟内可以用「那后天呢」「再来一个」这种省略说法接着聊</string>
-    <string name="features_examples_note">示例说法是中文：离线引擎目前只认中文指令。</string>
 
     <!-- 设置页底部：模型入口（默认已接入，只有一个入口） -->
     <string name="settings_model_row">AI 模型</string>
     <string name="settings_model_missing_key">%1$s · 待填 Key</string>
+
+    <!-- v4.0 新界面 -->
+    <string name="desc_menu">打开对话记录</string>
+    <string name="desc_settings">设置</string>
+    <string name="net_online">在线</string>
+    <string name="net_offline">离线</string>
+    <string name="drawer_subtitle">对话记录按账号保存，点一条就能接着聊</string>
+    <string name="drawer_title">对话记录</string>
+    <string name="drawer_new">新建</string>
+    <string name="conv_new_title">新对话</string>
+    <string name="conv_deleted">已删除这条对话记录</string>
+    <string name="hint_input_hold">说点什么… 长按可以说话</string>
+    <string name="status_thinking">正在想…</string>
+    <string name="offline_after_edit">还没连上网络，这句我先记着，联网后重新发一次就能答。</string>
+    <string name="status_offline_hint">离线了，先连上网络再问我</string>
+    <string name="status_listening_hold">松手发送，上滑取消</string>
+    <string name="status_listening_cancel">松开取消</string>
+    <string name="bubble_delete_confirm_title">删掉这一条？</string>
+    <string name="bubble_delete_confirm_msg">这条提问和它的回答都会一起消失。</string>
+    <string name="action_confirm">确定</string>
+
+    <string name="bubble_only_last">只能修改或删除最后一条</string>
+    <string name="settings_speak">语音播报</string>
+    <string name="settings_speak_desc">回答时念出来，关掉就只看文字</string>
 </resources>

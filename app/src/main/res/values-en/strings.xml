@@ -3,37 +3,18 @@
     <string name="app_name">HardlySeek</string>
 
     <!-- Bottom navigation -->
-    <string name="tab_chat">Chat</string>
-    <string name="tab_features">Features</string>
-    <string name="tab_settings">Settings</string>
 
     <!-- Status line -->
-    <string name="status_idle">Tap the mic to speak, or type below</string>
-    <string name="status_listening">Listening…</string>
     <string name="status_recognizing">Recognizing…</string>
-    <string name="status_speaking">Answering…</string>
-    <string name="status_muted">Voice playback is off</string>
-    <string name="status_continuous_on">Continuous chat on: it listens again after each answer</string>
-    <string name="status_continuous_off">Continuous chat off: tap the mic to be heard</string>
-    <string name="status_heard">I heard “%1$s”</string>
-    <string name="status_online">Searching online…</string>
     <string name="status_notify_denied">Notification permission denied, reminders will not pop up (you can enable it in system settings)</string>
-    <string name="status_reminder_fired">Reminder due: %1$s</string>
-    <string name="status_cloud_thinking">Asking the AI…</string>
-    <string name="status_cloud_fail">AI unreachable (%1$s), answered locally</string>
 
     <!-- Input bar -->
-    <string name="hint_input">Type here, or tap the mic on the left</string>
-    <string name="desc_mic">Voice input</string>
     <string name="desc_send">Send</string>
-    <string name="desc_mute">Voice playback</string>
-    <string name="desc_continuous_on">Continuous chat: on</string>
-    <string name="desc_continuous_off">Continuous chat: off</string>
-    <string name="desc_clear">Clear chat</string>
     <string name="desc_avatar">HardlySeek avatar</string>
 
     <!-- Messages -->
-    <string name="welcome">Hi, I am HardlySeek. Tap the mic at the bottom left or just type.\nTry: 现在几点 (time), 今天几号 (date), 帮我算 12*8 (math), or 我们玩猜数字 (a guessing game).</string>
+    <string name="welcome">Hi, I am HardlySeek. Hold the input box to talk, release to finish, swipe up to cancel — or just type.
+Try: 现在几点 (time), 帮我算 12 乘 8 (math), 提醒我八点交作业 (reminder), or 帮我查一下量子纠缠 (look it up).</string>
     <string name="error_no_permission">No microphone permission, please type instead</string>
     <string name="error_no_recognizer">No speech recognition service on this device, please type</string>
     <string name="error_empty_input">Say something first</string>
@@ -41,18 +22,7 @@
     <!-- Teach entry -->
 
     <!-- Features page -->
-    <string name="features_title">Features</string>
-    <string name="features_subtitle">Tap a row to expand, tap an item to see examples, tap an example to run it in chat.</string>
-    <string name="features_empty">Nothing to show yet.</string>
-    <string name="features_count">%1$d items</string>
 
-    <string name="group_time">Time and date</string>
-    <string name="group_calc">Calculation</string>
-    <string name="group_life">Weather and outings</string>
-    <string name="group_knowledge">Knowledge</string>
-    <string name="group_tool">Everyday tools</string>
-    <string name="group_fun">Fun and chat</string>
-    <string name="group_dialog">Multi-turn dialog</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
@@ -66,10 +36,9 @@
     <string name="settings_clear_chat">Clear chat history</string>
     <string name="settings_clear_chat_done">Chat cleared</string>
     <string name="settings_account">Account</string>
-    <string name="settings_account_guest">Guest</string>
     <string name="settings_logout">Sign out</string>
     <string name="settings_about">About</string>
-    <string name="settings_version">Version %1$s · %2$d features</string>
+    <string name="settings_version">Version %1$s</string>
     <string name="settings_reset">Restore defaults</string>
     <string name="settings_reset_done">Defaults restored</string>
 
@@ -96,10 +65,8 @@
     <string name="action_edit">Edit</string>
 
     <!-- Message bubble actions -->
-    <string name="bubble_actions_title">This message</string>
-    <string name="bubble_edit_title">Edit this message</string>
     <string name="bubble_edit_hint">Say it again</string>
-    <string name="bubble_edited">Edited. Send it again if you want a new answer.</string>
+    <string name="bubble_edited">Updated. Answering again…</string>
     <string name="bubble_delete_done">That turn was deleted</string>
 
     <!-- Sign in / sign up -->
@@ -112,7 +79,6 @@
     <string name="login_hint_confirm">Repeat password</string>
     <string name="login_submit_login">Sign in</string>
     <string name="login_submit_register">Create account</string>
-    <string name="login_guest">Continue as guest</string>
     <string name="login_error_empty">Enter both username and password</string>
     <string name="login_error_short_password">Password needs at least 6 characters</string>
     <string name="login_error_mismatch">The two passwords differ</string>
@@ -137,55 +103,32 @@
     <string name="apk_clean_kept">The installer was not deleted; you can remove it in Files</string>
 
     <!-- 功能页技能条目（四语言） -->
-    <string name="skill_title_time">Current time</string>
-    <string name="skill_desc_time">Tells you the current hour and minute</string>
-    <string name="skill_title_date">Today\'s date</string>
-    <string name="skill_desc_date">Date and weekday; yesterday, tomorrow and the day after work too</string>
-    <string name="skill_title_weekday_calc">Date math</string>
-    <string name="skill_desc_weekday_calc">Which date next Wednesday is, or days left until a date</string>
-    <string name="skill_title_timezone">World clock</string>
-    <string name="skill_desc_timezone">Local time in New York, London, Tokyo and more</string>
-    <string name="skill_title_arithmetic">Arithmetic</string>
-    <string name="skill_desc_arithmetic">Plus, minus, times, brackets, percent — just say the expression</string>
-    <string name="skill_title_calc_continue">Keep calculating</string>
-    <string name="skill_desc_calc_continue">Continue from the last result</string>
-    <string name="skill_title_unit_convert">Unit conversion</string>
-    <string name="skill_desc_unit_convert">km and miles, Celsius and Fahrenheit, jin and kg</string>
-    <string name="skill_title_age">Age</string>
-    <string name="skill_desc_age">Tell it your birth year, it works out your age</string>
-    <string name="skill_title_random">Make a decision</string>
-    <string name="skill_desc_random">Coin flip, dice, random number, pick one of two</string>
-    <string name="skill_title_support">What it can do</string>
-    <string name="skill_desc_support">See everything the assistant can do now</string>
-    <string name="skill_title_reminder">Reminders</string>
-    <string name="skill_desc_reminder">A notification at the time you say, survives a reboot; list and delete too</string>
-    <string name="skill_title_timer">Timer</string>
-    <string name="skill_desc_timer">Notification when the countdown ends; you can stop it midway</string>
-    <string name="skill_title_torch">Flashlight</string>
-    <string name="skill_desc_torch">Turns the phone flash on and off</string>
-    <string name="skill_title_battery">Battery</string>
-    <string name="skill_desc_battery">Battery percentage, and whether it is charging</string>
-    <string name="skill_title_open_app">Open apps</string>
-    <string name="skill_desc_open_app">Opens WeChat, Camera, Settings and other apps by name</string>
-    <string name="skill_title_echo">Read it back</string>
-    <string name="skill_desc_echo">Say it to repeat the rest word for word</string>
-    <string name="skill_title_guess">Guess the number</string>
-    <string name="skill_desc_guess">1 to 100 with higher or lower hints, as many rounds as you like</string>
-    <string name="skill_title_joke">Tell a joke</string>
-    <string name="skill_desc_joke">A random one from the offline joke bank</string>
-    <string name="skill_title_quote">A quote</string>
-    <string name="skill_desc_quote">A random quote or line of poetry</string>
-    <string name="skill_title_weather">Weather</string>
-    <string name="skill_desc_weather">Live temperature and today\'s high and low online; offline uses climate averages</string>
-    <string name="skill_title_outing">Going out</string>
-    <string name="skill_desc_outing">Month and city based advice on clothing and umbrellas</string>
-    <string name="skill_title_online">Web lookup</string>
-    <string name="skill_desc_online">Searches the web only when you say so, and cites the source</string>
-    <string name="skill_title_follow_up">Follow-ups</string>
-    <string name="skill_desc_follow_up">Within 3 minutes, and the day after or one more keeps the thread</string>
-    <string name="features_examples_note">Examples are in Chinese: the offline engine only understands Chinese commands.</string>
 
     <!-- 设置页底部：模型入口（默认已接入，只有一个入口） -->
     <string name="settings_model_row">Model</string>
     <string name="settings_model_missing_key">%1$s · API key needed</string>
+
+    <!-- v4.0 new UI -->
+    <string name="desc_menu">Open chats</string>
+    <string name="desc_settings">Settings</string>
+    <string name="net_online">Online</string>
+    <string name="net_offline">Offline</string>
+    <string name="drawer_subtitle">Chats are saved per account — tap one to continue</string>
+    <string name="drawer_title">Chats</string>
+    <string name="drawer_new">New</string>
+    <string name="conv_new_title">New chat</string>
+    <string name="conv_deleted">Chat deleted</string>
+    <string name="hint_input_hold">Say something… hold to talk</string>
+    <string name="status_thinking">Thinking…</string>
+    <string name="offline_after_edit">No network yet, so I cannot answer this one. Send it again once you are back online.</string>
+    <string name="status_offline_hint">Offline — connect to the internet first</string>
+    <string name="status_listening_hold">Release to send, swipe up to cancel</string>
+    <string name="status_listening_cancel">Release to cancel</string>
+    <string name="bubble_delete_confirm_title">Delete this message?</string>
+    <string name="bubble_delete_confirm_msg">The question and its answer will both be removed.</string>
+    <string name="action_confirm">OK</string>
+
+    <string name="bubble_only_last">Only the latest message can be edited or deleted</string>
+    <string name="settings_speak">Read answers aloud</string>
+    <string name="settings_speak_desc">Speak replies; turn off for text only</string>
 </resources>

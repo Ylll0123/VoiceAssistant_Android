@@ -3,37 +3,18 @@
     <string name="app_name">HardlySeek</string>
 
     <!-- 하단 내비게이션 -->
-    <string name="tab_chat">대화</string>
-    <string name="tab_features">기능</string>
-    <string name="tab_settings">설정</string>
 
     <!-- 상태 표시 -->
-    <string name="status_idle">마이크를 눌러 말하거나 글자로 입력하세요</string>
-    <string name="status_listening">듣는 중…</string>
     <string name="status_recognizing">인식 중…</string>
-    <string name="status_speaking">답하는 중…</string>
-    <string name="status_muted">음성 읽기를 껐습니다</string>
-    <string name="status_continuous_on">연속 대화 켜짐: 답변이 끝나면 다시 듣습니다</string>
-    <string name="status_continuous_off">연속 대화 꺼짐: 마이크를 눌러야 듣습니다</string>
-    <string name="status_heard">「%1$s」라고 들었습니다</string>
-    <string name="status_online">인터넷에서 찾는 중…</string>
     <string name="status_notify_denied">알림 권한이 없어 알림이 표시되지 않습니다(시스템 설정에서 켤 수 있습니다)</string>
-    <string name="status_reminder_fired">알림 시간입니다: %1$s</string>
-    <string name="status_cloud_thinking">AI에게 묻는 중…</string>
-    <string name="status_cloud_fail">AI 연결 실패(%1$s), 로컬 답변을 사용했습니다</string>
 
     <!-- 입력창 -->
-    <string name="hint_input">글자를 입력하거나 왼쪽 마이크를 누르세요</string>
-    <string name="desc_mic">음성 입력</string>
     <string name="desc_send">보내기</string>
-    <string name="desc_mute">음성 읽기 전환</string>
-    <string name="desc_continuous_on">연속 대화: 켜짐</string>
-    <string name="desc_continuous_off">연속 대화: 꺼짐</string>
-    <string name="desc_clear">대화 지우기</string>
     <string name="desc_avatar">HardlySeek 아바타</string>
 
     <!-- 메시지 -->
-    <string name="welcome">안녕하세요, HardlySeek입니다. 왼쪽 아래 마이크를 누르거나 입력창에 글자를 입력하세요.\n예: 现在几点(시간), 今天几号(날짜), 帮我算 12*8(계산), 我们玩猜数字(숫자 맞히기).</string>
+    <string name="welcome">안녕하세요, HardlySeek입니다. 입력창을 길게 눌러 말하고 손을 떼면 끝나며, 위로 밀면 취소됩니다. 직접 입력해도 됩니다.
+예: 现在几点(시간), 帮我算 12 乘 8(계산), 提醒我八点交作业(알림), 帮我查一下量子纠缠(검색).</string>
     <string name="error_no_permission">마이크 권한이 없습니다. 글로 입력해 주세요</string>
     <string name="error_no_recognizer">이 기기에는 음성 인식 서비스가 없습니다. 글로 입력해 주세요</string>
     <string name="error_empty_input">먼저 무언가 말해 주세요</string>
@@ -41,18 +22,7 @@
     <!-- 가르치기 -->
 
     <!-- 기능 페이지 -->
-    <string name="features_title">기능</string>
-    <string name="features_subtitle">줄을 누르면 펼쳐지고, 항목을 누르면 예시가 나옵니다. 예시를 누르면 대화에서 실행됩니다.</string>
-    <string name="features_empty">표시할 기능이 없습니다.</string>
-    <string name="features_count">%1$d개</string>
 
-    <string name="group_time">시간과 날짜</string>
-    <string name="group_calc">계산과 단위 변환</string>
-    <string name="group_life">날씨와 외출</string>
-    <string name="group_knowledge">상식 문답</string>
-    <string name="group_tool">생활 도구</string>
-    <string name="group_fun">재미와 잡담</string>
-    <string name="group_dialog">여러 턴 대화</string>
 
     <!-- 설정 -->
     <string name="settings_title">설정</string>
@@ -66,10 +36,9 @@
     <string name="settings_clear_chat">대화 기록 지우기</string>
     <string name="settings_clear_chat_done">대화를 지웠습니다</string>
     <string name="settings_account">계정</string>
-    <string name="settings_account_guest">게스트</string>
     <string name="settings_logout">로그아웃</string>
     <string name="settings_about">정보</string>
-    <string name="settings_version">버전 %1$s · 기능 %2$d개</string>
+    <string name="settings_version">버전 %1$s</string>
     <string name="settings_reset">기본 설정으로 복원</string>
     <string name="settings_reset_done">기본 설정으로 복원했습니다</string>
 
@@ -96,10 +65,8 @@
     <string name="action_edit">수정</string>
 
     <!-- 메시지 조작 -->
-    <string name="bubble_actions_title">이 메시지</string>
-    <string name="bubble_edit_title">이 말을 수정</string>
     <string name="bubble_edit_hint">다시 입력하세요</string>
-    <string name="bubble_edited">수정했습니다. 새 답변이 필요하면 다시 보내세요.</string>
+    <string name="bubble_edited">수정했습니다. 다시 답변합니다…</string>
     <string name="bubble_delete_done">이 주고받음을 삭제했습니다</string>
 
     <!-- 로그인 · 가입 -->
@@ -112,7 +79,6 @@
     <string name="login_hint_confirm">비밀번호 확인</string>
     <string name="login_submit_login">로그인</string>
     <string name="login_submit_register">가입하기</string>
-    <string name="login_guest">게스트로 둘러보기</string>
     <string name="login_error_empty">사용자 이름과 비밀번호를 모두 입력하세요</string>
     <string name="login_error_short_password">비밀번호는 6자 이상이어야 합니다</string>
     <string name="login_error_mismatch">두 비밀번호가 다릅니다</string>
@@ -137,55 +103,32 @@
     <string name="apk_clean_kept">설치 파일을 삭제하지 못했습니다. 파일 관리에서 지울 수 있습니다</string>
 
     <!-- 功能页技能条目（四语言） -->
-    <string name="skill_title_time">지금 몇 시</string>
-    <string name="skill_desc_time">현재 시각을 알려 줍니다</string>
-    <string name="skill_title_date">오늘 날짜</string>
-    <string name="skill_desc_date">날짜와 요일. 어제·내일·모레도 됩니다</string>
-    <string name="skill_title_weekday_calc">날짜 계산</string>
-    <string name="skill_desc_weekday_calc">다음 주 수요일이 며칠인지, 특정 날짜까지 며칠 남았는지</string>
-    <string name="skill_title_timezone">세계 시간</string>
-    <string name="skill_desc_timezone">뉴욕, 런던, 도쿄 등의 현재 시각</string>
-    <string name="skill_title_arithmetic">계산</string>
-    <string name="skill_desc_arithmetic">사칙연산, 괄호, 퍼센트. 식을 그대로 말하면 됩니다</string>
-    <string name="skill_title_calc_continue">이어서 계산</string>
-    <string name="skill_desc_calc_continue">직전 결과에서 이어서 계산</string>
-    <string name="skill_title_unit_convert">단위 변환</string>
-    <string name="skill_desc_unit_convert">km·마일, 섭씨·화씨, 근·kg 등</string>
-    <string name="skill_title_age">나이 계산</string>
-    <string name="skill_desc_age">태어난 해를 말하면 올해 나이를 계산</string>
-    <string name="skill_title_random">결정 대행</string>
-    <string name="skill_desc_random">동전 던지기, 주사위, 난수, 둘 중 하나</string>
-    <string name="skill_title_support">할 수 있는 일</string>
-    <string name="skill_desc_support">지금 할 수 있는 기능 목록</string>
-    <string name="skill_title_reminder">알림</string>
-    <string name="skill_desc_reminder">말한 시각에 알림. 재부팅해도 유지되며 목록·삭제도 가능</string>
-    <string name="skill_title_timer">타이머</string>
-    <string name="skill_desc_timer">종료 시 알림. 도중에 취소할 수 있습니다</string>
-    <string name="skill_title_torch">손전등</string>
-    <string name="skill_desc_torch">휴대폰 플래시를 바로 켜고 끕니다</string>
-    <string name="skill_title_battery">배터리</string>
-    <string name="skill_desc_battery">배터리 잔량과 충전 여부</string>
-    <string name="skill_title_open_app">앱 열기</string>
-    <string name="skill_desc_open_app">위챗, 카메라, 설정 등을 이름으로 실행</string>
-    <string name="skill_title_echo">그대로 읽기</string>
-    <string name="skill_desc_echo">말한 내용의 뒷부분을 그대로 읽어 줍니다</string>
-    <string name="skill_title_guess">숫자 맞히기</string>
-    <string name="skill_desc_guess">1~100 숫자 맞히기. 크다·작다 힌트, 여러 판 가능</string>
-    <string name="skill_title_joke">농담</string>
-    <string name="skill_desc_joke">오프라인 농담 모음에서 무작위로 하나</string>
-    <string name="skill_title_quote">명언</string>
-    <string name="skill_desc_quote">명언이나 시구를 무작위로</string>
-    <string name="skill_title_weather">날씨와 기온</string>
-    <string name="skill_desc_weather">온라인에서 실시간 기온과 최고·최저. 오프라인은 평년값으로 답변</string>
-    <string name="skill_title_outing">외출 조언</string>
-    <string name="skill_desc_outing">월과 도시에 맞춘 옷차림·우산 조언</string>
-    <string name="skill_title_online">인터넷 검색</string>
-    <string name="skill_desc_online">「찾아봐」라고 할 때만 검색해 출처와 함께 요약</string>
-    <string name="skill_title_follow_up">추가 질문</string>
-    <string name="skill_desc_follow_up">3분 안에는 모레는?, 하나 더 로 이어서 물을 수 있습니다</string>
-    <string name="features_examples_note">예시 문장은 중국어입니다. 오프라인 엔진은 현재 중국어 명령만 이해합니다.</string>
 
     <!-- 设置页底部：模型入口（默认已接入，只有一个入口） -->
     <string name="settings_model_row">AI 모델</string>
     <string name="settings_model_missing_key">%1$s · API 키 필요</string>
+
+    <!-- v4.0 새 UI -->
+    <string name="desc_menu">대화 기록 열기</string>
+    <string name="desc_settings">설정</string>
+    <string name="net_online">온라인</string>
+    <string name="net_offline">오프라인</string>
+    <string name="drawer_subtitle">대화는 계정별로 저장되며, 눌러서 이어서 말할 수 있습니다</string>
+    <string name="drawer_title">대화 기록</string>
+    <string name="drawer_new">새 대화</string>
+    <string name="conv_new_title">새 대화</string>
+    <string name="conv_deleted">대화를 삭제했습니다</string>
+    <string name="hint_input_hold">말해보세요… 길게 눌러 음성 입력</string>
+    <string name="status_thinking">생각 중…</string>
+    <string name="offline_after_edit">아직 네트워크에 연결되지 않아 이 질문에는 답할 수 없습니다. 연결된 뒤 다시 보내 주세요.</string>
+    <string name="status_offline_hint">오프라인입니다. 먼저 네트워크에 연결하세요</string>
+    <string name="status_listening_hold">손을 떼면 전송, 위로 밀면 취소</string>
+    <string name="status_listening_cancel">손을 떼면 취소</string>
+    <string name="bubble_delete_confirm_title">이 메시지를 삭제할까요?</string>
+    <string name="bubble_delete_confirm_msg">질문과 답변이 함께 사라집니다.</string>
+    <string name="action_confirm">확인</string>
+
+    <string name="bubble_only_last">마지막 메시지만 수정하거나 삭제할 수 있습니다</string>
+    <string name="settings_speak">음성 읽기</string>
+    <string name="settings_speak_desc">답변을 읽어 줍니다. 끄면 텍스트만 표시</string>
 </resources>

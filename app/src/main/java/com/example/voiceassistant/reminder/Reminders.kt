@@ -2,17 +2,15 @@ package com.example.voiceassistant.reminder
 
 import android.content.Context
 import com.example.voiceassistant.data.UserScope
-import com.example.voiceassistant.tool.ReminderTool
 
 /**
  * 提醒模块的**唯一安装入口**。
  *
  * App 启动时调一次 [install]：建通知渠道 → 建 SQLite 仓库 →
  * 把老版本存在 SharedPreferences 里的提醒搬过来 →
- * 把工具层的关键词兜底通道也指向同一个提醒中心 →
  * 把重启 / 覆盖安装后丢掉的闹钟重新排上。
  *
- * 之后工具层、对话层、广播接收器都只需要 `Reminders.center(context)`，
+ * 之后工具层、界面层、广播接收器都只需要 `Reminders.center(context)`，
  * 谁都不用自己 new 一个（那样会有两份缓存、两次排闹钟）。
  */
 object Reminders {
@@ -33,10 +31,6 @@ object Reminders {
         val app = context.applicationContext
         runCatching { ReminderAlarm.ensureChannel(app) }
         val center = center(app)
-
-        // 关键词兜底通道也走同一个中心：两套存储迟早会不一致
-        ReminderTool.sink = center
-
         runCatching { migrateFromPrefs(app, center) }
         runCatching { center.prune() }
         runCatching { center.rescheduleAll() }
@@ -62,8 +56,6 @@ object Reminders {
             )
             instance = created
             owner = current
-            // 关键词兜底通道也得跟着换，否则还会往上一本账里写
-            ReminderTool.sink = created
             return created
         }
     }

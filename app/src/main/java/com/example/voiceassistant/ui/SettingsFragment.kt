@@ -11,20 +11,21 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.example.voiceassistant.R
-import com.example.voiceassistant.assistant.SkillCatalog
 import com.example.voiceassistant.data.AccountStore
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.handler.llm.CloudLlmHandler
 import com.example.voiceassistant.reminder.Reminders
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 设置页：只留最常用的几项。
  *
- * 回答方式、语言、清空对话、账号、恢复默认——一屏放得下。
- * 语音播报和连续对话不在这里：它们在对话页顶栏有图标，随手就能点。
+ * 回答方式、语音播报、语言、清空对话、账号、恢复默认——一屏放得下。
+ * 对话页顶栏只剩菜单和设置两个图标，所以「播报开关」挪到这里，
+ * 「连续对话」直接取消（v4.0 起改成按住说话，不再自动收音）。
  *
  * 大模型也不在这里摆「开关」：默认就接的是 GLM-4-Flash-250414（免费），
  * 用户没必要先理解什么叫「接入」。只在「关于」里留一行模型名，
@@ -33,6 +34,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 class SettingsFragment : Fragment() {
 
     private lateinit var toggleStyle: MaterialButtonToggleGroup
+    private lateinit var switchSpeak: MaterialSwitch
     private lateinit var tvLanguageValue: TextView
     private lateinit var tvModelValue: TextView
     private lateinit var tvAccount: TextView
@@ -51,12 +53,14 @@ class SettingsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         toggleStyle = view.findViewById(R.id.toggleStyle)
+        switchSpeak = view.findViewById(R.id.switchSpeak)
         tvLanguageValue = view.findViewById(R.id.tvLanguageValue)
         tvModelValue = view.findViewById(R.id.tvModelValue)
         tvAccount = view.findViewById(R.id.tvAccount)
         tvVersion = view.findViewById(R.id.tvVersion)
 
         bindStyle()
+        bindSpeak()
         bindLanguage()
         bindModel()
         bindActions()
@@ -74,6 +78,15 @@ class SettingsFragment : Fragment() {
             if (!isChecked) return@addOnButtonCheckedListener
             val style = if (checkedId == R.id.btnStyleConcise) 0 else 2
             if (host.replyStyle != style) host.setReplyStyle(style)
+        }
+    }
+
+    // ------------------------------------------------------------------ 播报
+
+    private fun bindSpeak() {
+        switchSpeak.isChecked = host.speakEnabled
+        switchSpeak.setOnCheckedChangeListener { _, checked ->
+            if (checked != host.speakEnabled) host.setSpeakEnabled(checked)
         }
     }
 
@@ -272,7 +285,7 @@ class SettingsFragment : Fragment() {
 
     private fun bindActions() {
         requireView().findViewById<MaterialButton>(R.id.btnClearChat).setOnClickListener {
-            host.clearChat()
+            host.clearCurrentConversation()
             toast(getString(R.string.settings_clear_chat_done))
         }
         requireView().findViewById<MaterialButton>(R.id.btnResetSettings).setOnClickListener {
@@ -321,13 +334,8 @@ class SettingsFragment : Fragment() {
 
     private fun refresh() {
         updateModelRow()
-        tvAccount.text = AccountStore(requireContext()).currentUser
-            ?: getString(R.string.settings_account_guest)
-        tvVersion.text = getString(
-            R.string.settings_version,
-            appVersionName(),
-            SkillCatalog.skills.size
-        )
+        tvAccount.text = AccountStore(requireContext()).currentUser.orEmpty()
+        tvVersion.text = getString(R.string.settings_version, appVersionName())
         tvLanguageValue.text = languageLabel(host.appSettings().language)
     }
 

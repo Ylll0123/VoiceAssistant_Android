@@ -2,13 +2,14 @@ package com.example.voiceassistant.ui
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.widget.ImageView
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -22,35 +23,20 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
-import androidx.fragment.app.Fragment
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.voiceassistant.R
-import com.example.voiceassistant.bus.AssistantBus
-import com.example.voiceassistant.dialog.DialogueManager
-import com.example.voiceassistant.fuzzy.FuzzyEngine
-import com.example.voiceassistant.handler.llm.CloudCache
-import com.example.voiceassistant.handler.llm.CloudLlmHandler
-import com.example.voiceassistant.tool.ToolIntent
-import com.example.voiceassistant.assistant.AssistantConfig
-import com.example.voiceassistant.assistant.AssistantEngine
-import com.example.voiceassistant.assistant.CityClimate
-import com.example.voiceassistant.assistant.QueryUnderstanding
-import com.example.voiceassistant.core.AssistantPipeline
-import com.example.voiceassistant.core.AssistantRouter
-import com.example.voiceassistant.core.HistoryManager
-import com.example.voiceassistant.core.RawText
-import com.example.voiceassistant.core.ReplyReady
-import com.example.voiceassistant.core.RoutePlanner
-import com.example.voiceassistant.core.TurnPlanned
-import com.example.voiceassistant.data.AppSettings
+import com.example.voiceassistant.core.AiChat
 import com.example.voiceassistant.data.AccountStore
-import com.example.voiceassistant.data.LocaleHelper
-import com.example.voiceassistant.data.ChatHistoryStore
+import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatMessage
 import com.example.voiceassistant.data.ChatSession
-import com.example.voiceassistant.handler.qa.QaLocalHandler
-import com.example.voiceassistant.handler.web.WebHandler
+import com.example.voiceassistant.data.Conversation
+import com.example.voiceassistant.data.ConversationStore
+import com.example.voiceassistant.data.LocaleHelper
+import com.example.voiceassistant.handler.llm.CloudLlmHandler
 import com.example.voiceassistant.installer.ApkCleaner
-import com.example.voiceassistant.network.LlmResult
+import com.example.voiceassistant.network.LlmMessage
 import com.example.voiceassistant.network.NetworkState
 import com.example.voiceassistant.reminder.ReminderAlarm
 import com.example.voiceassistant.reminder.ReminderFired
@@ -59,45 +45,40 @@ import com.example.voiceassistant.service.AndroidAudioController
 import com.example.voiceassistant.service.AndroidDeviceController
 import com.example.voiceassistant.service.AsrManager
 import com.example.voiceassistant.service.TtsManager
-import com.example.voiceassistant.tool.ToolHandler
-import java.io.File
+import com.example.voiceassistant.tool.AiTools
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import java.util.concurrent.Executors
 
 /**
- * UI 层：**应用外壳 + 语音入口**。
+ * 应用外壳：**登录门禁 + 顶栏 + 抽屉 + 一轮对话的调度**。
  *
- * 这一层只做四件事，不写任何业务判断：
- * 1. 唤起录音（[AsrManager]）/ 播放语音（[TtsManager]）/ 申请麦克风权限；
- * 2. 把识别出来的一串候选文本交给调度核心（[AssistantRouter]）；
- * 3. 把调度结果交给 [HistoryManager] 落盘，并显示在界面上；
- * 4. 底部导航切换页面。
+ * 界面结构（v4.0）：
+ * ```
+ * ┌──────────────────────────────┐
+ * │ ☰        HardlySeek        ⚙ │   ← 标题下方：● 在线 / 离线，思考时被替换
+ * ├──────────────────────────────┤
+ * │                              │
+ * │        消息列表               │
+ * │                              │
+ * ├──────────────────────────────┤
+ * │ [ 说点什么… 长按可以说话 ]  ➤ │   ← 没有麦克风键，长按输入框说话
+ * └──────────────────────────────┘
+ * 左滑出来的抽屉（占屏宽 4/5）：对话记录列表 + 新建
+ * ```
  *
- * 「这句话该本地答还是联网还是问云端」不在这一层——全在 core 与 handler 里。
- * 所以这一层很薄，改业务逻辑时基本不用碰它。
+ * 这一层只做四件事：收输入、调 [AiChat]、上屏、落盘。所有「怎么回答」都在 core 里。
  */
 class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsManager.Listener {
 
-    enum class Tab { CHAT, FEATURES, SETTINGS }
+    /** 当前这次对话（抽屉里的一条记录） */
+    private lateinit var conversations: ConversationStore
+    private var current: Conversation? = null
 
-    /** 对话页对外暴露的回调，Activity 收到语音事件后转给它 */
-    interface ChatUi {
-        fun showStatus(text: String, highlight: Boolean = false)
-        fun setMicActive(active: Boolean)
-    }
+    /** 消息 + 多轮上下文 */
+    lateinit var session: ChatSession
+        private set
 
-    /** 设置持久化：改完立刻写盘，下次打开还是上次的样子 */
     private lateinit var settings: AppSettings
-
-    /**
-     * 最近一次查过天气的城市。
-     * 用户接着说「那上海呢 / 那里呢」时用它兜底，
-     * 否则 OnlineQuery 拿不到城市就不联网。
-     */
-    private var lastWeatherCity: CityClimate.CityClimate? = null
-
-    /** 联网 runner：单线程串行执行，保证同一时刻只有一个请求在飞 */
-    private val netExecutor = java.util.concurrent.Executors.newSingleThreadExecutor {
-        Thread(it, "assistant-net").apply { isDaemon = true }
-    }
 
     lateinit var asr: AsrManager
         private set
@@ -105,81 +86,66 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     lateinit var tts: TtsManager
         private set
 
-    var speakEnabled: Boolean = true
-        private set
-
-    var continuousMode: Boolean = true
-        private set
-
-    var ttsEngine: String = ""
-        private set
-
-    var replyStyle: Int = 1
-        private set
-
-    var proactiveFollowUp: Boolean = true
-        private set
-
-    /** 是否展示本地「理解过程」（淡色小字，答案出现即移除） */
-    var showThinking: Boolean = true
-        private set
-
-    var onlineSearchEnabled: Boolean = true
-        private set
-
-    /**
-     * 云端大模型（AI 大脑）配置。
-     *
-     * 默认全部关闭：没填 Key 就是一个纯粹的离线助手。
-     * 用户在设置页填了接口和 Key 之后，本地答不好的问题会交给它，
-     * 失败（超时 / Key 错 / 没网）时自动用本地答案兜底。
-     */
     var cloudConfig: CloudLlmHandler.CloudConfig = CloudLlmHandler.CloudConfig()
         private set
 
-    private lateinit var ivTabChat: ImageView
-    private lateinit var ivTabFeatures: ImageView
-    private lateinit var ivTabSettings: ImageView
-    private lateinit var tvTabChat: TextView
-    private lateinit var tvTabFeatures: TextView
-    private lateinit var tvTabSettings: TextView
+    var speakEnabled: Boolean = true
+        private set
 
-    private var chatUi: ChatUi? = null
-    private var currentTab: Tab? = null
+    var replyStyle: Int = 2
+        private set
+
+    private lateinit var ai: AiChat
+    private lateinit var aiTools: AiTools
+
+    /** 单线程：同一时刻只有一个请求在飞，回来按顺序上屏 */
+    private val executor = Executors.newSingleThreadExecutor {
+        Thread(it, "assistant-net").apply { isDaemon = true }
+    }
+
+    private val main = Handler(Looper.getMainLooper())
+
+    /** 轮次号：新的一句 / 切换对话都会 +1，旧结果回来直接丢掉 */
+    private var turnSeq = 0
+
+    // ------------------------------------------------------------------ 视图
+
+    private lateinit var btnMenu: ImageButton
+    private lateinit var btnSettings: ImageButton
+    private lateinit var statusRow: LinearLayout
+    private lateinit var dotStatus: View
+    private lateinit var tvConn: TextView
+    private lateinit var tvThinking: TextView
+    private lateinit var drawerPanel: LinearLayout
+    private lateinit var scrim: View
+    private lateinit var rvConversations: RecyclerView
+    private lateinit var drawerAdapter: ConversationAdapter
+
+    private var chatView: ChatFragment? = null
+    private var settingsOpen = false
+    private var online = true
+    private var drawerOpen = false
     private var isForeground = false
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private val networkListener = NetworkState.Listener { isOnline ->
+        online = isOnline
+        updateConnUi()
+    }
 
     private val micPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
                 startVoiceInput()
             } else {
-                chatUi?.showStatus(getString(R.string.error_no_permission))
-                Toast.makeText(this, R.string.error_no_permission, Toast.LENGTH_SHORT).show()
+                toast(getString(R.string.error_no_permission))
             }
         }
 
-    /**
-     * 通知权限（Android 13+）。
-     *
-     * 拒绝了也不影响其它功能：提醒照样记进清单，
-     * 只是到点弹不出通知——所以这里不追着要，也不弹解释框。
-     */
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (!granted) {
-                chatUi?.showStatus(getString(R.string.status_notify_denied))
-            }
+            if (!granted) toast(getString(R.string.status_notify_denied))
         }
 
-    /**
-     * 系统「允许删除此文件？」的回执。
-     *
-     * 装机后清理安装包要用它：别人的文件（浏览器下载的）只能由系统弹框、
-     * 用户点一下才删得掉，这是分区存储的安全约束。
-     * 我们自己的确认框已经去掉了——装完就清，不再多问一句。
-     */
     private val apkCleanLauncher =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             val deleted = result.resultCode == Activity.RESULT_OK
@@ -190,64 +156,9 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             ).show()
         }
 
-    /** 会话状态（消息 + 引擎），整个应用共享一份 */
-    val session: ChatSession by lazy {
-        ChatSession(AssistantEngine())
-    }
+    // ------------------------------------------------------------------ 启动
 
-    /** 对话历史：只负责"记几轮、给云端时截多长" */
-    private val history: HistoryManager by lazy { HistoryManager(session) }
-
-    /** 对话记录的落盘位置：重启后把最近几十条恢复出来 */
-    private val chatHistory: ChatHistoryStore by lazy { ChatHistoryStore(applicationContext) }
-
-    /**
-     * 调度核心：本地工具 → 本地问答 → 按需联网 → 云端大模型 → 本地兜底。
-     *
-     * Activity 只管把输入丢进去、把结果拿出来，中间怎么走完全由它决定。
-     */
-    private val router: AssistantRouter by lazy {
-        AssistantRouter(
-            history = history,
-            toolHandler = ToolHandler(
-                AndroidAudioController(applicationContext),
-                AndroidDeviceController(applicationContext)
-            ),
-            qaHandler = QaLocalHandler(session.engine),
-            webHandler = WebHandler,
-            llmHandler = CloudLlmHandler
-        )
-    }
-
-    /** 事件总线（进程级）：四个模块之间只通过它说话 */
-    private val bus = AssistantBus
-
-    /**
-     * 一轮输入的完整流水线：
-     * 语音链路 → 模糊容错引擎 → 对话管理器 →（必要时）问答链路。
-     *
-     * 界面只调用 [AssistantPipeline.submit]，然后听总线上的
-     * [TurnPlanned] / [ReplyReady]——不关心中间走了哪条路。
-     */
-    private val pipeline: AssistantPipeline by lazy {
-        AssistantPipeline(
-            bus = bus,
-            fuzzy = FuzzyEngine(),
-            dialog = DialogueManager(Reminders.center(applicationContext)),
-            router = router,
-            history = history,
-            executor = netExecutor,
-            main = mainHandler,
-            config = { config() }
-        )
-    }
-
-    /**
-     * 界面语言：在 Context 构造阶段就把 Configuration 换成选定语言。
-     *
-     * 必须早于 setContentView，否则资源已经按系统语言解析过了，
-     * 设置页里切完语言会「文字没变、只有重建之后才变」。
-     */
+    /** 界面语言在 Context 构造阶段就换好，必须早于 setContentView */
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase, AppSettings.readLanguage(newBase)))
     }
@@ -255,14 +166,13 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 没登录（也没选游客）就先去看登录页。
-        // 外部 query 入口放行：自动化测试和「发送到 HardlySeek」不该被门禁挡住。
-        if (!ensureSignedIn()) return
+        // 强制登录：没登录一律去登录页（v4.0 起没有游客）
+        if (!AccountStore(this).isSignedIn) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
 
-        // 显式指定浅色系统栏样式。
-        // enableEdgeToEdge() 不带参数时会按系统深色模式自动选择图标颜色，
-        // 手机开深色模式 -> 状态栏用浅色图标，而本应用界面是浅色底，
-        // 结果状态栏图标几乎看不见，看起来就和模拟器「完全不一样」。
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(
                 android.graphics.Color.TRANSPARENT,
@@ -275,163 +185,80 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         )
         setContentView(R.layout.activity_main)
 
-        applyInsets()
-        setupTabs()
-
         settings = AppSettings(this)
+        conversations = ConversationStore(this)
 
-        // 提醒模块：建通知渠道、把工具层的落点换成持久化实现、
-        // 把重启 / 覆盖安装后丢掉的闹钟重新排上
         Reminders.install(this)
-
-        // 联网状态：没网时网络层直接失败回落本地，不再干等超时
         NetworkState.init(this)
 
-        // 上次的对话先恢复出来，再补欢迎语：
-        // 否则重启后屏幕上只剩一句自我介绍，追问「那明天呢」就接不上了。
-        //
-        // 历史的第一条永远是欢迎语，而且它的文案会随界面语言 / 应用名变化，
-        // 所以这里按「位置」而不是按文字认：先丢掉旧的那条，再用当前语言的文案重放一条。
-        // （以前按中文前缀判断，一切到英文就会出现两条欢迎语）
-        val saved = chatHistory.load()
-        val history = if (saved.firstOrNull()?.isOpeningLine() == true) saved.drop(1) else saved
-        session.restore(listOf(newWelcome()) + history)
-        session.onChanged = { chatHistory.save(it) }
-        session.ensureWelcome(getString(R.string.welcome))
-
-        asr = AsrManager(this)
-        asr.listener = this
-        tts = TtsManager(this)
-        tts.listener = this
-
-        // 先把持久化下来的设置整体灌回去，再创建界面，
-        // 否则设置页会先按默认值画一遍，再被覆盖，看着像闪一下
+        asr = AsrManager(this).also { it.listener = this }
+        tts = TtsManager(this).also { it.listener = this }
         restoreSettings()
 
-        // 总线订阅放在界面起来之后：事件回调里要碰 chatUi / tts
-        subscribeEvents()
+        aiTools = AiTools(
+            context = this,
+            device = AndroidDeviceController(applicationContext),
+            audio = AndroidAudioController(applicationContext),
+            stopSpeaking = { tts.stop() }
+        )
+        ai = AiChat(aiTools, config = { cloudConfig })
 
-        // 重建（旋转 / 分屏 / 被系统回收后恢复）时回到原来那一页，
-        // 否则每次重建都跳回对话页，看起来像是「页面丢了」
-        val restored = savedInstanceState?.getString(KEY_TAB)
-            ?.let { name -> runCatching { Tab.valueOf(name) }.getOrNull() }
-            ?: Tab.CHAT
-        currentTab = null
-        selectTab(restored)
-        setupBackBehavior()
+        session = ChatSession()
+        session.onChanged = { saveCurrent() }
+
+        bindViews()
+        applyInsets()
+        online = NetworkState.isOnline()
+        updateConnUi()
+        bindToolbar()
+        bindDrawer()
+        setupBack()
+
+        // 先挂上对话页：session 装载完要有人接住回调，否则列表永远是空的
+        showChatFragment()
+        openConversation(conversations.current())
+
+        subscribeReminder()
 
         askNotificationPermission()
+        main.postDelayed({ cleanInstallerOnce() }, 1200)
 
-        // 装完顺手把安装包清掉：等界面起来再干，别和首帧抢时间
-        mainHandler.postDelayed({ cleanInstallerOnce() }, 1200)
-
-        // 外部调用入口：别的 App / 快捷方式可以把一句话直接送进来
-        // （自动化测试也走这条路，否则 adb 没法输入中文）
         if (savedInstanceState == null) handleExternalQuery(intent)
     }
 
-    /**
-     * 外部传入的一句话：「发送到 HardlySeek 说 xxx」。
-     *
-     * 用 extra 而不是自定义 scheme，是因为不想多开一个对外的入口面；
-     * 配合 `launchMode="singleTop"`，第二句话会回到同一个界面实例，
-     * 多轮上下文（「改成四点」指代上一条）才不会断。
-     */
-    override fun onNewIntent(intent: android.content.Intent) {
+    /** 外部传入的一句话（「发送到 HardlySeek」/ 自动化测试） */
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleExternalQuery(intent)
     }
 
-    private fun handleExternalQuery(intent: android.content.Intent?) {
+    private fun handleExternalQuery(intent: Intent?) {
         val query = intent?.getStringExtra(EXTRA_QUERY)?.trim().orEmpty()
         if (query.isEmpty()) return
-        // 用掉就清掉：否则旋转屏、从后台回来都会被重放一遍
         intent?.removeExtra(EXTRA_QUERY)
-
-        selectTab(Tab.CHAT)
-        supportFragmentManager.executePendingTransactions()
-        mainHandler.postDelayed({ sendText(query) }, 350)
+        main.postDelayed({ sendText(query) }, 350)
     }
 
-    /**
-     * 装完自动清理安装包：不问，直接删（每个版本只跑一次）。
-     *
-     * 分两档，都不弹自建对话框：
-     * 1. 自己的文件（应用内升级下载的）→ 静默删除，用户完全无感；
-     * 2. 浏览器下载的 → 直接发起系统删除请求。系统那一下授权是分区存储的硬约束，
-     *    删别人的文件必须过系统这道门，但它不是我们多问一句。
-     *
-     * 两档都不成立就安静退出，绝不拿弹窗打扰用户。
-     */
-    private fun cleanInstallerOnce() {
-        if (isFinishing || isDestroyed) return
-        val prefs = getSharedPreferences(PREFS_ONBOARDING, MODE_PRIVATE)
-        val key = KEY_APK_CLEAN + versionName()
-        if (prefs.getBoolean(key, false)) return
-        prefs.edit().putBoolean(key, true).apply()
+    // ------------------------------------------------------------------ 视图绑定
 
-        val found = runCatching { ApkCleaner.findInstallers(this) }.getOrNull().orEmpty()
-        if (found.isEmpty()) return
-
-        val remaining = found.filterNot { ApkCleaner.deleteSilently(this, it) }
-        if (remaining.isEmpty()) {
-            Toast.makeText(this, R.string.apk_clean_done, Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // 传空列表会让 createDeleteRequest 抛异常，所以这里必须先判空
-        val sender = ApkCleaner.deleteRequest(this, remaining) ?: return
-        runCatching { apkCleanLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
+    private fun bindViews() {
+        btnMenu = findViewById(R.id.btnMenu)
+        btnSettings = findViewById(R.id.btnSettings)
+        statusRow = findViewById(R.id.statusRow)
+        dotStatus = findViewById(R.id.dotStatus)
+        tvConn = findViewById(R.id.tvConn)
+        tvThinking = findViewById(R.id.tvThinking)
+        drawerPanel = findViewById(R.id.drawerPanel)
+        scrim = findViewById(R.id.scrim)
+        rvConversations = findViewById(R.id.rvConversations)
     }
-
-    /** 当前版本号，用来做「每个版本只清理一次」的键 */
-    @Suppress("DEPRECATION")
-    private fun versionName(): String = runCatching {
-        packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
-    }.getOrDefault("")
-
-    /** 第一次进来问一次通知权限；拒绝了就不再打扰 */
-    private fun askNotificationPermission() {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return
-        if (ReminderAlarm.canNotify(this)) return
-
-        // 只问一次：反复弹系统权限框很烦，用户想开自己去系统设置里开
-        val prefs = getSharedPreferences(PREFS_ONBOARDING, MODE_PRIVATE)
-        if (prefs.getBoolean(KEY_NOTIFY_ASKED, false)) return
-        prefs.edit().putBoolean(KEY_NOTIFY_ASKED, true).apply()
-
-        runCatching {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putString(KEY_TAB, currentTab?.name ?: Tab.CHAT.name)
-    }
-
-    // ------------------------------------------------------------------ 页面框架
 
     private fun applyInsets() {
-        val root: LinearLayout = findViewById(R.id.root)
-        val bottomNav: LinearLayout = findViewById(R.id.bottomNav)
-
-        // 统一交给根布局处理：顶部让出状态栏，底部让出「导航栏或键盘」中更高的那个。
-        //
-        // 键盘相关的历史坑：
-        // - 早先把 ime inset 加在输入栏自己的 padding 上，而系统在部分机型上
-        //   又会同时把窗口 resize 一部分，两边叠加 → 输入栏和键盘之间空出一条；
-        // - 现在只在这里（根布局）处理一次：bottom = max(导航栏, 键盘)，
-        //   输入栏保持普通 padding，不再额外补偿。
-        // - 键盘弹起时隐藏底部导航（微信的做法）：导航藏到键盘后面没有意义，
-        //   省出的空间全部给消息列表，最后一条消息正好贴在输入栏上方。
+        val root: View = findViewById(R.id.root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            val imeVisible = ime.bottom > bars.bottom
-
-            bottomNav.visibility = if (imeVisible) View.GONE else View.VISIBLE
             view.updatePadding(
                 left = bars.left,
                 top = bars.top,
@@ -442,149 +269,421 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         }
     }
 
-    private fun setupTabs() {
-        ivTabChat = findViewById(R.id.ivTabChat)
-        ivTabFeatures = findViewById(R.id.ivTabFeatures)
-        ivTabSettings = findViewById(R.id.ivTabSettings)
-        tvTabChat = findViewById(R.id.tvTabChat)
-        tvTabFeatures = findViewById(R.id.tvTabFeatures)
-        tvTabSettings = findViewById(R.id.tvTabSettings)
-
-        findViewById<View>(R.id.tabChat).setOnClickListener { selectTab(Tab.CHAT) }
-        findViewById<View>(R.id.tabFeatures).setOnClickListener { selectTab(Tab.FEATURES) }
-        findViewById<View>(R.id.tabSettings).setOnClickListener { selectTab(Tab.SETTINGS) }
+    private fun bindToolbar() {
+        btnMenu.setOnClickListener {
+            if (settingsOpen) closeSettings() else openDrawer()
+        }
+        btnSettings.setOnClickListener { openSettings() }
     }
 
-    fun selectTab(tab: Tab) {
-        if (tab == currentTab) return
-
-        // 离开对话页时，停掉麦克风和播报，避免在别的页面后台抢音频
-        if (tab != Tab.CHAT) {
-            asr.cancel()
-            tts.stop()
-            chatUi?.setMicActive(false)
-        }
-
-        currentTab = tab
-        val fragment: Fragment = when (tab) {
-            Tab.CHAT -> ChatFragment()
-            Tab.FEATURES -> FeaturesFragment()
-            Tab.SETTINGS -> SettingsFragment()
-        }
-        // 切底部导航时把二级页面的返回栈清空，
-        // 否则从设置页按返回会先退回「记忆」这种上一轮的中间页
-        supportFragmentManager.popBackStackImmediate(
-            null,
-            androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE
+    private fun updateConnUi() {
+        val color = ContextCompat.getColor(
+            this,
+            if (online) R.color.online_green else R.color.offline_red
         )
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, fragment)
-            .commit()
-        updateTabUi()
+        dotStatus.backgroundTintList = ColorStateList.valueOf(color)
+        tvConn.setTextColor(color)
+        tvConn.text = getString(if (online) R.string.net_online else R.string.net_offline)
+        // 从离线恢复：把状态行那句提示收回去
+        if (online && tvThinking.visibility != View.VISIBLE) statusRow.visibility = View.VISIBLE
     }
 
-    /** 退出登录：清掉身份，回到登录页（任务栈整体重置） */
-    fun gotoLogin() {
-        startActivity(
-            android.content.Intent(this, LoginActivity::class.java).apply {
-                addFlags(
-                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+    /**
+     * 顶栏第二行：正常情况下是在线状态，思考时被一句话顶掉。
+     *
+     * 这两者共用同一个位置——标题正下方只留一行，
+     * 既满足「思考在标题下面」，也不会把顶栏撑成三行。
+     */
+    private fun setThinking(text: String?) {
+        if (text.isNullOrBlank()) {
+            tvThinking.visibility = View.GONE
+            statusRow.visibility = View.VISIBLE
+        } else {
+            tvThinking.text = text
+            tvThinking.visibility = View.VISIBLE
+            statusRow.visibility = View.GONE
+        }
+    }
+
+    // ------------------------------------------------------------------ 抽屉
+
+    private fun bindDrawer() {
+        drawerAdapter = ConversationAdapter(
+            onClick = { openConversation(it) },
+            onLongClick = { confirmDeleteConversation(it) }
+        )
+        rvConversations.layoutManager = LinearLayoutManager(this)
+        rvConversations.adapter = drawerAdapter
+
+        findViewById<TextView>(R.id.tvDrawerUser).text =
+            AccountStore(this).currentUser.orEmpty()
+
+        findViewById<View>(R.id.btnNewChat).setOnClickListener {
+            closeDrawer()
+            newConversation()
+        }
+        scrim.setOnClickListener { closeDrawer() }
+    }
+
+    private fun refreshDrawer() {
+        val list = conversations.list()
+        drawerAdapter.submit(list, current?.id)
+    }
+
+    private fun openDrawer() {
+        drawerOpen = true
+        refreshDrawer()
+        // 抽屉占屏宽 4/5，比侧栏宽、比全屏窄，露出后面的对话
+        val width = (resources.displayMetrics.widthPixels * 0.8f).toInt()
+        drawerPanel.layoutParams = drawerPanel.layoutParams.apply { this.width = width }
+        drawerPanel.translationX = -width.toFloat()
+        drawerPanel.visibility = View.VISIBLE
+        scrim.alpha = 0f
+        scrim.visibility = View.VISIBLE
+        drawerPanel.animate().translationX(0f).setDuration(220).start()
+        scrim.animate().alpha(1f).setDuration(220).start()
+    }
+
+    private fun closeDrawer() {
+        if (!drawerOpen) return
+        drawerOpen = false
+        val width = drawerPanel.width.toFloat().coerceAtLeast(1f)
+        drawerPanel.animate().translationX(-width).setDuration(180)
+            .withEndAction { drawerPanel.visibility = View.GONE }
+            .start()
+        scrim.animate().alpha(0f).setDuration(180)
+            .withEndAction { scrim.visibility = View.GONE }
+            .start()
+    }
+
+    // ------------------------------------------------------------------ 对话记录
+
+    private fun openConversation(conversation: Conversation) {
+        turnSeq++
+        current = conversation
+        conversations.select(conversation.id)
+
+        val saved = conversations.messages(conversation.id)
+        if (saved.isEmpty()) {
+            session.load(listOf(welcome()))
+        } else {
+            session.load(saved)
+        }
+        chatView?.refresh()
+        refreshDrawer()
+        closeDrawer()
+        setThinking(null)
+    }
+
+    private fun newConversation() {
+        val conversation = conversations.create(getString(R.string.conv_new_title))
+        openConversation(conversation)
+        chatView?.focusInput()
+    }
+
+    private fun confirmDeleteConversation(conversation: Conversation) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.bubble_delete_confirm_title))
+            .setMessage(conversation.title)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.action_confirm) { _, _ ->
+                val wasCurrent = current?.id == conversation.id
+                conversations.delete(conversation.id)
+                refreshDrawer()
+                if (wasCurrent) openConversation(conversations.current()) else toast(
+                    getString(R.string.conv_deleted)
                 )
             }
-        )
-        finish()
+            .show()
+    }
+
+    private fun welcome(): ChatMessage =
+        ChatMessage(text = getString(R.string.welcome), isUser = false)
+
+    private fun saveCurrent() {
+        val conversation = current ?: return
+        conversations.saveMessages(conversation.id, session.messages)
+        conversations.touch(conversation.id)
+        refreshDrawer()
+    }
+
+    // ------------------------------------------------------------------ 发送
+
+    fun bindChatUi(ui: ChatFragment) {
+        chatView = ui
+    }
+
+    fun unbindChatUi(ui: ChatFragment) {
+        if (chatView === ui) chatView = null
+    }
+
+    /** 输入框回车 / 点发送 */
+    fun sendText(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) {
+            toast(getString(R.string.error_empty_input))
+            return
+        }
+        if (!NetworkState.isOnline()) {
+            toast(getString(R.string.status_offline_hint))
+            setThinking(null)
+            return
+        }
+
+        // 上下文要在「这句进列表之前」取，否则它自己会被当成上一轮
+        val history = session.recentTurns(HISTORY_TURNS)
+
+        session.addUser(trimmed)
+        chatView?.clearInput()
+        askAi(history, trimmed)
     }
 
     /**
-     * 登录门禁。
+     * 真的去问一次。
      *
-     * @return true 表示可以继续启动；false 表示已经跳去登录页并结束了本页
+     * [turnSeq] 是「这一轮还算不算数」的凭据：用户改口、重发、切会话都会把它加一，
+     * 于是迟到的回答会被丢掉，不会盖到别的对话上。
      */
-    private fun ensureSignedIn(): Boolean {
-        if (AccountStore(this).isSignedIn) return true
-        // 外部送进来的那句话（自动化 / 分享）不挡
-        if (intent?.getStringExtra(EXTRA_QUERY) != null) return true
-        startActivity(android.content.Intent(this, LoginActivity::class.java))
-        finish()
-        return false
+    private fun askAi(history: List<LlmMessage>, question: String) {
+        val seq = ++turnSeq
+        setThinking(getString(R.string.status_thinking))
+        executor.execute {
+            val answer = ai.ask(history, question, styleHint())
+            main.post { if (seq == turnSeq) onAnswer(seq, answer) }
+        }
     }
 
-    private fun updateTabUi() {
-        val active = ContextCompat.getColor(this, R.color.brand_primary)
-        val inactive = ContextCompat.getColor(this, R.color.text_secondary)
+    private fun onAnswer(seq: Int, answer: AiChat.Answer) {
+        if (seq != turnSeq || isFinishing || isDestroyed) return
+        setThinking(null)
+        session.addAssistant(answer.text)
 
-        ivTabChat.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.CHAT) active else inactive)
-        ivTabFeatures.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.FEATURES) active else inactive)
-        ivTabSettings.imageTintList = ColorStateList.valueOf(if (currentTab == Tab.SETTINGS) active else inactive)
-
-        tvTabChat.setTextColor(if (currentTab == Tab.CHAT) active else inactive)
-        tvTabFeatures.setTextColor(if (currentTab == Tab.FEATURES) active else inactive)
-        tvTabSettings.setTextColor(if (currentTab == Tab.SETTINGS) active else inactive)
+        if (answer.error != null && !online) updateConnUi()
+        if (speakEnabled) tts.speak(answer.text)
+        maybeNameConversation()
     }
-
-    fun bindChatUi(ui: ChatUi) {
-        chatUi = ui
-    }
-
-    fun unbindChatUi(ui: ChatUi) {
-        if (chatUi === ui) chatUi = null
-    }
-
-    // ------------------------------------------------------------------ 返回键
 
     /**
-     * 返回键分三层，符合「二级页面 → 主页面 → 退出」的直觉：
-     * 1. 有二级页面（记忆）→ 先退回功能页；
-     * 2. 不在对话页 → 回对话页；
-     * 3. 已经在对话页 → 把控制权交回系统（退出应用）。
+     * 第一次得到回答后，让大模型给这次对话起个名字。
+     *
+     * 起名是额外的请求，失败就用首句截断（[AiChat.fallbackTitle]）——
+     * 抽屉里不会出现一排「新对话」。
      */
-    private fun setupBackBehavior() {
-        onBackPressedDispatcher.addCallback(this) {
-            when {
-                supportFragmentManager.backStackEntryCount > 0 ->
-                    supportFragmentManager.popBackStack()
-                currentTab != Tab.CHAT -> selectTab(Tab.CHAT)
-                else -> {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                }
+    private fun maybeNameConversation() {
+        val conversation = current ?: return
+        if (conversation.named) return
+        val firstUser = session.messages.firstOrNull { it.isUser }?.text ?: return
+        val firstAnswer = session.messages.firstOrNull { !it.isUser && it.text != getString(R.string.welcome) }
+            ?.text.orEmpty()
+        val id = conversation.id
+
+        executor.execute {
+            val title = ai.title(firstUser, firstAnswer)
+            main.post {
+                conversations.rename(id, title)
+                if (current?.id == id) current = current?.copy(title = title, named = true)
+                refreshDrawer()
             }
         }
     }
 
-    // ------------------------------------------------------------------ 设置
-
-    /** 设置页要直接读写云端配置和待学习列表，把持久化对象给它 */
-    fun appSettings(): AppSettings = settings
-
-    /** 启动时把上次保存的全部设置灌回引擎和语音控制器 */
-    private fun restoreSettings() {
-        speakEnabled = settings.speakEnabled
-        continuousMode = settings.continuousMode
-        tts.speakEnabled = speakEnabled
-
-        // 指定引擎必须在首次播报前切好，否则这一次还是用旧引擎的声音
-        ttsEngine = settings.ttsEngine
-        if (ttsEngine.isNotEmpty()) tts.useEngine(ttsEngine)
-
-        replyStyle = settings.replyStyle
-        proactiveFollowUp = settings.proactiveFollowUp
-        showThinking = settings.showThinking
-        onlineSearchEnabled = settings.onlineSearch
-        cloudConfig = settings.cloudConfig()
-        syncAssistantConfig()
+    private fun styleHint(): String {
+        val base = if (replyStyle == 0) {
+            "这次回答要短：一两句说到点上，不解释、不列点。"
+        } else {
+            "这次可以多说一点：先给结论，再补一两条理由或做法。"
+        }
+        val followUp = if (settings.proactiveFollowUp) "" else "这次不要反问，说完就停。"
+        return listOf(base, followUp).filter { it.isNotBlank() }.joinToString("\n")
     }
 
-    /** 把对话行为开关同步给纯逻辑层（规则 / 语料 / 引擎都读它） */
-    private fun syncAssistantConfig() {
-        AssistantConfig.replyStyle = when (replyStyle) {
-            0 -> AssistantConfig.ReplyStyle.CONCISE
-            2 -> AssistantConfig.ReplyStyle.DETAILED
-            else -> AssistantConfig.ReplyStyle.STANDARD
+    /** 离线 / 联网切换时，让界面立刻反映出「现在能不能用」 */
+    fun isOnline(): Boolean = online
+
+    // ------------------------------------------------------------------ 气泡操作
+
+    /** 只有最后一条用户消息能改能删——这是需求，也是防止改乱上下文 */
+    fun isEditable(index: Int): Boolean {
+        val message = session.messageAt(index) ?: return false
+        return message.isUser && index == session.lastUserIndex()
+    }
+
+    fun startEdit(index: Int): Boolean {
+        if (!isEditable(index)) return false
+        return chatView?.startEdit(index) == true
+    }
+
+    /**
+     * 改掉最后一条用户消息，并**让助手重新回答**。
+     *
+     * 旧答案必须作废：用户改的是问题，留着原来那句就变成「问 A 答 B」。
+     * 改完立刻重问一次，界面上先看到新问题、再填进新答案，和重新发一句一样。
+     */
+    fun updateMessage(index: Int, text: String): Boolean {
+        if (!isEditable(index)) return false
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+
+        // 历史只取这条之前的：这句已经被改写，不能再当作上下文
+        val history = session.recentTurnsBefore(index, HISTORY_TURNS)
+        session.updateUserText(index, trimmed)
+        session.dropAnswerAfter(index)
+        chatView?.refresh()
+
+        if (!NetworkState.isOnline()) {
+            // 没网就别假装在答：把状态说清楚，联网后重发即可
+            session.addAssistant(getString(R.string.offline_after_edit))
+            toast(getString(R.string.status_offline_hint))
+            return true
         }
-        AssistantConfig.proactiveFollowUp = proactiveFollowUp
-        AssistantConfig.onlineSearch = onlineSearchEnabled
+        askAi(history, trimmed)
+        return true
+    }
+
+    fun deleteTurn(index: Int): Boolean {
+        if (!isEditable(index)) return false
+        val ok = session.deleteTurn(index)
+        if (ok) chatView?.refresh()
+        return ok
+    }
+
+    // ------------------------------------------------------------------ 语音
+
+    /** 长按输入框：开始收音 */
+    fun beginVoice() {
+        if (!NetworkState.isOnline()) {
+            toast(getString(R.string.status_offline_hint))
+            return
+        }
+        if (hasMicPermission()) {
+            startVoiceInput()
+        } else {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    /** 松手：结束收音。cancel=true 表示上滑取消 */
+    fun endVoice(cancel: Boolean) {
+        if (!asr.isListening) return
+        if (cancel) {
+            asr.cancel()
+            setThinking(null)
+        } else {
+            asr.stop()
+        }
+    }
+
+    private fun startVoiceInput() {
+        if (!asr.isAvailable()) {
+            toast(getString(R.string.error_no_recognizer))
+            return
+        }
+        tts.stop()
+        asr.start()
+    }
+
+    override fun onReady() {
+        setThinking(getString(R.string.status_listening_hold))
+        chatView?.setListening(true, false)
+    }
+
+    override fun onPartialResult(text: String) {
+        setThinking(getString(R.string.status_recognizing) + " " + text)
+    }
+
+    override fun onEndOfSpeech() {
+        setThinking(getString(R.string.status_recognizing))
+        chatView?.setListening(false, false)
+    }
+
+    override fun onFinalResult(text: String, candidates: List<String>) {
+        setThinking(null)
+        chatView?.setListening(false, false)
+        // 识别结果放进输入框，让用户看一眼再发——长按说话不等于立刻发送
+        chatView?.setInput(text)
+    }
+
+    override fun onError(message: String) {
+        setThinking(null)
+        chatView?.setListening(false, false)
+        toast(message)
+    }
+
+    override fun onSpeakingFinished() {
+        // 没有「连续对话」了：说完就停，等用户下次开口
+    }
+
+    private fun hasMicPermission(): Boolean = ContextCompat.checkSelfPermission(
+        this,
+        Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED
+
+    // ------------------------------------------------------------------ 设置页
+
+    fun appSettings(): AppSettings = settings
+
+    fun openSettings() {
+        if (settingsOpen) return
+        closeDrawer()
+        settingsOpen = true
+        btnMenu.setImageResource(R.drawable.ic_arrow_back)
+        btnSettings.visibility = View.INVISIBLE
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.fragmentContainer, SettingsFragment())
+            .commit()
+    }
+
+    private fun closeSettings() {
+        if (!settingsOpen) return
+        settingsOpen = false
+        btnMenu.setImageResource(R.drawable.ic_menu)
+        btnSettings.visibility = View.VISIBLE
+        showChatFragment()
+    }
+
+    /**
+     * 把对话页放进容器里（幂等）。
+     *
+     * 已经挂着就不动它：重建 Fragment 会丢掉当前滚动位置，
+     * 而且从设置页返回时也没必要把整段对话重新渲染一遍。
+     */
+    private fun showChatFragment() {
+        val current = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
+        if (current is ChatFragment) return
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.fragmentContainer, ChatFragment())
+            .commit()
+    }
+
+    fun rotateBackIconToMenu() = closeSettings()
+
+    /**
+     * 设置页「恢复默认设置」。
+     *
+     * 只清偏好：对话记录、提醒、账号都由各自的存储管，不该被一次点按抹掉。
+     * 清完立刻回读一遍，界面上的开关才不会和实际状态对不上。
+     */
+    fun resetSettings() {
+        settings.reset()
+        restoreSettings()
+    }
+
+    fun setCloudConfig(config: CloudLlmHandler.CloudConfig) {
+        cloudConfig = config
+        settings.saveCloud(config)
+    }
+
+    fun testCloud(config: CloudLlmHandler.CloudConfig, onResult: (String) -> Unit) {
+        executor.execute {
+            val text = runCatching { CloudLlmHandler.ping(config) }
+                .getOrElse { "没连上：${it.message.orEmpty()}" }
+            main.post { if (!isFinishing && !isDestroyed) onResult(text) }
+        }
+    }
+
+    fun setReplyStyle(style: Int) {
+        replyStyle = style
+        settings.replyStyle = style
     }
 
     fun setSpeakEnabled(enabled: Boolean) {
@@ -594,407 +693,140 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         if (!enabled) tts.stop()
     }
 
-    fun setContinuousMode(enabled: Boolean) {
-        continuousMode = enabled
-        settings.continuousMode = enabled
-        if (!enabled) {
-            asr.cancel()
-            chatUi?.setMicActive(false)
-        }
-    }
-
-    /** 切换语音合成引擎 */
-    fun setTtsEngine(packageName: String) {
-        ttsEngine = packageName
-        settings.ttsEngine = packageName
-        tts.useEngine(packageName)
-    }
-
-    fun setReplyStyle(style: Int) {
-        replyStyle = style
-        settings.replyStyle = style
-        syncAssistantConfig()
-    }
-
-    fun setProactiveFollowUp(enabled: Boolean) {
-        proactiveFollowUp = enabled
-        settings.proactiveFollowUp = enabled
-        syncAssistantConfig()
-    }
-
-    /** 是否展示「理解过程」（淡色小字，答案出现即移除） */
-    fun setShowThinking(enabled: Boolean) {
-        showThinking = enabled
-        settings.showThinking = enabled
-    }
-
-    fun setOnlineSearchEnabled(enabled: Boolean) {
-        onlineSearchEnabled = enabled
-        settings.onlineSearch = enabled
-        syncAssistantConfig()
-    }
-
-    /** 设置页保存云端配置：立刻写盘并生效 */
-    fun setCloudConfig(config: CloudLlmHandler.CloudConfig) {
-        cloudConfig = config
-        settings.saveCloud(config)
-        // 换了服务商 / 模型，之前缓存的答案不能再复用
-        CloudCache.clear()
-    }
-
-    /** 设置页「测试连接」：在子线程打一次最小请求，结果回调到主线程 */
-    fun testCloud(config: CloudLlmHandler.CloudConfig, onResult: (String) -> Unit) {
-        netExecutor.execute {
-            val result = runCatching { CloudLlmHandler.ping(config) }
-                .getOrElse { LlmResult.Fail("请求失败：${it.message.orEmpty()}") }
-            val text = when (result) {
-                is LlmResult.Ok -> "连上了。模型 ${result.model} 回复：${result.text}"
-                is LlmResult.Fail -> "没连上：${result.reason}"
-            }
-            mainHandler.post { if (!isFinishing && !isDestroyed) onResult(text) }
-        }
-    }
-
-    /** 恢复默认设置（不动记忆库），并立刻生效 */
-    fun resetSettings() {
-        settings.reset()
-        restoreSettings()
-    }
-
-    // ------------------------------------------------------------------ 对话
-
-    /**
-     * 轮次序号。
-     *
-     * 后台那条串行链（联网 → 云端）回来时，如果序号已经不是最新，
-     * 说明用户又说了新的一句——旧结果直接丢弃，绝不上屏。
-     */
-    private var turnSeq = 0
-
-    /** 思考过程小字是否还在显示（答案已上屏后不再追加，免得又冒出一行） */
-    @Volatile
-    private var thinkingActive = false
-
-    /** 麦克风按钮 */
-    fun onMicClicked() {
-        if (asr.isListening) {
-            asr.stop()
-        } else {
-            ensurePermissionThenStart()
-        }
-    }
-
-    /** 输入框发送 */
-    fun onSendClicked(text: String) {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) {
-            chatUi?.showStatus(getString(R.string.error_empty_input))
-            return
-        }
-        sendText(trimmed)
-    }
-
-    /** 处理一条用户输入（文字或识别结果） */
-    fun sendText(text: String) = sendCandidates(listOf(text), RawText.SOURCE_TEXT)
-
-    /**
-     * 处理一次识别（可能有多条候选）。
-     *
-     * 界面在这里只做两件事：轮次号 +1（用来丢弃过期结果），
-     * 然后把输入丢进流水线。**中间怎么走一概不管**——
-     * 提醒域、本机工具、本地问答、联网、云端，都由流水线和各模块自己决定；
-     * 结果通过事件总线上的 [ReplyReady] 回来。
-     */
-    fun sendCandidates(candidates: List<String>, source: String = RawText.SOURCE_ASR) {
-        val cleaned = candidates.map { it.trim() }.filter { it.isNotEmpty() }
-        if (cleaned.isEmpty()) return
-
-        turnSeq++
-        pipeline.submit(turnSeq, cleaned, source)
-    }
-
-    /**
-     * 订阅事件总线。
-     *
-     * 三个事件的职责分得很清：
-     * - [TurnPlanned]：本地阶段算完了，界面据此决定要不要显示思考过程；
-     * - [ReplyReady]：最终答案，**只上屏一次**（不会再出现「先答一遍再改一遍」）；
-     * - [ReminderFired]：提醒到点，闪一下状态栏，前台时顺带念一句。
-     */
-    private fun subscribeEvents() {
-        bus.on<TurnPlanned>(owner = this) { event ->
-            if (event.turn == turnSeq) showThinking(event.turn, event.plan)
-        }
-        bus.on<ReplyReady>(owner = this) { event ->
-            if (event.turn == turnSeq) finishTurn(event.turn, event.reply, event.primary)
-        }
-        bus.on<ReminderFired>(owner = this) { onReminderFired(it) }
-    }
-
-    /** 提醒到点：状态栏提示 +（前台且开着播报时）念一句 */
-    private fun onReminderFired(event: ReminderFired) {
-        if (isFinishing || isDestroyed) return
-        chatUi?.showStatus(getString(R.string.status_reminder_fired, event.content), highlight = true)
-        if (speakEnabled && isForeground && currentTab == Tab.CHAT && !tts.isSpeaking) {
-            tts.speak(getString(R.string.speak_reminder, event.content))
-        }
-    }
-
-    /** 当前文案的欢迎语气泡 */
-    private fun newWelcome() = ChatMessage(text = getString(R.string.welcome), isUser = false)
-
-    /**
-     * 是不是「开场那一条」。
-     *
-     * 落盘的历史里第一条固定是欢迎语；改名、换语言之后它的文字会变，
-     * 所以只认「位置 + 是助手发的普通消息」，不去比对具体文案。
-     */
-    private fun ChatMessage.isOpeningLine(): Boolean =
-        !isUser && kind == ChatMessage.KIND_NORMAL
-
-    /** 当前生效的运行期配置 */
-    private fun config(): AssistantRouter.Config = AssistantRouter.Config(
-        onlineEnabled = onlineSearchEnabled,
-        cloud = cloudConfig,
-        fallbackCity = lastWeatherCity
-    )
-
-    /**
-     * 把「理解过程 + 接下来要做什么」以淡色小字逐行显示出来。
-     *
-     * 每一步间隔一点点，用户能看到它在想什么、正在联网还是正在问 AI，
-     * 而不是一闪而过——这也是豆包 / DeepSeek 那种思考过程给人的信任感来源。
-     */
-    private fun showThinking(seq: Int, plan: AssistantRouter.TurnPlan) {
-        thinkingActive = showThinking
-        if (!showThinking) {
-            val waitingText = if (plan.decision.route == RoutePlanner.Route.WEB) {
-                getString(R.string.status_online)
-            } else {
-                getString(R.string.status_cloud_thinking)
-            }
-            chatUi?.showStatus(waitingText, highlight = true)
-            return
-        }
-
-        session.startThinking("正在理解…")
-        val post = { index: Int, line: String ->
-            mainHandler.postDelayed(
-                { if (seq == turnSeq && thinkingActive) session.appendThinking("· $line") },
-                QueryUnderstanding.STEP_MS * index
-            )
-        }
-        plan.understanding.steps.forEachIndexed { index, step -> post(index + 1, step) }
-        post(plan.understanding.steps.size + 1, "${plan.decision.note}…")
-    }
-
-    /**
-     * 结果落地（主线程）：清掉思考过程 → 上屏一次 → 播报。
-     *
-     * @param seq 这一轮的序号；不是最新就丢弃，防止旧答案插回来
-     */
-    private fun finishTurn(seq: Int, reply: AssistantRouter.Reply, primary: String) {
-        if (seq != turnSeq) return
-        thinkingActive = false
-        if (isFinishing || isDestroyed) return
-
-        history.recordAssistant(reply.text, reply.intent)
-
-        val heard = reply.heard
-        if (heard != null && heard != primary) {
-            chatUi?.showStatus(getString(R.string.status_heard, heard), highlight = true)
-            mainHandler.postDelayed({
-                if (!tts.isSpeaking) chatUi?.showStatus(getString(R.string.status_idle))
-            }, 2500)
-            return
-        }
-
-        // 工具让助手闭嘴（静音 / 停止播报）时不再念出来
-        if (reply.intent == ToolIntent.TTS_STOP) {
-            tts.stop()
-        }
-
-        if (reply.error != null) {
-            chatUi?.showStatus(getString(R.string.status_cloud_fail, reply.error))
-        }
-
-        if (speakEnabled) {
-            chatUi?.showStatus(getString(R.string.status_speaking))
-            // 没念出声（引擎坏了 / 全是不认识的符号）就当场收尾，
-            // 否则状态栏会一直停在「正在回答…」，也不会重开麦克风
-            if (!tts.speak(reply.speakText)) {
-                chatUi?.showStatus(reply.error?.let { getString(R.string.status_cloud_fail, it) }
-                    ?: getString(R.string.status_idle))
-                maybeRestartListening(400)
-            }
-        } else {
-            chatUi?.showStatus(reply.error?.let { getString(R.string.status_cloud_fail, it) }
-                ?: getString(R.string.status_idle))
-            maybeRestartListening(400)
-        }
-    }
-
-    /** 功能页点击示例：切回对话页并直接执行 */
-    fun runFromSkill(example: String) {
-        selectTab(Tab.CHAT)
-        supportFragmentManager.executePendingTransactions()
-        sendText(example)
-    }
-
-    /** 改一条用户消息的文字（对话页点气泡 → 修改） */
-    fun updateUserMessage(index: Int, text: String): Boolean =
-        session.updateUserText(index, text)
-
-    /** 删掉一轮对话：提问 + 紧跟着的回答（对话页点气泡 → 删除） */
-    fun deleteTurn(index: Int): Boolean = session.deleteTurn(index)
-
     fun toggleSpeak(): Boolean {
         setSpeakEnabled(!speakEnabled)
         return speakEnabled
     }
 
-    fun toggleContinuous(): Boolean {
-        setContinuousMode(!continuousMode)
-        return continuousMode
-    }
-
-    fun clearChat() {
-        asr.cancel()
-        tts.stop()
-        // 作废还在后台跑的那一条：序号一变，它的结果就不会再上屏
+    /** 清空**当前这条**对话记录（其它记录不受影响） */
+    fun clearCurrentConversation() {
         turnSeq++
-        thinkingActive = false
-        history.clear()
-        session.ensureWelcome(getString(R.string.welcome))
-        chatUi?.showStatus(getString(R.string.status_idle))
+        setThinking(null)
+        session.clear()
+        session.load(listOf(welcome()))
+        saveCurrent()
+        chatView?.refresh()
     }
 
-    // ------------------------------------------------------------------ 语音事件
-
-    private fun ensurePermissionThenStart() {
-        val granted = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (granted) {
-            startVoiceInput()
-        } else {
-            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-    }
-
-    private fun startVoiceInput() {
-        if (!asr.isAvailable()) {
-            chatUi?.showStatus(getString(R.string.error_no_recognizer))
-            return
-        }
-        tts.stop()
-        asr.start()
-    }
-
-    override fun onReady() {
-        chatUi?.showStatus(getString(R.string.status_listening), highlight = true)
-        chatUi?.setMicActive(true)
-    }
-
-    override fun onPartialResult(text: String) {
-        chatUi?.showStatus("识别中：$text", highlight = true)
-    }
-
-    override fun onEndOfSpeech() {
-        chatUi?.showStatus(getString(R.string.status_recognizing))
-        chatUi?.setMicActive(false)
-    }
-
-    override fun onFinalResult(text: String, candidates: List<String>) {
-        chatUi?.setMicActive(false)
-        chatUi?.showStatus(getString(R.string.status_idle))
-        sendCandidates(candidates)
-    }
-
-    override fun onError(message: String) {
-        chatUi?.setMicActive(false)
-        chatUi?.showStatus(message)
-        // 识别失败只在状态栏提示，不写进对话列表：
-        // 连续对话时 "没听清" 会反复触发，写进列表会把对话刷屏
-    }
-
-    override fun onSpeakingFinished() {
-        chatUi?.showStatus(getString(R.string.status_idle))
-        maybeRestartListening(250)
-    }
-
-    /**
-     * 重新打开麦克风。
-     * 延迟一小段时间是为了让上一轮的 UI 动画和状态栏更新完，
-     * 同时用 isSpeaking / isListening 双重判断防止重复启动。
-     */
-    private fun maybeRestartListening(delayMs: Long) {
-        if (!continuousMode || !isForeground || currentTab != Tab.CHAT) return
-        if (!asr.isAvailable()) return
-        if (!hasMicPermission()) {
-            // 自动续听不能绕过权限申请（那是用户点麦克风时的路径），
-            // 静默停在这里，等用户下一次手动点麦克风
-            chatUi?.showStatus(getString(R.string.error_no_permission))
-            return
-        }
-        mainHandler.postDelayed({
-            if (continuousMode && isForeground && currentTab == Tab.CHAT &&
-                !tts.isSpeaking && !asr.isListening
-            ) {
-                startVoiceInput()
+    fun gotoLogin() {
+        startActivity(
+            Intent(this, LoginActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             }
-        }, delayMs)
+        )
+        finish()
     }
 
-    private fun hasMicPermission(): Boolean = ContextCompat.checkSelfPermission(
-        this,
-        Manifest.permission.RECORD_AUDIO
-    ) == PackageManager.PERMISSION_GRANTED
+    private fun restoreSettings() {
+        speakEnabled = settings.speakEnabled
+        replyStyle = settings.replyStyle
+        tts.speakEnabled = speakEnabled
+        val engine = settings.ttsEngine
+        if (engine.isNotEmpty()) tts.useEngine(engine)
+        cloudConfig = settings.cloudConfig()
+    }
+
+    // ------------------------------------------------------------------ 其它
+
+    private fun subscribeReminder() {
+        com.example.voiceassistant.bus.AssistantBus.on<ReminderFired>(owner = this) { event ->
+            if (isFinishing || isDestroyed) return@on
+            if (speakEnabled && isForeground && !tts.isSpeaking) {
+                tts.speak(getString(R.string.speak_reminder, event.content))
+            }
+        }
+    }
+
+    private fun setupBack() {
+        onBackPressedDispatcher.addCallback(this) {
+            when {
+                drawerOpen -> closeDrawer()
+                settingsOpen -> closeSettings()
+                else -> {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        }
+    }
+
+    private fun askNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return
+        if (ReminderAlarm.canNotify(this)) return
+        val prefs = getSharedPreferences(PREFS_ONBOARDING, MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_NOTIFY_ASKED, false)) return
+        prefs.edit().putBoolean(KEY_NOTIFY_ASKED, true).apply()
+        runCatching { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+    }
+
+    /** 装完清安装包：每个版本只跑一次 */
+    private fun cleanInstallerOnce() {
+        if (isFinishing || isDestroyed) return
+        val prefs = getSharedPreferences(PREFS_ONBOARDING, MODE_PRIVATE)
+        val key = KEY_APK_CLEAN + versionName()
+        if (prefs.getBoolean(key, false)) return
+        prefs.edit().putBoolean(key, true).apply()
+
+        val found = runCatching { ApkCleaner.findInstallers(this) }.getOrNull().orEmpty()
+        if (found.isEmpty()) return
+        val remaining = found.filterNot { ApkCleaner.deleteSilently(this, it) }
+        if (remaining.isEmpty()) {
+            toast(getString(R.string.apk_clean_done))
+            return
+        }
+        val sender = ApkCleaner.deleteRequest(this, remaining) ?: return
+        runCatching { apkCleanLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun versionName(): String = runCatching {
+        packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+    }.getOrDefault("")
+
+    private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 
     // ------------------------------------------------------------------ 生命周期
 
     override fun onResume() {
         super.onResume()
         isForeground = true
+        if (::session.isInitialized) chatView?.refresh()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 只有界面在前台才巡检网络：后台没必要每几秒醒一次
+        NetworkState.addListener(networkListener)
+    }
+
+    override fun onStop() {
+        NetworkState.removeListener(networkListener)
+        super.onStop()
     }
 
     override fun onPause() {
         isForeground = false
-        // 退到后台就停掉识别和播报，避免连续对话在后台一直抢占麦克风。
-        // 这里必须判 initialized：登录门禁会在 onCreate 里就 finish 掉本页，
-        // 那时 asr / tts 还没来得及创建，直接调用会崩在 onDestroy（已被真机撞到过）
-        mainHandler.removeCallbacksAndMessages(null)
+        main.removeCallbacksAndMessages(null)
         if (::asr.isInitialized) asr.cancel()
         if (::tts.isInitialized) tts.stop()
-        chatUi?.setMicActive(false)
         super.onPause()
     }
 
     override fun onDestroy() {
-        mainHandler.removeCallbacksAndMessages(null)
-        // 一次注销全部订阅：只注销单个的话，旋转屏几次就会收到一堆重复回调
-        bus.off(this)
+        main.removeCallbacksAndMessages(null)
+        com.example.voiceassistant.bus.AssistantBus.off(this)
         if (::asr.isInitialized) asr.release()
         if (::tts.isInitialized) tts.release()
         super.onDestroy()
     }
 
     private companion object {
-        const val KEY_TAB = "current_tab"
-
-        /** 首次引导相关的偏好都放这一个文件 */
         const val PREFS_ONBOARDING = "onboarding"
-
-        /** 通知权限只问一次，问过就记下来 */
         const val KEY_NOTIFY_ASKED = "notify_asked"
-
-        /** 装完清理安装包的标记（后面拼版本号，每个版本各问一次） */
         const val KEY_APK_CLEAN = "apk_clean_"
-
-        /** 外部传入一句话用的 extra 名 */
         const val EXTRA_QUERY = "query"
 
+        /** 带几轮上下文：3 轮够接住「它 / 那明天呢」，再多只是烧 token */
+        const val HISTORY_TURNS = 3
     }
 }

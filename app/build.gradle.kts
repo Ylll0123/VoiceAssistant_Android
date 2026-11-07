@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.voiceassistant"
         minSdk = 28
         targetSdk = 37
-        versionCode = 22
-        versionName = "3.8"
+        versionCode = 23
+        versionName = "4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

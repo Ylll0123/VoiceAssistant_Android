@@ -132,18 +132,5 @@
             android:textSize="15sp"
             app:cornerRadius="24dp" />
 
-        <TextView
-            android:id="@+id/tvGuest"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:layout_marginTop="8dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center"
-            android:text="@string/login_guest"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
     </LinearLayout>
 </ScrollView>

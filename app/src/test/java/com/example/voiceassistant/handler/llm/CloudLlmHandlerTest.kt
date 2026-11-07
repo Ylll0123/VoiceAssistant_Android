@@ -1,30 +1,28 @@
 package com.example.voiceassistant.handler.llm
 
-import com.example.voiceassistant.assistant.AssistantEngine
 import com.example.voiceassistant.data.ChatSession
 import com.example.voiceassistant.data.JsonLite
-import com.example.voiceassistant.assistant.QueryUnderstanding
+import com.example.voiceassistant.network.LlmMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import com.example.voiceassistant.network.LlmMessage
-import com.example.voiceassistant.network.LlmResult
-import com.example.voiceassistant.core.TextCleaner
 
 /**
- * 云端大模型接口的测试（**不发真实网络请求**）。
+ * 云端接口层的测试（**不发真实网络请求**）。
  *
- * 测的都是纯函数部分：
+ * v4.0 之后这个类只剩协议层的纯函数，所以这里测的也就是：
  * - 地址拼接（用户可能填 `/v1`，也可能填完整路径）；
  * - 请求体与 JSON 转义（中文和引号都不能把请求体搞坏）；
- * - 各家的响应解析与错误信息；
- * - 该不该问云端的决策（教学 / 槽位这些本机流程不能被抢）。
+ * - 各家的响应解析与错误翻译；
+ * - 人设迁移（老用户升级后不能拿到一段过时的人设）。
+ *
+ * 「这一轮该不该问云端」这类判断已经不存在了——所有问题都问云端。
  */
 class CloudLlmHandlerTest {
 
     private fun config(
-        mode: CloudLlmHandler.CloudMode = CloudLlmHandler.CloudMode.LOCAL_FIRST,
+        mode: CloudLlmHandler.CloudMode = CloudLlmHandler.CloudMode.CLOUD_FIRST,
         url: String = "https://api.deepseek.com/v1",
         key: String = "sk-test-123456",
         model: String = "deepseek-flash"
@@ -136,48 +134,21 @@ class CloudLlmHandlerTest {
         assertEquals("服务端出问题了", CloudLlmHandler.parseError(null, 500))
     }
 
-    // ------------------------------------------------------------ 决策
+    // ------------------------------------------------------------ 配置
 
     @Test
-    fun `没配 Key 就不问云端`() {
+    fun `没配 Key 就不算配置好`() {
         val empty = CloudLlmHandler.CloudConfig()
-        assertFalse(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_FALLBACK, "我不知道", empty))
         assertFalse(empty.isReady())
+        // 关掉开关之后即使三项都填了也不算
+        assertFalse(config(mode = CloudLlmHandler.CloudMode.OFF).isReady())
+        assertTrue(config().isReady())
     }
 
     @Test
-    fun `关掉之后即使配好也不问`() {
-        val off = config(mode = CloudLlmHandler.CloudMode.OFF)
-        assertFalse(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_FALLBACK, "我不知道", off))
+    fun `没配置时不发请求，直接给人话`() {
+        assertEquals("还没有配置 AI 接口", CloudLlmHandler.ping(CloudLlmHandler.CloudConfig()))
     }
-
-    @Test
-    fun `本地优先只在答不好时问`() {
-        val cfg = config(mode = CloudLlmHandler.CloudMode.LOCAL_FIRST)
-        assertTrue(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_FALLBACK, "这句我没太听懂", cfg))
-        // 本地答得挺好就不浪费额度
-        assertFalse(CloudLlmHandler.shouldAsk("weather", "北京现在常年 12℃~20℃，出门带件外套。", cfg))
-        // 本机多轮的中间状态永远不问
-        assertFalse(CloudLlmHandler.shouldAsk("slot", "你要翻译哪个词？", cfg))
-    }
-
-    @Test
-    fun `AI 优先时除了本机功能都问`() {
-        val cfg = config(mode = CloudLlmHandler.CloudMode.CLOUD_FIRST)
-        assertTrue(CloudLlmHandler.shouldAsk("chat", "抱一下。想说就说。", cfg))
-        assertTrue(CloudLlmHandler.shouldAsk(AssistantEngine.INTENT_FALLBACK, "这句我答不上来", cfg))
-        // 反问补全是本地多轮中间状态，不交出去
-        assertFalse(CloudLlmHandler.shouldAsk("slot", "你要翻译哪个词？", cfg))
-    }
-
-    @Test
-    fun `单薄答案会被判成答不好`() {
-        assertTrue(CloudLlmHandler.looksThin("嗯"))
-        assertTrue(CloudLlmHandler.looksThin("这句我没太听懂"))
-        assertFalse(CloudLlmHandler.looksThin("北京现在常年 12℃~20℃，建议带件薄外套。"))
-    }
-
-    // ------------------------------------------------------------ 其它
 
     @Test
     fun `Key 脱敏保留头尾`() {
@@ -185,29 +156,37 @@ class CloudLlmHandlerTest {
         assertEquals("", CloudLlmHandler.maskKey(""))
     }
 
+    // ------------------------------------------------------------ 人设
+
     @Test
-    fun `默认人设带知识骨架但仍是 TTS 友好`() {
+    fun `默认人设是 TTS 友好且讲清了工具有哪些`() {
         val prompt = CloudLlmHandler.DEFAULT_SYSTEM_PROMPT
         assertTrue("仍须禁止 Markdown（会被 TTS 原样念出）：$prompt", prompt.contains("Markdown"))
         assertTrue("要说明回答会被朗读：$prompt", prompt.contains("朗读") || prompt.contains("短句"))
-        // 本地语料删掉后，语料里沉淀的要点改由人设携带，这几类必须在
-        listOf("天气", "健康", "学习", "情绪", "安全", "居家").forEach { key ->
-            assertTrue("人设里应保留「$key」类要点：$prompt", prompt.contains(key))
-        }
+        // v4.0 的分工：能力全交给模型，所以人设必须点明工具名，否则它会回答「做不到」
+        listOf("create_reminder", "list_reminders", "cancel_reminder", "set_timer", "device")
+            .forEach { key ->
+                assertTrue("人设里应写明工具「$key」：$prompt", prompt.contains(key))
+            }
         assertTrue("人设每轮都要发送，不能无限长，当前 ${prompt.length} 字：$prompt", prompt.length <= 2000)
     }
 
     @Test
-    fun `两个旧版默认人设都会迁移成知识骨架版`() {
-        // 3.0 之前的长人设
+    fun `三代旧人设都会迁移成当前版本`() {
         assertEquals(
             CloudLlmHandler.DEFAULT_SYSTEM_PROMPT,
             CloudLlmHandler.migratePrompt(CloudLlmHandler.LEGACY_SYSTEM_PROMPT)
         )
-        // v3.6 的极简人设：语料删掉后它太单薄，也要换掉
         assertEquals(
             CloudLlmHandler.DEFAULT_SYSTEM_PROMPT,
             CloudLlmHandler.migratePrompt(CloudLlmHandler.LEGACY_MINIMAL_PROMPT)
+        )
+        // v3.8 的知识骨架版：还宣称手机能「本地报时算数」，必须换掉
+        val legacyKnowledge = CloudLlmHandler.LEGACY_KNOWLEDGE_PROMPT +
+            "\n这台手机能直接做的事：报时间日期、算数换算。"
+        assertEquals(
+            CloudLlmHandler.DEFAULT_SYSTEM_PROMPT,
+            CloudLlmHandler.migratePrompt(legacyKnowledge)
         )
     }
 
@@ -256,6 +235,8 @@ class CloudLlmHandlerTest {
         assertTrue(session.recentTurns(4).isEmpty())
     }
 
+    // ------------------------------------------------------------ 服务商预设
+
     @Test
     fun `服务商预设自带可用地址`() {
         assertTrue(CloudLlmHandler.PROVIDERS.size >= 5)
@@ -282,10 +263,7 @@ class CloudLlmHandlerTest {
         // deepseek-chat / deepseek-reasoner 已在 2026-07-24 停用，请求会被拒
         val dead = setOf("deepseek-chat", "deepseek-reasoner")
         CloudLlmHandler.PROVIDERS.forEach { p ->
-            org.junit.Assert.assertFalse(
-                "「${p.label}」还在用已停用的模型名 ${p.model}",
-                p.model in dead
-            )
+            assertFalse("「${p.label}」还在用已停用的模型名 ${p.model}", p.model in dead)
         }
     }
 
@@ -294,14 +272,14 @@ class CloudLlmHandlerTest {
         CloudLlmHandler.PROVIDERS.filter { it.baseUrl.isNotBlank() }.forEach { p ->
             val url = CloudLlmHandler.chatUrl(p.baseUrl)
             assertTrue("「${p.label}」地址拼错了：$url", url.endsWith("/chat/completions"))
-            org.junit.Assert.assertEquals(
+            assertEquals(
                 "「${p.label}」里出现两段 /chat/completions",
                 url.indexOf("/chat/completions"), url.lastIndexOf("/chat/completions")
             )
         }
     }
 
-    // ------------------------------------------------------- 默认值与重试策略
+    // ------------------------------------------------------- 默认值
 
     @Test
     fun `默认温度为 1，兼容方舟思考型模型`() {
@@ -310,13 +288,6 @@ class CloudLlmHandlerTest {
         val body = CloudLlmHandler.buildBody("kimi-k3-1-pro-261024", listOf(LlmMessage.user("你好")))
         assertTrue("默认请求体必须是 temperature 1.0：$body", body.contains("\"temperature\":1.0"))
         assertFalse(body.contains("\"temperature\":0.7"))
-    }
-
-    @Test
-    fun `能认出 temperature 相关的报错`() {
-        assertTrue(CloudLlmHandler.mentionsTemperatureLimit("请求失败：`temperature` only 1 is allowed for this model"))
-        assertTrue(CloudLlmHandler.mentionsTemperatureLimit("请求失败：Temperature must be 1"))
-        assertFalse(CloudLlmHandler.mentionsTemperatureLimit("Key 不对或没权限：invalid api key"))
     }
 
     @Test
@@ -336,32 +307,5 @@ class CloudLlmHandlerTest {
         )
         assertTrue(body.contains("\"max_tokens\":1024"))
         assertTrue(body.contains("\"temperature\":1.0"))
-    }
-
-    @Test
-    fun `简要问题比原句短才发给云端`() {
-        val raw = "明天我要去上海出差，那边天气怎么样，要不要带伞"
-        val brief = QueryUnderstanding.analyze(raw).brief
-        assertTrue(brief.length < raw.length)
-        assertEquals(brief, CloudLlmHandler.pickInput(raw, brief))
-    }
-
-    @Test
-    fun `历史里的长回答会被截断`() {
-        val turns = listOf(
-            LlmMessage.user("你好"),
-            LlmMessage.assistant("一".repeat(200))
-        )
-        val clipped = turns.map { it.copy(content = TextCleaner.clip(it.content)) }
-        assertEquals("你好", clipped[0].content)
-        assertTrue(clipped[1].content.length <= TextCleaner.DEFAULT_CLIP_CHARS + 1)
-    }
-
-    @Test
-    fun `失败标记出能不能重试`() {
-        val net = LlmResult.Fail("连不上服务器", retryable = false)
-        val server = LlmResult.Fail("接口地址找不到", retryable = true)
-        assertFalse((net as LlmResult.Fail).retryable)
-        assertTrue((server as LlmResult.Fail).retryable)
     }
 }

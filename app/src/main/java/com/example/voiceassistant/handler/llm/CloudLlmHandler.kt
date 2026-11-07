@@ -1,50 +1,41 @@
 package com.example.voiceassistant.handler.llm
 
 import com.example.voiceassistant.BuildConfig
-import com.example.voiceassistant.assistant.AssistantEngine
-import com.example.voiceassistant.assistant.DialogContext
-import com.example.voiceassistant.core.CloudSource
-import com.example.voiceassistant.core.TextCleaner
 import com.example.voiceassistant.data.JsonLite
 import com.example.voiceassistant.network.Http
 import com.example.voiceassistant.network.LlmMessage
-import com.example.voiceassistant.network.LlmResult
 
 /**
  * 处理器层：**云端大模型**。
  *
- * 唯一会花钱的一层，所以它的职责被压得很窄：
- * 只负责「把一段已经组好的对话发出去，把回答拿回来」，
- * **不判断该不该问**（那是 [com.example.voiceassistant.core.RoutePlanner] 的事），
- * **不组装记忆和时间**（那是 [com.example.voiceassistant.core.AssistantRouter] 的事）。
+ * v4.0 起这个类只剩三件事：
+ * 1. 存「用哪家、哪个模型、什么 Key、什么人设」——[CloudConfig]；
+ * 2. 做协议层的文本处理——地址拼接、JSON 转义、回答清洗、错误翻译；
+ * 3. 给设置页提供一次连通性测试——[ping]。
+ *
+ * 真正的对话循环（带工具调用的多轮）在 [com.example.voiceassistant.core.AiChat]，
+ * 因为它要拿到 `tools` 和调用栈；这里不再碰「这一轮该不该问云端」这类判断。
+ *
+ * ## 为什么去掉了缓存
+ * 带工具调用的回答依赖「当时手机的状态」（几点、有没有提醒、电量多少），
+ * 缓存下来的答案会在下一次原样复活，看着像灵异事件。
  *
  * ## 协议
- * OpenAI 兼容的 `/chat/completions`。豆包（火山方舟）、DeepSeek、通义、Kimi、智谱
- * 以及绝大多数自建网关都吃这一套，所以换服务商 = 换 Base URL + 模型名，其它不动。
- *
- * ## 省 token 的几个固定参数
- * | 参数 | 值 | 原因 |
- * |---|---|---|
- * | `max_tokens` | 128 | 回答是要念出来的，够说两三句；输出 token 通常更贵 |
- * | `temperature` | 1.0 | 协议默认值，也是兼容性最好的；方舟思考型模型**只允许**这个值 |
- * | `stream` | false | 语音助手要整句拿去朗读，流式只会让逻辑变复杂 |
- * | 重试 | 关 | 自动重试看着更稳，实际是双倍账单；语音助手下一句本来就会重新问 |
- *
- * ## 失败处理
- * 无网络 / 超时 / Key 错 / 地址错，一律返回带中文原因的 [LlmResult.Fail]，
- * 由上层回落到本地答案——**配了云端也不能让离线可用性变差**。
+ * OpenAI 兼容的 `/chat/completions`。智谱、方舟、DeepSeek、通义、Kimi
+ * 以及绝大多数自建网关都吃这一套，所以换服务商 = 换 Base URL + 模型名。
  */
-object CloudLlmHandler : CloudSource {
+object CloudLlmHandler {
 
-    /** 三种工作方式 */
+    /**
+     * 历史遗留的工作方式枚举。
+     *
+     * v4.0 之后**没有本地备用答案**了（离线就用不了），
+     * 但配置里存着这个字段，删掉会让老用户升级后读到默认值；
+     * 保留结构、只把它当作「开没开」的开关看待：[CloudMode.OFF] = 未启用。
+     */
     enum class CloudMode(val code: Int) {
-        /** 不用云端：完全离线 */
         OFF(0),
-
-        /** 本地优先：只有本地明显没答好才问云端 */
         LOCAL_FIRST(1),
-
-        /** AI 优先：只要不是本机功能都交给大模型 */
         CLOUD_FIRST(2);
 
         companion object {
@@ -83,8 +74,8 @@ object CloudLlmHandler : CloudSource {
      * 服务商预设列表。
      *
      * **第一个就是默认接入的**（见 [DEFAULT_PROVIDER]）：智谱 GLM-4-Flash-250414，
-     * 官方免费、128K 上下文、OpenAI 兼容，装完只要填一个 API Key 就能用，
-     * 不需要用户先想清楚去哪家注册、充多少钱。
+     * 官方免费、128K 上下文、OpenAI 兼容，支持 function calling，
+     * 装完只要填一个 API Key 就能用。
      */
     val PROVIDERS: List<Provider> = listOf(
         Provider(
@@ -126,7 +117,7 @@ object CloudLlmHandler : CloudSource {
      * 随包内置的 Key（编译期从 `local.properties` 注入到 [BuildConfig.GLM_API_KEY]）。
      *
      * 这样下载 APK 的人不用注册、不用填 Key 就能直接问大模型；
-     * 想换成自己的，在「关于 → AI 模型」里改一次即可，改过之后以本地保存的为准。
+     * 想换成自己的，在「设置 → 关于 → AI 模型」里改一次即可。
      *
      * 注意这是**共享额度**：Key 在 APK 里，懂行的人能提取出来。
      * 所以智谱后台要设额度上限，发现异常就换一把钥匙重新打包。
@@ -136,15 +127,12 @@ object CloudLlmHandler : CloudSource {
     // ------------------------------------------------------------------ 常量
 
     /**
-     * 默认人设 = 原来的本地语料浓缩成的「知识骨架」。
+     * 默认人设。
      *
-     * v3.8 之前，常识问答（KbLife 等五个分组）、闲聊语料（DialogCorpus）、
-     * 思维框架（ThoughtBank / ReplyCrafter）都是写在本机的一大坨数据。
-     * 现在答案交给大模型，本地那套全部删掉了，但**语料里沉淀的经验没有丢**：
-     * 每类问题该讲哪些要点、什么语气、边界在哪，都收进了这段人设里。
-     *
-     * 这也是唯一还随每轮请求发送的「本地知识」——它必须短：
-     * 一千多字 ≈ 两千 token，走免费模型也扛得住。
+     * v4.0 的分工变了：本机不再有规则引擎、常识库、天气数据，
+     * **所有能力都靠大模型 + 它手里的工具**。所以人设的重点从
+     * 「背哪些常识」变成了「什么时候该动手、动手失败怎么说」——
+     * 模型很容易在明明有工具的时候回答「我做不到」，这段必须写死。
      */
     const val DEFAULT_SYSTEM_PROMPT = """你是 HardlySeek，装在手机里的中文语音助手。你的回答会被朗读出来，所以：
 用短句，一般三五句说完；不要 Markdown、列表符号、emoji、括号注释；
@@ -156,29 +144,21 @@ object CloudLlmHandler : CloudSource {
 用户情绪重时先接住情绪再谈事，他在抱怨的时候不要立刻讲道理、不要评判；
 不确定就说不确定，宁可少说，也不要编事实、编数据、编日期。
 
-这台手机能直接做的事：报时间日期、算数换算、查实时天气（没网就给常年气候）、
-设提醒和计时、开关手电筒、报电量、打开常用应用、随机决定、讲笑话念名言。
-用户让你做这些就直接照做；做不到的（发消息、点外卖、放音乐）说明原因，不要假装做了。
+你手里有工具，能真的操作这台手机：
+create_reminder 建提醒、list_reminders 查提醒、cancel_reminder 取消提醒、
+set_timer 计时、device 控制手电筒/音量/亮度/打开应用/报电量、stop_speaking 停止朗读。
 
-常被问到的几类，答的时候抓这些要点：
-【天气穿衣】雨是水汽蒸发、凝结、降落；雪是全程低于零度；台风是海面水汽上升成旋，
-风眼区反而风平浪静。穿衣看体感和风力，不只看气温；温差大的季节提醒早晚加衣。
-【健康】感冒多是病毒，抗生素无效，靠休息和喝水；发烧先物理降温，持续高烧就医；
-久坐腰颈痛先改姿势、定时起身；眼干是盯屏幕太久，每二十分钟看远处二十秒；
-失眠先固定起床时间、白天多见光、睡前一小时不刷手机，别一上来就谈药。
-【饮食】三餐规律比补品重要；少糖少油、少吃夜宵；别等渴了才喝水；点外卖多带一份菜。
-【学习做事】拖延多半是任务太大不知从哪下手，拆成十五分钟能做完的一步；
-记不住是复习间隔不对，隔天、隔周各过一遍比连看三小时管用；
-考前不刷新内容，过错题和框架；写不出东西先写烂的第一版，再改。
-【情绪人际】焦虑是身体在预警，不是软弱，先做一件能马上完成的小事把控制感拿回来；
-难过时先允许自己难过，别急着劝「想开点」；社交累了是正常的，独处充电不算毛病；
-和人起矛盾先说事实和感受，别用「你总是」开头。
-【数码安全】手机进水立刻断电，别开机别充电，先晾干；折腾系统前先备份；
-陌生链接和「客服退款」一律先挂断，再从官方 App 进去；密码到处一样是最大的风险。
-【居家】油锅起火盖锅盖断火源，绝不浇水；微波炉不放金属和带壳蛋；
-冷藏四度、冷冻零下十八度；油烟机滤网一个月清一次。
-【拿主意】把「该不该」换成「最坏结果我能不能承担」；给自己留一个能退回的中间选项，
-比一次赌到底稳。
+工具怎么用（很重要）：
+内容和时间都齐了，**立刻调用工具**，不要复述、不要确认、不要追问「要不要重复」
+「是哪个作业」这种已经有了答案的问题——重复默认不重复，事项就是用户说的那件事。
+只有真的缺关键信息（比如只说了「提醒我一下」）才问一句，问完等用户回答。
+「今晚八点」「明早七点半」「半小时后」都要换算成 yyyy-MM-dd HH:mm 再传。
+调用完用一句话说结果（几点响、设了多久），不要念参数。
+工具返回失败就照实说失败原因，不要编一个成功。
+
+除此之外的任何问题——算数换算、天气出行、查资料、讲道理、闲聊——
+你自己回答，不要推给别人，也不要说「请用别的软件查」。
+需要精确的实时天气或最新资料时，直接说你看到的信息截至什么时候。
 
 边界：医疗诊断、法律结论、投资买卖只给常识和方向，明确说「具体要问医生、律师或专业人士」。
 不编新闻、不编人名和数字。真不知道就说不知道，再给一个用户可以自己查的方向。"""
@@ -187,7 +167,7 @@ object CloudLlmHandler : CloudSource {
      * 3.0 之前的默认人设原文。
      *
      * 人设一旦保存过就写进了本地配置，光改 [DEFAULT_SYSTEM_PROMPT] 对老用户不生效——
-     * 这里留一份旧原文，读取配置时识别到就自动迁移到极简版。
+     * 这里留一份旧原文，读取配置时识别到就自动迁移。
      */
     const val LEGACY_SYSTEM_PROMPT =
         "你是手机里的中文语音助手，用简洁、自然、有逻辑的口语回答。" +
@@ -196,21 +176,26 @@ object CloudLlmHandler : CloudSource {
             "和上文保持连贯：用户提到的事物或省略指代要按前文理解。" +
             "不确定的事情要说明不确定，不要编造事实。"
 
-    /**
-     * 上一版（v3.6）的默认人设。语料删掉之后它太单薄了——
-     * 不迁移的话，升级上来的老用户会拿到一个「什么都不会」的助手。
-     */
+    /** v3.6 的极简人设：语料删掉之后它太单薄了，必须迁移 */
     const val LEGACY_MINIMAL_PROMPT =
         "你是语音助手，简短回答用户问题，口语化，不主动延伸、不追问。不要使用 Markdown 或列表符号。"
+
+    /**
+     * v3.8 的人设：把本地语料压成的那段「知识骨架」。
+     *
+     * 它宣称「这台手机能直接做的事：报时间日期、算数换算……」——
+     * 那是本地规则引擎的说法。v4.0 把这些全交给模型和工具了，
+     * 留着这段会让模型以为该用旧办法，所以整段换掉。
+     */
+    val LEGACY_KNOWLEDGE_PROMPT: String
+        get() = "你是 HardlySeek，装在手机里的中文语音助手。你的回答会被朗读出来，所以："
 
     /** 只有「正好等于旧默认原文」才替换；用户自己写的人设原样保留 */
     fun migratePrompt(saved: String): String {
         val trimmed = saved.trim()
-        return if (trimmed == LEGACY_SYSTEM_PROMPT || trimmed == LEGACY_MINIMAL_PROMPT) {
-            DEFAULT_SYSTEM_PROMPT
-        } else {
-            saved
-        }
+        val legacy = trimmed == LEGACY_SYSTEM_PROMPT || trimmed == LEGACY_MINIMAL_PROMPT ||
+            trimmed.startsWith(LEGACY_KNOWLEDGE_PROMPT)
+        return if (legacy) DEFAULT_SYSTEM_PROMPT else saved
     }
 
     const val DEFAULT_MAX_TOKENS = 512
@@ -313,137 +298,6 @@ object CloudLlmHandler : CloudSource {
             .trim()
     }
 
-    // ------------------------------------------------------------------ 调用
-
-    /**
-     * 发起一次对话请求（**阻塞**，只能在子线程调用）。
-     *
-     * @param config 云端配置
-     * @param history 已经裁剪好的上下文历史（不含当前这一句）；不需要上下文时传空表
-     * @param input 用户这一句
-     * @param extraSystem 附加到 system 里的内容（当前时间 / 用户教过的说法等）
-     */
-    override fun call(
-        config: CloudConfig,
-        history: List<LlmMessage>,
-        input: String,
-        extraSystem: String
-    ): LlmResult {
-        if (!config.isReady()) return LlmResult.Fail("还没有配置 AI 接口")
-        val url = chatUrl(config.baseUrl)
-        if (url.isEmpty()) return LlmResult.Fail("接口地址是空的")
-        // 同一个问题刚问过：直接用上次的答案，不再计费
-        CloudCache.get(input)?.let { return LlmResult.Ok(it, "${config.model}（缓存）") }
-
-        val system = if (extraSystem.isBlank()) {
-            config.systemPrompt
-        } else {
-            "${config.systemPrompt}\n$extraSystem"
-        }
-        val messages = buildList {
-            add(LlmMessage.system(system))
-            addAll(history)
-            add(LlmMessage.user(input))
-        }
-
-        // 只发一次，不重试。
-        // 自动重试看起来是「更稳」，实际是双倍账单：网络抖动、识别失败、
-        // 服务端偶发错误都会让同一句话被计费两次，而语音助手的下一句本来就会重新问。
-        // 失败一律退回本地答案，离线可用性不受影响。
-        return attempt(config, url, messages, config.maxTokens, DEFAULT_TEMPERATURE).also {
-            if (it is LlmResult.Ok) CloudCache.put(input, it.text)
-        }
-    }
-
-    /** 发一次请求并解析结果（不含重试逻辑） */
-    private fun attempt(
-        config: CloudConfig,
-        url: String,
-        messages: List<LlmMessage>,
-        maxTokens: Int,
-        temperature: Double
-    ): LlmResult {
-        val body = buildBody(config.model, messages, maxTokens, temperature)
-        return runCatching {
-            val response = Http.postJson(url, config.apiKey, body, config.timeoutMs)
-            val content = parseContent(response.first)
-            if (content != null) {
-                val usedModel = JsonLite.str(JsonLite.get(JsonLite.parseOrNull(response.first), "model"))
-                    ?: config.model
-                LlmResult.Ok(content, usedModel)
-            } else {
-                LlmResult.Fail(parseError(response.first, response.second), retryable = true)
-            }
-        }.getOrElse { e ->
-            LlmResult.Fail(Http.describe(e, config.timeoutMs))
-        }
-    }
-
-    /**
-     * 错误信息是否在谈论 temperature 限制。
-     *
-     * 请求固定用合法的默认值 1.0，不会触发这类报错；
-     * 保留这个函数是为了「用户手动配置了奇怪的温度」时能把原因说清楚。
-     */
-    fun mentionsTemperatureLimit(reason: String): Boolean =
-        reason.contains("temperature", ignoreCase = true)
-
-    /** 只问一句「在吗」，用于设置页的连通性测试 */
-    fun ping(config: CloudConfig): LlmResult =
-        call(config, emptyList(), "回复两个字：收到", "")
-
-    // ------------------------------------------------------------------ 决策
-
-    /**
-     * 这些意图是**本机功能**，永远不问云端：
-     * 反问补全（clarify / slot）是本地多轮的中间状态，让大模型插嘴会打断流程。
-     */
-    private val LOCAL_ONLY_INTENTS = setOf(
-        AssistantEngine.INTENT_EMPTY,
-        AssistantEngine.INTENT_CLARIFY,
-        AssistantEngine.INTENT_CLARIFY_REJECTED,
-        DialogContext.INTENT_SLOT
-    )
-
-    /** 本地「明显没答好」的意图：说明规则和思考框架都没接住 */
-    private val WEAK_INTENTS = setOf(
-        AssistantEngine.INTENT_FALLBACK,
-        AssistantEngine.INTENT_CLARIFY
-    )
-
-    /**
-     * 这一轮要不要问云端。
-     *
-     * 只有「配好了」且「本地确实没答好」才问——
-     * 时间、计算、闲聊这些本地能答好的，一个 token 都不花。
-     */
-    fun shouldAsk(intent: String, localAnswer: String, config: CloudConfig): Boolean {
-        if (!config.isReady()) return false
-        if (intent in LOCAL_ONLY_INTENTS) return false
-        return when (config.mode) {
-            CloudMode.OFF -> false
-            CloudMode.CLOUD_FIRST -> true
-            CloudMode.LOCAL_FIRST -> intent in WEAK_INTENTS || looksThin(localAnswer)
-        }
-    }
-
-    /**
-     * 本地答案「太单薄」的判定。
-     *
-     * 门槛压得很低（短于 6 个字、或出现「不知道 / 没听懂」这类话），
-     * 宁可少问云端，也要保证响应速度和省额度。
-     */
-    fun looksThin(localAnswer: String): Boolean {
-        val text = localAnswer.trim()
-        if (text.isEmpty()) return true
-        if (THIN_CUES.any { text.contains(it) }) return true
-        return text.length <= 6
-    }
-
-    private val THIN_CUES = listOf(
-        "没太听懂", "听不懂", "答不上来", "不知道", "不确定你在说什么", "换个说法"
-    )
-
     // ------------------------------------------------------------------ 工具
 
     /** Key 脱敏：只留前六位和后四位 */
@@ -455,60 +309,25 @@ object CloudLlmHandler : CloudSource {
     }
 
     /**
-     * 发给云端的问题：优先用本地归纳出的简要问题。
+     * 只问一句「在吗」，用于设置页的连通性测试。
      *
-     * 原始长句里的背景铺垫（「明天我要去上海出差」）和附带问句（「要不要带伞」）
-     * 对答案没有额外贡献，却要按 token 计费；本地已经把它压成一句核心问句。
-     * 归纳失败（简要问题为空或反而更长）就退回原话，不冒语义丢失的风险。
+     * **阻塞**，只能在子线程调用。结果按 LlmResult 的两种形态返回会引入旧依赖，
+     * 这里直接给一句人话：成功是模型名，失败是原因。
      */
-    fun pickInput(raw: String, brief: String): String {
-        val value = brief.trim()
-        val source = raw.trim()
-        if (value.isEmpty()) return source
-        // 留 4 个字的余量：指代消解后往往略长一点（「它怎么样」→「上海怎么样」），
-        // 但那句才是云端能看懂的，不能因为长了两个字就退回带代词的原话。
-        return if (value.length > source.length + 4) source else value
-    }
-}
-
-/**
- * 云端答案的**会话内缓存**。
- *
- * ## 为什么需要
- * 语音助手的对话里，同一句话被问第二次很常见：没听清再问一遍、
- * 换个说法问同一件事、连续对话时反复确认。每次都重新计费，而答案其实是一样的
- * （这是语音助手，不是需要「每次都不一样」的创作场景）。
- *
- * ## 设计取舍
- * - 只在**内存**里存，进程退出就没了：时效问题——「今天天气怎么样」
- *   昨天的答案不能留到今天，缓存宁可短命也别答错；
- * - 容量 24 条，满了丢最早的：一次会话里真正会重复的也就那么几句；
- * - key 用归一化后的问句（去标点空格），「上海天气怎么样？」和「上海天气怎么样」算同一句。
- */
-object CloudCache {
-
-    private const val MAX_ENTRIES = 24
-
-    private val entries = java.util.LinkedHashMap<String, String>(MAX_ENTRIES + 1, 0.75f, true)
-
-    /** 命中就返回上次的答案，没命中返回 null */
-    @Synchronized
-    fun get(input: String): String? = entries[TextCleaner.cacheKey(input)]
-
-    @Synchronized
-    fun put(input: String, answer: String) {
-        if (answer.isBlank()) return
-        entries[TextCleaner.cacheKey(input)] = answer
-        while (entries.size > MAX_ENTRIES) {
-            val oldest = entries.keys.firstOrNull() ?: break
-            entries.remove(oldest)
+    fun ping(config: CloudConfig): String {
+        if (!config.isReady()) return "还没有配置 AI 接口"
+        val url = chatUrl(config.baseUrl)
+        if (url.isEmpty()) return "接口地址是空的"
+        val body = buildBody(config.model, listOf(LlmMessage.user("回复两个字：收到")))
+        return runCatching {
+            val (raw, code) = Http.postJson(url, config.apiKey, body, config.timeoutMs)
+            if (code in 200..299) {
+                parseContent(raw)?.take(20) ?: "连上了，但模型没回话"
+            } else {
+                parseError(raw, code)
+            }
+        }.getOrElse { e ->
+            Http.describe(e, config.timeoutMs)
         }
     }
-
-    /** 换服务商 / 模型时清空：旧答案不该继续复用 */
-    @Synchronized
-    fun clear() = entries.clear()
-
-    @Synchronized
-    fun size(): Int = entries.size
 }

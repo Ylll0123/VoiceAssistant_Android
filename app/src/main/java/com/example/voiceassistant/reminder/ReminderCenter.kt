@@ -1,6 +1,5 @@
 package com.example.voiceassistant.reminder
 
-import com.example.voiceassistant.tool.ReminderTool
 import java.time.ZoneId
 
 /**
@@ -40,7 +39,7 @@ class ReminderCenter(
     private val cancelAlarm: (Int) -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
     private val zone: ZoneId = ZoneId.systemDefault()
-) : ReminderPort, ReminderTool.Sink {
+) : ReminderPort {
 
     // ------------------------------------------------------------------ ReminderPort
 
@@ -148,24 +147,6 @@ class ReminderCenter(
         for (item in list()) {
             if (item.scheduled && item.triggerAt > now) runCatching { schedule(item) }
         }
-    }
-
-    // ------------------------------------------------------------------ ReminderTool.Sink
-
-    /** 旧工具链路（「提醒我明天八点交报告」的关键词分支）走的还是这三个方法 */
-    @Synchronized
-    override fun add(text: String, triggerAt: Long): Reminder =
-        create(text, triggerAt, Reminder.Repeat.NONE, null)
-
-    @Synchronized
-    override fun all(): List<Reminder> = list()
-
-    @Synchronized
-    override fun remove(id: Int): Boolean = cancel(id)
-
-    @Synchronized
-    override fun clear() {
-        cancelAll()
     }
 
     // ------------------------------------------------------------------ 内部

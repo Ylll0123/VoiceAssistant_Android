@@ -12,7 +12,6 @@
     <color name="text_primary">#1B1F24</color>
     <color name="text_secondary">#6B7280</color>
     <!-- 理解过程：比次要文字更淡，一眼能看出不是正式回答 -->
-    <color name="text_thinking">#9AA3AF</color>
 
     <!-- 气泡与输入框 -->
     <color name="bubble_user">#2F6FED</color>
@@ -25,4 +24,7 @@
 
     <!-- 启动图标背景：取自头像的底色，自适应图标被放大裁切时露出的就是它 -->
     <color name="ic_launcher_background">#6FD6F2</color>
+    <!-- 联网状态点：绿=在线，红=离线 -->
+    <color name="online_green">#22A06B</color>
+    <color name="offline_red">#E5484D</color>
 </resources>

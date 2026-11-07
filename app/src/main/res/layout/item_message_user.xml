@@ -8,8 +8,8 @@
     android:paddingBottom="5dp">
 
     <!--
-        这里刻意不开 textIsSelectable：它会吃掉单击事件，
-        「点气泡改字 / 删掉这一轮」就永远点不出来。
+        展示态：长按才弹「修改 / 删除」。刻意不开 textIsSelectable：
+        它会吃掉长按事件，气泡操作就永远弹不出来。
     -->
     <TextView
         android:id="@+id/tvMessage"
@@ -24,5 +24,74 @@
         android:paddingBottom="10dp"
         android:textColor="@color/white"
         android:textSize="15sp" />
+
+    <!--
+        编辑态：直接在这条气泡里改。保存 / 取消两个小按钮，
+        比再弹一个对话框更符合「改的就是眼前这一句」。
+    -->
+    <LinearLayout
+        android:id="@+id/editPanel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="40dp"
+        android:background="@drawable/bg_bubble_user"
+        android:orientation="vertical"
+        android:paddingStart="10dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/etEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:hint="@string/bubble_edit_hint"
+            android:importantForAutofill="no"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="6"
+            android:minWidth="160dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:textColor="@color/white"
+            android:textColorHint="#B9CCF8"
+            android:textSize="15sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/btnEditCancel"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="@string/action_cancel"
+                android:textColor="#D6E2FF"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/btnEditSave"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="@string/action_save"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
 
 </LinearLayout>

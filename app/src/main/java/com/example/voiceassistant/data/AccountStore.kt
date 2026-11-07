@@ -4,16 +4,14 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * 本地账号：注册、登录、游客、退出。
+ * 本地账号：注册、登录、退出。
  *
  * 没有后端，也不打算有：需求是「加一个登录注册界面」，
  * 而这台手机上唯一需要区分的就是「谁的对话和提醒」。
  * 所以账号信息全部落在 SharedPreferences，密码只存 [Passwords] 的加盐哈希。
  *
- * 三态：
- * - 已登录（[currentUser] 非空）
- * - 游客（[isGuest] 为真，功能全开，只是没有名字）
- * - 未登录（两者都不成立 → 主界面会把用户挡到登录页）
+ * **两态**（v4.0 起取消游客）：已登录 / 未登录。没登录一律挡在登录页——
+ * 对话记录、提醒、标题总结都按账号隔离，没有身份就没有归属。
  */
 class AccountStore(context: Context) {
 
@@ -31,16 +29,13 @@ class AccountStore(context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** 当前登录的用户名；游客和未登录都是 null */
+    /** 当前登录的用户名；未登录是 null */
     val currentUser: String?
         get() = prefs.getString(KEY_CURRENT, null)
 
-    val isGuest: Boolean
-        get() = prefs.getBoolean(KEY_GUEST, false)
-
-    /** 是否已经「进得去」：登录过或者选了游客 */
+    /** 是否已经登录 */
     val isSignedIn: Boolean
-        get() = currentUser != null || isGuest
+        get() = currentUser != null
 
     /** 已注册的用户名（设置页/调试用） */
     fun users(): List<String> =
@@ -65,7 +60,6 @@ class AccountStore(context: Context) {
             .putString(saltKey(name), salt)
             .putString(hashKey(name), hash)
             .putString(KEY_CURRENT, name)
-            .putBoolean(KEY_GUEST, false)
             .apply()
         return null
     }
@@ -82,21 +76,13 @@ class AccountStore(context: Context) {
         val hash = prefs.getString(hashKey(stored), null) ?: return Error.NO_USER
         if (!Passwords.verify(password, salt, hash)) return Error.WRONG_PASSWORD
 
-        prefs.edit()
-            .putString(KEY_CURRENT, stored)
-            .putBoolean(KEY_GUEST, false)
-            .apply()
+        prefs.edit().putString(KEY_CURRENT, stored).apply()
         return null
-    }
-
-    /** 游客进入：不建账号，只记一个标记，功能与登录后完全一致 */
-    fun continueAsGuest() {
-        prefs.edit().putBoolean(KEY_GUEST, true).remove(KEY_CURRENT).apply()
     }
 
     /** 退出登录：清掉当前身份，账号本身保留（下次还能登回来） */
     fun signOut() {
-        prefs.edit().remove(KEY_CURRENT).putBoolean(KEY_GUEST, false).apply()
+        prefs.edit().remove(KEY_CURRENT).remove(KEY_GUEST).apply()
     }
 
     private fun saltKey(name: String) = "salt_${name.lowercase()}"
@@ -107,7 +93,8 @@ class AccountStore(context: Context) {
         const val PREFS = "accounts"
         const val KEY_USERS = "users"
         const val KEY_CURRENT = "current_user"
-        const val KEY_GUEST = "guest"
+        /** 旧版本存过游客标记；v4.0 起停用，只在退出时顺手清掉 */
+        private const val KEY_GUEST = "guest"
         const val MIN_PASSWORD = 6
     }
 }

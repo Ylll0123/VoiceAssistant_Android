@@ -183,14 +183,13 @@ class ReminderCenterTest {
     }
 
     @Test
-    fun `工具层的落点接口也能用`() {
-        // 关键词兜底通道（ReminderTool）走的是同一套逻辑，不能有两份存储
-        val added = center.add("喝水", now + 60_000L)
+    fun `建了就能查到，取消之后就没了`() {
+        // v4.0 起只有一条写入通道（AiTools 走 ReminderPort），不会有两份存储
+        val added = center.create("喝水", now + 60_000L)
 
-        assertEquals(1, center.all().size)
+        assertEquals(1, center.list().size)
         assertEquals("喝水", added.content)
-        assertFalse(center.all().isEmpty())
-        assertTrue(center.remove(added.id))
-        assertTrue(center.all().isEmpty())
+        assertTrue(center.cancel(added.id))
+        assertTrue(center.list().isEmpty())
     }
 }

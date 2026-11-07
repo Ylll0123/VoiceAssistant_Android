@@ -26,8 +26,8 @@ import com.google.android.material.button.MaterialButtonToggleGroup
  * 没有服务器：账号只存在这台手机上（见 [AccountStore]），
  * 作用是把「谁的对话和记忆」区分开，顺便满足课程里对登录页的要求。
  *
- * 不强制：右下角永远留一个「游客进入」，
- * 不想注册的人（以及自动化脚本）不会被挡在门外。
+ * **必须登录才能用**（v4.0 起取消游客）：对话记录、提醒、会话标题都按账号隔离，
+ * 没有身份就没有归属，所以这里不再留「游客进入」的后门。
  */
 class LoginActivity : AppCompatActivity() {
 
@@ -123,10 +123,6 @@ class LoginActivity : AppCompatActivity() {
             } else {
                 false
             }
-        }
-        findViewById<TextView>(R.id.tvGuest).setOnClickListener {
-            store.continueAsGuest()
-            goMain()
         }
     }
 
