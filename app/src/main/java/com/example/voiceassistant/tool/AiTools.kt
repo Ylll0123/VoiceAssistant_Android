@@ -1,259 +1,245 @@
 package com.example.voiceassistant.tool
 
-import android.content.Context
-import com.example.voiceassistant.reminder.Reminders
-import com.example.voiceassistant.service.AudioController
-import com.example.voiceassistant.service.DeviceController
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
+import com.example.voiceassistant.bus.BusArgs
+import com.example.voiceassistant.bus.ServiceBus
+import com.example.voiceassistant.data.JsonLite
 
 /**
- * 交给大模型调用的**本机工具**（function calling）。
+ * 大模型与本机之间的**唯一接口**：把 `tools` 里声明的函数名翻译成总线服务名。
  *
- * 为什么要有这一层：v4.0 之后所有回答都由模型生成，但「建个提醒」「开手电筒」
- * 这类事模型只能描述、做不到。于是把这几件事声明成工具，模型自己决定何时调用，
- * 我们执行完把结果（一句人话）还给它，它再接着组织回答。
+ * ```
+ * 模型返回 "device_flashlight"  ──▶  device/flashlight  ──▶  ServiceBus  ──▶ 真实现
+ * ```
  *
- * ## 为什么只留这几个
- * 计算、换算、天气、闲聊全部由模型直接回答，不需要工具。
- * 只有**必须落到这台手机上**、模型不可能知道结果的动作才在这里：
- * 提醒 / 计时（要进数据库、要排闹钟）、手电筒、音量、电量。
+ * ## 为什么这层现在这么薄
+ * v4.0 时这里是「工具清单 + 每个工具的实现」，本地 NLU 想用同一个能力就得再写一遍。
+ * 改成总线之后，实现全在 `provider/…`，这层只剩**协议适配**：
+ * - 名字转换：模型不认 `/`，只认 `_`；
+ * - 参数转换：模型给的是 JSON 字符串，总线要的是扁平 Map；
+ * - 结果转换：总线返回 [com.example.voiceassistant.bus.BusReply]，模型只要一句人话。
  *
- * ## 时间怎么传
- * 模型不知道怎么表示时间戳，所以约定它传 `yyyy-MM-dd HH:mm` 的**本地时间字符串**，
- * 当前时间在 system 里告诉它。解析失败就退化成「没说时间」，不瞎猜。
+ * 加一个新能力时，只需要写一个 [com.example.voiceassistant.bus.Supply] 并在
+ * [SCHEMA] 里补一段描述——本地和模型两条路同时就有了。
+ *
+ * ## 声明为什么要手写
+ * 描述写得准不准，直接决定模型会不会调错、参数填得对不对。
+ * 自动从代码生成描述虽然省事，但会退化成「content: 内容」这种没有信息量的句子。
+ * 这三十来行 JSON 换模型少犯一次错，很划算。
  */
-class AiTools(
-    context: Context,
-    private val device: DeviceController,
-    private val audio: AudioController,
-    /** 语音播报控制：模型说「别念了」时用 */
-    private val stopSpeaking: () -> Unit = {},
-    private val now: () -> LocalDateTime = { LocalDateTime.now() }
-) {
-
-    private val app = context.applicationContext
+class AiTools(private val bus: ServiceBus) {
 
     /** 一次工具调用（从模型响应里解析出来的） */
     data class Call(val id: String, val name: String, val arguments: String)
 
-    // ------------------------------------------------------------------ 声明
-
-    /**
-     * 工具清单（OpenAI function calling 的 `tools` 字段）。
-     *
-     * 描述写得细一点很划算：模型靠它决定该不该调、参数怎么填。
-     */
+    /** 工具清单（OpenAI function calling 的 `tools` 字段） */
     val schema: String get() = SCHEMA
 
-
-    // ------------------------------------------------------------------ 执行
+    /** 这个工具名认不认得（单测和调试用） */
+    fun knows(toolName: String): Boolean = bus.has(serviceOf(toolName))
 
     /**
      * 执行一次调用，返回**给模型看的结果**（一句中文）。
      *
-     * 任何异常都转成「失败了，原因是…」，让模型自己决定怎么向用户解释；
-     * 这里不抛异常，否则整轮回答会断。
+     * 不抛异常：任何失败都转成「失败了，原因是…」，让模型自己决定怎么向用户解释。
      */
-    fun execute(call: Call): String = runCatching {
-        when (call.name) {
-            "create_reminder" -> createReminder(call.arguments)
-            "list_reminders" -> listReminders()
-            "cancel_reminder" -> cancelReminder(call.arguments)
-            "set_timer" -> setTimer(call.arguments)
-            "device" -> device(call.arguments)
-            "stop_speaking" -> {
-                stopSpeaking()
-                "已停止朗读。"
-            }
-            else -> "没有这个工具：${call.name}"
-        }
-    }.getOrElse { "工具执行失败：${it.message.orEmpty()}" }
+    fun execute(call: Call): String {
+        val service = serviceOf(call.name)
+        if (!bus.has(service)) return "没有这个工具：${call.name}"
 
-    // ------------------------------------------------------------------ 各工具
-
-    private fun createReminder(args: String): String {
-        val content = JsonArgs.str(args, "content")?.trim().orEmpty().ifEmpty { "提醒" }
-        val at = parseTime(JsonArgs.str(args, "time")) ?: return "时间没看懂，需要 yyyy-MM-dd HH:mm 格式，请重新确认几点。"
-        val repeat = when (JsonArgs.str(args, "repeat")) {
-            "daily" -> com.example.voiceassistant.reminder.Reminder.Repeat.DAILY
-            "weekly" -> com.example.voiceassistant.reminder.Reminder.Repeat.WEEKLY
-            else -> com.example.voiceassistant.reminder.Reminder.Repeat.NONE
-        }
-        val saved = Reminders.center(app).create(content, at, repeat)
-        return "已建好：${saved.content}，${format(at)}${repeatSuffix(repeat)}。"
+        val args = BusArgs.from(JsonArgs.flatMap(call.arguments))
+        val reply = bus.call(service, args)
+        return reply.speech
     }
 
-    private fun listReminders(): String {
-        val all = Reminders.center(app).list().filter { it.status == com.example.voiceassistant.reminder.Reminder.Status.PENDING }
-        if (all.isEmpty()) return "现在没有任何提醒。"
-        return all.take(10).joinToString(separator = "\n", prefix = "共 ${all.size} 条：\n") { r ->
-            "· ${r.content}（${if (r.triggerAt > 0) format(r.triggerAt) else "没说时间"}）"
-        }
-    }
-
-    private fun cancelReminder(args: String): String {
-        val keyword = JsonArgs.str(args, "keyword")?.trim().orEmpty()
-        if (keyword.isEmpty()) return "没听清要取消哪一条。"
-        val center = Reminders.center(app)
-        val hits = center.list().filter { it.content.contains(keyword) }
-        return when {
-            hits.isEmpty() -> "没找到包含「$keyword」的提醒。"
-            hits.size == 1 -> {
-                center.cancel(hits.first().id)
-                "已取消：${hits.first().content}。"
-            }
-            // 多条命中不替用户做主，把候选还给它
-            else -> "有多条包含「$keyword」的提醒：" +
-                hits.joinToString("；") { it.content } + "。请让用户说清是哪一条。"
-        }
-    }
-
-    private fun setTimer(args: String): String {
-        val minutes = JsonArgs.num(args, "minutes") ?: return "没听清要计时多久。"
-        if (minutes <= 0) return "计时时长要大于零。"
-        val label = JsonArgs.str(args, "label")?.trim().orEmpty().ifEmpty { "计时" }
-        val at = System.currentTimeMillis() + (minutes * 60_000).toLong()
-        Reminders.center(app).create(label, at)
-        return "好，${trimNumber(minutes)} 分钟后提醒你：$label。"
-    }
-
-    private fun device(args: String): String = when (JsonArgs.str(args, "action")) {
-        "torch_on" -> if (device.setTorch(true)) "手电筒已打开。" else "这台设备没有可用的闪光灯。"
-        "torch_off" -> if (device.setTorch(false)) "手电筒已关闭。" else "这台设备没有可用的闪光灯。"
-        "volume_up" -> {
-            audio.adjustVolume(true)
-            "音量调大了。"
-        }
-        "volume_down" -> {
-            audio.adjustVolume(false)
-            "音量调小了。"
-        }
-        "mute" -> {
-            audio.setMuted(true)
-            "已静音。"
-        }
-        "battery" -> device.battery() ?: "电量读不出来。"
-        else -> "不认识的设备动作。"
-    }
-
-    // ------------------------------------------------------------------ 小工具
-
-    /** 解析模型给的时间（用系统当前时间当基准） */
-    private fun parseTime(raw: String?): Long? = parseTime(raw, now())
-
-    private fun format(at: Long): String =
-        LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(at), java.time.ZoneId.systemDefault())
-            .format(DATE_TIME)
-
-    private fun repeatSuffix(repeat: com.example.voiceassistant.reminder.Reminder.Repeat): String =
-        when (repeat) {
-            com.example.voiceassistant.reminder.Reminder.Repeat.DAILY -> "，每天"
-            com.example.voiceassistant.reminder.Reminder.Repeat.WEEKLY -> "，每周"
-            else -> ""
-        }
-
-    private fun trimNumber(value: Double): String =
-        if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+    /**
+     * 工具名 → 服务名。
+     *
+     * 只换**第一个**下划线：`kws_set_wake_word` → `kws/set_wake_word`，
+     * 保留动作名里的下划线，不然 `set_wake_word` 会被切成三段。
+     * 具体实现统一放在 [ServiceBus.toServiceName]，两边不会各转一套。
+     */
+    private fun serviceOf(toolName: String): String = ServiceBus.toServiceName(toolName)
 
     companion object {
 
-        /** 工具清单原文：单独放常量，单测可以直接校验它是合法 JSON */
+        /**
+         * 暴露给模型的工具清单。
+         *
+         * 只放「模型自己做不到」的事：动手机、（真正）联网、算准数。
+         * 写文案、解释概念、翻译句子这些它张嘴就来，不必包成工具——
+         * 工具越多，每次请求的 token 越多，模型选错的概率也越大。
+         */
         val SCHEMA: String = """
 [
   {"type":"function","function":{
-    "name":"create_reminder",
-    "description":"在手机上新建一条提醒。用户说了要提醒什么、并且给了时间时调用。如果用户没说时间，不要调用，先问清几点。",
+    "name":"schedule_add_alarm",
+    "description":"在手机上新建提醒/闹钟。用户说要提醒什么并且给了时间时调用。没说时间就别调，先问清几点。",
     "parameters":{"type":"object","properties":{
       "content":{"type":"string","description":"提醒的内容，去掉时间词，例如「交作业」"},
-      "time":{"type":"string","description":"触发时间，格式必须是 yyyy-MM-dd HH:mm（24 小时制，本地时间）"},
+      "at":{"type":"string","description":"触发时间，格式必须是 yyyy-MM-dd HH:mm（24 小时制，本地时间）"},
+      "minutes":{"type":"number","description":"如果用户说的是「X 分钟后」，用这个字段代替 at"},
       "repeat":{"type":"string","enum":["none","daily","weekly"],"description":"重复规则，默认 none"}
-    },"required":["content","time"]}}},
+    },"required":["content"]}}},
   {"type":"function","function":{
-    "name":"list_reminders",
-    "description":"列出还没到点的提醒。用户问「我有哪些提醒」「今天要干什么」时调用。",
-    "parameters":{"type":"object","properties":{}}}},
-  {"type":"function","function":{
-    "name":"cancel_reminder",
-    "description":"取消提醒。按内容里的关键词匹配；匹配到多条时不要自己选，把候选告诉用户。",
+    "name":"schedule_add_todo",
+    "description":"记一条没有具体时间的待办。用户说「记一下要做 X」但没说几点时用这个。",
     "parameters":{"type":"object","properties":{
-      "keyword":{"type":"string","description":"要取消的提醒内容里的关键词，例如「交作业」"}
+      "content":{"type":"string","description":"待办内容"}
+    },"required":["content"]}}},
+  {"type":"function","function":{
+    "name":"schedule_query",
+    "description":"查看待办和闹钟。用户问「我有什么安排」「今天要干什么」时调用。",
+    "parameters":{"type":"object","properties":{
+      "scope":{"type":"string","enum":["all","today","timed"],"description":"范围，默认 all"}
+    }}}},
+  {"type":"function","function":{
+    "name":"schedule_cancel",
+    "description":"取消待办或闹钟。按关键词匹配；匹配到多条时不要自己选，把候选告诉用户。",
+    "parameters":{"type":"object","properties":{
+      "keyword":{"type":"string","description":"内容里的关键词，例如「交作业」"}
     },"required":["keyword"]}}},
   {"type":"function","function":{
-    "name":"set_timer",
-    "description":"倒计时。用户说「定个十分钟的闹钟」「X 分钟后叫我」时调用。",
+    "name":"device_flashlight",
+    "description":"开关手电筒。",
     "parameters":{"type":"object","properties":{
-      "minutes":{"type":"number","description":"多少分钟"},
-      "label":{"type":"string","description":"这次计时叫什么，默认「计时」"}
-    },"required":["minutes"]}}},
-  {"type":"function","function":{
-    "name":"device",
-    "description":"操作手机硬件。用户让你开手电筒、调音量、静音、看电量时调用。",
-    "parameters":{"type":"object","properties":{
-      "action":{"type":"string","enum":["torch_on","torch_off","volume_up","volume_down","mute","battery"],
-        "description":"要执行的动作"}
+      "action":{"type":"string","enum":["on","off"],"description":"开还是关"}
     },"required":["action"]}}},
   {"type":"function","function":{
-    "name":"stop_speaking",
-    "description":"立刻停止朗读。用户说「别念了」「闭嘴」「安静」时调用。",
-    "parameters":{"type":"object","properties":{}}}}
+    "name":"device_brightness",
+    "description":"调屏幕亮度。用户说「太亮了」「调暗点」「亮度 50%」时调用。",
+    "parameters":{"type":"object","properties":{
+      "percent":{"type":"number","description":"目标亮度 1-100"},
+      "action":{"type":"string","enum":["up","down","max","min"],"description":"按档调时用"}
+    }}}},
+  {"type":"function","function":{
+    "name":"device_open_app",
+    "description":"打开手机上的应用。用户说「打开微信」「打开 B 站」时调用。",
+    "parameters":{"type":"object","properties":{
+      "name":{"type":"string","description":"应用名，例如「微信」「浏览器」"}
+    },"required":["name"]}}},
+  {"type":"function","function":{
+    "name":"device_battery",
+    "description":"看手机电量。",
+    "parameters":{"type":"object","properties":{}}}},
+  {"type":"function","function":{
+    "name":"device_wifi_ctrl",
+    "description":"开 / 关 WiFi。注意：新系统上应用不能直接切，会打开系统面板让用户点。",
+    "parameters":{"type":"object","properties":{
+      "action":{"type":"string","enum":["on","off"],"description":"开还是关"}
+    },"required":["action"]}}},
+  {"type":"function","function":{
+    "name":"device_bluetooth_ctrl",
+    "description":"开 / 关蓝牙，或去配对耳机。",
+    "parameters":{"type":"object","properties":{
+      "action":{"type":"string","enum":["on","off","connect"],"description":"开、关，或去配对"}
+    },"required":["action"]}}},
+  {"type":"function","function":{
+    "name":"audio_volume_ctrl",
+    "description":"调音量、静音。用户说「大声点」「静音」「音量 30%」时调用。",
+    "parameters":{"type":"object","properties":{
+      "action":{"type":"string","enum":["up","down","mute","unmute","current"],"description":"按档调或静音"},
+      "percent":{"type":"number","description":"目标音量 0-100"}
+    }}}},
+  {"type":"function","function":{
+    "name":"audio_tts_stop",
+    "description":"立刻停止朗读。用户说「别念了」时调用。",
+    "parameters":{"type":"object","properties":{}}}},
+  {"type":"function","function":{
+    "name":"tool_calc",
+    "description":"算四则运算。需要精确结果的计算一律调这个，不要心算。",
+    "parameters":{"type":"object","properties":{
+      "expression":{"type":"string","description":"算式，例如 12*8 或 (3+5)/2"}
+    },"required":["expression"]}}},
+  {"type":"function","function":{
+    "name":"tool_time",
+    "description":"查当前时间、日期、星期。用户问「几点了」「今天几号」时调用，不要自己编。",
+    "parameters":{"type":"object","properties":{
+      "kind":{"type":"string","enum":["time","date","weekday","datetime"],"description":"默认 time"}
+    }}}},
+  {"type":"function","function":{
+    "name":"tool_translate",
+    "description":"翻译单词或句子。",
+    "parameters":{"type":"object","properties":{
+      "text":{"type":"string","description":"要翻译的内容"},
+      "to":{"type":"string","description":"目标语言，例如「英文」「中文」，不填就中英互译"}
+    },"required":["text"]}}},
+  {"type":"function","function":{
+    "name":"tool_weather",
+    "description":"查实时天气。用户问天气、气温、下不下雨时调用。",
+    "parameters":{"type":"object","properties":{
+      "city":{"type":"string","description":"城市名，例如「杭州」"}
+    }}}},
+  {"type":"function","function":{
+    "name":"msg_send_text",
+    "description":"给联系人发微信/QQ 消息。只会打开聊天并填好内容，不会真的发出去——用户确认后再调 msg_confirm_send。找不到同名联系人会失败，这时别自己换人。",
+    "parameters":{"type":"object","properties":{
+      "platform":{"type":"string","enum":["wechat","qq"],"description":"默认 wechat"},
+      "to":{"type":"string","description":"联系人的名字，要和通讯录里一致"},
+      "content":{"type":"string","description":"要发的话"}
+    },"required":["to","content"]}}},
+  {"type":"function","function":{
+    "name":"msg_confirm_send",
+    "description":"确认并真正发送刚才准备好的那条消息。只有用户明确说「确认 / 发吧」时才调。",
+    "parameters":{"type":"object","properties":{
+      "trace_id":{"type":"string","description":"msg_send_text 返回的编号，不知道就别填"}
+    }}}}
 ]
 """.trimIndent()
-
-        val DATE_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-        val DATE_TIME_SECONDS: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-        val DATE_ONLY: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
-        val TIME_ONLY: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
-        /**
-         * 解析模型给的时间；支持带秒、只有日期、只有时分三种退化写法。
-         *
-         * 纯函数，基准时间由 [reference] 传进来——单测里就不用跟真实时钟赛跑。
-         */
-        fun parseTime(raw: String?, reference: LocalDateTime): Long? {
-            val text = raw?.trim().orEmpty()
-            if (text.isEmpty()) return null
-            val dateTime = runCatching { LocalDateTime.parse(text, DATE_TIME) }.getOrNull()
-                ?: runCatching { LocalDateTime.parse(text, DATE_TIME_SECONDS) }.getOrNull()
-            if (dateTime != null) return epoch(dateTime)
-
-            val date = runCatching { LocalDate.parse(text, DATE_ONLY) }.getOrNull()
-            if (date != null) return epoch(date.atTime(9, 0))
-
-            // 「15:30」这种：今天已过就顺延到明天，和用户的直觉一致
-            val time = runCatching { LocalTime.parse(text, TIME_ONLY) }.getOrNull() ?: return null
-            val today = reference.toLocalDate().atTime(time)
-            val target = if (today.isBefore(reference)) today.plusDays(1) else today
-            return epoch(target)
-        }
-
-        private fun epoch(at: LocalDateTime): Long =
-            at.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
     }
 }
 
 /**
  * 极简 JSON 参数读取。
  *
- * 模型返回的 `arguments` 是一个 JSON 字符串，字段很少，用 [JsonLite] 直接取，
- * 不引序列化库。取不到就返回 null，由调用方决定怎么兜。
+ * 模型返回的 `arguments` 是一个 JSON 字符串，字段很少，用 [JsonLite] 直接取，不引序列化库。
+ * 取不到就返回 null，由调用方决定怎么兜。
  */
 object JsonArgs {
 
     fun str(raw: String?, key: String): String? {
         val root = parse(raw) ?: return null
-        return com.example.voiceassistant.data.JsonLite.str(com.example.voiceassistant.data.JsonLite.get(root, key))
+        return JsonLite.str(JsonLite.get(root, key))
     }
 
     fun num(raw: String?, key: String): Double? {
         val root = parse(raw) ?: return null
-        return com.example.voiceassistant.data.JsonLite.num(com.example.voiceassistant.data.JsonLite.get(root, key))
+        return JsonLite.num(JsonLite.get(root, key))
+    }
+
+    /**
+     * 把模型给的参数摊平成 `键 → 字符串`。
+     *
+     * 数值和布尔要按原样写成字符串，否则 `percent: 50` 会变成 `"50.0"`，
+     * 总线里 `toIntOrNull()` 拿到的就是 50（能转），但 `on: true` 会变成 `"true"`——
+     * 这正是 [BusArgs.bool] 认的写法。
+     */
+    fun flatMap(raw: String?): Map<String, String> {
+        val root = parse(raw) ?: return emptyMap()
+        val table = JsonLite.obj(root)
+        if (table.isEmpty()) return emptyMap()
+
+        val result = LinkedHashMap<String, String>(table.size)
+        for ((key, value) in table) {
+            if (key == null) continue
+            val text = when (value) {
+                null -> continue
+                is String -> value
+                is Double -> if (value == value.toLong().toDouble()) {
+                    value.toLong().toString()
+                } else {
+                    value.toString()
+                }
+                is Map<*, *> -> null // 我们不用嵌套参数，丢掉比传个乱字符串好
+                is List<*> -> null
+                else -> value.toString()
+            } ?: continue
+            if (text.isNotBlank()) result[key] = text
+        }
+        return result
     }
 
     private fun parse(raw: String?): Any? {
         if (raw.isNullOrBlank()) return null
-        return runCatching { com.example.voiceassistant.data.JsonLite.parseOrNull(raw) }.getOrNull()
+        return runCatching { JsonLite.parseOrNull(raw) }.getOrNull()
     }
 }

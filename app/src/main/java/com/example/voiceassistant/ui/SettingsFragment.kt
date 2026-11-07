@@ -35,6 +35,7 @@ class SettingsFragment : Fragment() {
 
     private lateinit var toggleStyle: MaterialButtonToggleGroup
     private lateinit var switchSpeak: MaterialSwitch
+    private lateinit var switchWake: MaterialSwitch
     private lateinit var tvLanguageValue: TextView
     private lateinit var tvModelValue: TextView
     private lateinit var tvAccount: TextView
@@ -54,6 +55,7 @@ class SettingsFragment : Fragment() {
 
         toggleStyle = view.findViewById(R.id.toggleStyle)
         switchSpeak = view.findViewById(R.id.switchSpeak)
+        switchWake = view.findViewById(R.id.switchWake)
         tvLanguageValue = view.findViewById(R.id.tvLanguageValue)
         tvModelValue = view.findViewById(R.id.tvModelValue)
         tvAccount = view.findViewById(R.id.tvAccount)
@@ -61,6 +63,8 @@ class SettingsFragment : Fragment() {
 
         bindStyle()
         bindSpeak()
+        bindWake()
+        bindAccessibility()
         bindLanguage()
         bindModel()
         bindActions()
@@ -87,6 +91,32 @@ class SettingsFragment : Fragment() {
         switchSpeak.isChecked = host.speakEnabled
         switchSpeak.setOnCheckedChangeListener { _, checked ->
             if (checked != host.speakEnabled) host.setSpeakEnabled(checked)
+        }
+    }
+
+    // ------------------------------------------------------------------ 唤醒词
+
+    /**
+     * 常驻唤醒开关。
+     *
+     * 开关状态回来时按 [VoiceAssistantActivity.isWakeEnabled] 重读一次：
+     * 服务起不来（没录音权限、系统限制后台麦克风）时那边会把落盘值改回去，
+     * 这里要跟着弹回来，不能停在「开」的位置上。
+     */
+    private fun bindWake() {
+        switchWake.isChecked = host.isWakeEnabled()
+        switchWake.setOnCheckedChangeListener { _, checked ->
+            if (checked == host.isWakeEnabled()) return@setOnCheckedChangeListener
+            host.setWakeEnabled(checked)
+            switchWake.isChecked = host.isWakeEnabled()
+            switchWake.jumpDrawablesToCurrentState()
+        }
+    }
+
+    /** 无障碍设置入口：自动发消息要靠它，得让用户能自己找得到 */
+    private fun bindAccessibility() {
+        requireView().findViewById<View>(R.id.rowAccessibility).setOnClickListener {
+            host.openAccessibilitySettings()
         }
     }
 
@@ -330,6 +360,8 @@ class SettingsFragment : Fragment() {
 
     private fun refresh() {
         updateModelRow()
+        // 唤醒可能被系统掐掉（后台限制 / 用户撤了麦克风权限），回来时以真实状态为准
+        switchWake.isChecked = host.isWakeEnabled()
         tvAccount.text = AccountStore(requireContext()).currentUser.orEmpty()
         tvVersion.text = getString(R.string.settings_version, appVersionName())
         tvLanguageValue.text = languageLabel(host.appSettings().language)

@@ -30,7 +30,26 @@ import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.voiceassistant.R
+import com.example.voiceassistant.bus.AssistantBus
+import com.example.voiceassistant.bus.ServiceBus
 import com.example.voiceassistant.core.AiChat
+import com.example.voiceassistant.core.AssistantMode
+import com.example.voiceassistant.core.CloudLlmBridge
+import com.example.voiceassistant.core.Dispatcher
+import com.example.voiceassistant.core.LlmSwitch
+import com.example.voiceassistant.im.ImAutomator
+import com.example.voiceassistant.kws.WakeConfig
+import com.example.voiceassistant.kws.WakeDetected
+import com.example.voiceassistant.kws.WakeWordService
+import com.example.voiceassistant.provider.AudioSupply
+import com.example.voiceassistant.provider.ContextSupply
+import com.example.voiceassistant.provider.DeviceSupply
+import com.example.voiceassistant.provider.GenSupply
+import com.example.voiceassistant.provider.KwsSupply
+import com.example.voiceassistant.provider.MsgSupply
+import com.example.voiceassistant.provider.ScheduleSupply
+import com.example.voiceassistant.provider.StudySupply
+import com.example.voiceassistant.provider.ToolSupply
 import com.example.voiceassistant.data.AccountStore
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.data.ChatMessage
@@ -101,6 +120,15 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     private lateinit var ai: AiChat
     private lateinit var aiTools: AiTools
+
+    /** 供需总线：本地 NLU 和大模型工具调用共用这一张表 */
+    private lateinit var bus: ServiceBus
+
+    /** 路由：这句话交给本地还是大模型 */
+    private lateinit var dispatcher: Dispatcher
+
+    private lateinit var msgSupply: MsgSupply
+    private lateinit var kwsSupply: KwsSupply
 
     /** 单线程：同一时刻只有一个请求在飞，回来按顺序上屏 */
     private val executor = Executors.newSingleThreadExecutor {
@@ -204,13 +232,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         tts = TtsManager(this).also { it.listener = this }
         restoreSettings()
 
-        aiTools = AiTools(
-            context = this,
-            device = AndroidDeviceController(applicationContext),
-            audio = AndroidAudioController(applicationContext),
-            stopSpeaking = { tts.stop() }
-        )
-        ai = AiChat(aiTools, config = { cloudConfig })
+        installServices()
 
         session = ChatSession()
         session.onChanged = { saveCurrent() }
@@ -232,11 +254,123 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         }
 
         subscribeReminder()
+        subscribeWake()
+        restoreWakeService()
 
         askNotificationPermission()
         main.postDelayed({ cleanInstallerOnce() }, 1200)
 
         if (savedInstanceState == null) handleExternalQuery(intent)
+    }
+
+    /**
+     * 装配供需总线。
+     *
+     * 这是 v5.0 的核心改造：**每个能力只实现一次**，然后同时挂在两条入口上——
+     * 本地 NLU 认得就直接调，大模型需要动手也调同一个。
+     *
+     * 装配顺序有意义：先有 [CloudLlmBridge]（翻译、解释、写文案要用它），
+     * 再有总线，最后才是 [AiChat]（它要用 [AiTools] 读总线）。反过来会拧成循环依赖。
+     */
+    private fun installServices() {
+        val device = AndroidDeviceController(applicationContext)
+        val audioCtl = AndroidAudioController(applicationContext)
+        val bridge = CloudLlmBridge { cloudConfig }
+        val automator = ImAutomator(applicationContext)
+
+        // 「我上一条跟他说的什么」：读当前会话里助手说过的话
+        msgSupply = MsgSupply(applicationContext, automator) {
+            session.messages.filter { !it.isUser }.map { it.text }.takeLast(5)
+        }
+        kwsSupply = KwsSupply(this)
+
+        bus = ServiceBus().apply {
+            registerAll(*ScheduleSupply(this@VoiceAssistantActivity).all.toTypedArray())
+            registerAll(
+                *DeviceSupply(this@VoiceAssistantActivity, device) { setWindowBrightness(it) }
+                    .all.toTypedArray()
+            )
+            registerAll(*AudioSupply(tts, audioCtl) { beginVoiceFromWake() }.all.toTypedArray())
+            registerAll(*ToolSupply(bridge).all.toTypedArray())
+            registerAll(*StudySupply(bridge).all.toTypedArray())
+            registerAll(*GenSupply(bridge).all.toTypedArray())
+            registerAll(
+                *ContextSupply(
+                    clearTurns = { clearCurrentTurns() },
+                    onModeChanged = { mode -> settings.assistantMode = mode },
+                    onLlmToggled = { enabled -> settings.cloudEnabled = enabled }
+                ).all.toTypedArray()
+            )
+            registerAll(*msgSupply.all.toTypedArray())
+            registerAll(*kwsSupply.all.toTypedArray())
+        }
+
+        aiTools = AiTools(bus)
+        ai = AiChat(aiTools, config = { cloudConfig })
+        dispatcher = Dispatcher(bus, ai, msgSupply)
+    }
+
+    /** 亮度服务改不了系统亮度时的退路：只改本应用窗口 */
+    private fun setWindowBrightness(value: Float) {
+        runCatching {
+            window.attributes = window.attributes.apply { screenBrightness = value }
+        }
+    }
+
+    /** `context/clear`：清掉这一轮的所有消息，只留欢迎语 */
+    private fun clearCurrentTurns(): Int {
+        val greeting = welcome()
+        val count = session.messages.count { it.text != greeting.text }
+        session.load(listOf(greeting))
+        chatView?.refresh()
+        return count
+    }
+
+    /**
+     * 被唤醒词叫醒之后开麦。
+     *
+     * 醒来先**不播「我在」**：那样的结果是 TTS 先响、麦克风紧接着打开，
+     * 等于把自己的声音录进识别里。直接进聆听态最干净，用户马上就能说话。
+     */
+    private fun beginVoiceFromWake(): Boolean {
+        // 离线时不光听不了，也没法把话说出去，直接回绝，别让用户对着手机白说
+        if (!NetworkState.isOnline()) return false
+        main.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            if (NetworkState.isOnline()) beginVoice()
+        }, 400)
+        return true
+    }
+
+    /** 唤醒事件：把界面叫到前面来，再开麦 */
+    private fun subscribeWake() {
+        AssistantBus.on<WakeDetected>(owner = this) { event ->
+            if (isFinishing || isDestroyed) return@on
+            WakeConfig.lastWakeAt = event.at
+            if (!isForeground) {
+                startActivity(
+                    Intent(this, VoiceAssistantActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                )
+            }
+            beginVoiceFromWake()
+        }
+    }
+
+    /**
+     * 进程重启后把常驻唤醒接回来。
+     *
+     * 服务是 START_STICKY，被系统杀掉会自己回来；但「用户手动清掉应用」之后
+     * 就不一样了——那时只剩落盘这一位能证明他开过。起不来（比如没给录音权限）
+     * 就把这一位改回去，开关不能一直亮着骗人。
+     */
+    private fun restoreWakeService() {
+        if (!settings.wakeEnabled) return
+        main.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            val reply = bus.call("kws/start")
+            if (!reply.ok) settings.wakeEnabled = false
+        }, 800)
     }
 
     /** 外部传入的一句话（「发送到 HardlySeek」/ 自动化测试） */
@@ -531,11 +665,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             toast(getString(R.string.error_empty_input))
             return
         }
-        if (!NetworkState.isOnline()) {
-            toast(getString(R.string.status_offline_hint))
-            setThinking(null)
-            return
-        }
 
         // 删空之后的第一句：这时候才建会话，保证消息有地方落
         ensureConversation()
@@ -549,17 +678,42 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     }
 
     /**
-     * 真的去问一次。
+     * 真的去处理一次。
+     *
+     * 这里不再直接调大模型，而是交给 [Dispatcher] 判断：
+     * 本地认得的指令当场办完（**不联网**），只有它办不了的才发请求。
      *
      * [turnSeq] 是「这一轮还算不算数」的凭据：用户改口、重发、切会话都会把它加一，
-     * 于是迟到的回答会被丢掉，不会盖到别的对话上。
+     * 于是迟到的结果会被丢掉，不会盖到别的对话上。
      */
     private fun askAi(history: List<LlmMessage>, question: String) {
         val seq = ++turnSeq
         setThinking(getString(R.string.status_thinking))
         executor.execute {
-            val answer = ai.ask(history, question, styleHint())
-            main.post { if (seq == turnSeq) onAnswer(seq, answer) }
+            val result = dispatcher.dispatch(question, history, styleHint(), NetworkState.isOnline())
+            main.post { if (seq == turnSeq) onRouted(seq, result) }
+        }
+    }
+
+    /** 路由结果上屏：本地办的、模型答的、没办成的，三种都写成一条助手消息 */
+    private fun onRouted(seq: Int, result: Dispatcher.Result) {
+        if (seq != turnSeq || isFinishing || isDestroyed) return
+
+        when (result) {
+            is Dispatcher.Result.Local -> {
+                setThinking(null)
+                session.addAssistant(result.reply.speech)
+                if (speakEnabled) tts.speak(result.reply.speech)
+                maybeNameConversation()
+            }
+
+            is Dispatcher.Result.Ask -> onAnswer(seq, result.answer)
+
+            is Dispatcher.Result.Blocked -> {
+                setThinking(null)
+                // 没网 / AI 关掉这类「其实没办」，也留一条记录，用户回头看得见
+                session.addAssistant(result.message)
+            }
         }
     }
 
@@ -808,6 +962,32 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         return speakEnabled
     }
 
+    // ------------------------------------------------------------------ 唤醒词
+
+    /** 设置页那个开关的当前值：以落盘的为准，免得和服务实际状态错位 */
+    fun isWakeEnabled(): Boolean = settings.wakeEnabled
+
+    /**
+     * 开关常驻唤醒。
+     *
+     * 走的是总线上的 `kws/start` / `kws/stop`，而不是直接起服务——
+     * 大模型也能调同一对服务，两条入口必须落到同一份实现上。
+     */
+    fun setWakeEnabled(enabled: Boolean) {
+        // 开之前先落盘：服务起不来时下面会把这一位改回去，开关不会一直亮着骗人
+        settings.wakeEnabled = enabled
+        val reply = bus.call(if (enabled) "kws/start" else "kws/stop")
+        toast(reply.speech)
+        if (!reply.ok) settings.wakeEnabled = false
+    }
+
+    /** 「自动发消息权限」：跳到系统的无障碍设置页，让用户自己勾 */
+    fun openAccessibilitySettings() {
+        if (!msgSupply.openAccessibilitySettings()) {
+            toast(getString(R.string.settings_access_failed))
+        }
+    }
+
     /** 清空**当前这条**对话记录（其它记录不受影响） */
     fun gotoLogin() {
         startActivity(
@@ -825,6 +1005,10 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         val engine = settings.ttsEngine
         if (engine.isNotEmpty()) tts.useEngine(engine)
         cloudConfig = settings.cloudConfig()
+
+        // 模式和云端开关都是「上次怎么用，这次还怎么用」
+        AssistantMode.switchTo(settings.assistantMode)
+        LlmSwitch.set(settings.cloudEnabled)
     }
 
     // ------------------------------------------------------------------ 其它
@@ -898,10 +1082,14 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         super.onStart()
         // 只有界面在前台才巡检网络：后台没必要每几秒醒一次
         NetworkState.addListener(networkListener)
+        // 界面在前台就让出麦克风：手动长按比常驻监听可靠，也不抢录音
+        WakeWordService.instance?.pause()
     }
 
     override fun onStop() {
         NetworkState.removeListener(networkListener)
+        // 人离开界面了，常驻监听才有意义
+        if (WakeConfig.enabled) WakeWordService.instance?.resume()
         super.onStop()
     }
 

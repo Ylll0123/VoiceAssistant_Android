@@ -57,6 +57,10 @@ class AiChat(
      * @param styleHint 附加到 system 的说话风格 / 追问开关
      */
     fun ask(history: List<LlmMessage>, input: String, styleHint: String = ""): Answer {
+        // 用户手动关掉云端 AI 之后，这条链路就是断的——本地指令走的是 Dispatcher，不经过这里
+        if (!LlmSwitch.enabled) {
+            return Answer("云端 AI 现在是关的，问答用不了。", "AI 已关闭")
+        }
         val cfg = config()
         if (!cfg.isReady()) return Answer("还没有配置 AI 接口。", "还没配置 AI 接口")
         val url = CloudLlmHandler.chatUrl(cfg.baseUrl)
@@ -148,12 +152,12 @@ class AiChat(
 
     // ------------------------------------------------------------------ 组装
 
-    /** system = 人设 + 当前时间 +（可选的）风格指令 */
+    /** system = 人设 + 当前时间 +（可选的）模式与风格指令 */
     private fun systemPrompt(cfg: CloudLlmHandler.CloudConfig, styleHint: String): String {
         val now = clock()
         val timeLine = "现在是 ${now.year} 年 ${now.monthValue} 月 ${now.dayOfMonth} 日 " +
             "${now.hour} 点 ${String.format("%02d", now.minute)} 分（${weekday(now)}）。"
-        return listOf(cfg.systemPrompt, timeLine, styleHint)
+        return listOf(cfg.systemPrompt, timeLine, AssistantMode.hint(), styleHint)
             .filter { it.isNotBlank() }
             .joinToString("\n")
     }

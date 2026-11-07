@@ -128,4 +128,14 @@
     <string name="bubble_only_last">Only the latest message can be edited or deleted</string>
     <string name="settings_speak">Read answers aloud</string>
     <string name="settings_speak_desc">Speak replies; turn off for text only</string>
+    <string name="settings_wake">Wake word</string>
+    <string name="settings_access">Auto-send messages</string>
+    <string name="settings_access_failed">Couldn\'t open accessibility settings; find it in system settings</string>
+
+    <string name="wake_channel_name">Wake word</string>
+    <string name="wake_notification_title">Wake word listening</string>
+    <string name="wake_notification_text">Say “%1$s” to wake me up</string>
+
+    <string name="accessibility_label">HardlySeek voice actions</string>
+    <string name="accessibility_description">Turns voice commands like “message someone” into real actions: opens WeChat, finds the contact, fills in the text. Sending only happens after you confirm.</string>
 </resources>

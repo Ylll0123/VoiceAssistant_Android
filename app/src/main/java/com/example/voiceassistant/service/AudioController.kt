@@ -13,6 +13,12 @@ interface AudioController {
 
     /** 调高 / 调低一档音量 */
     fun adjustVolume(up: Boolean)
+
+    /** 当前媒体音量百分比（0-100） */
+    fun volumePercent(): Int
+
+    /** 把媒体音量设到百分比（0-100） */
+    fun setVolumePercent(percent: Int)
 }
 
 /**
@@ -55,6 +61,21 @@ class AndroidAudioController(context: Context) : AudioController {
                 if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
                 AudioManager.FLAG_PLAY_SOUND
             )
+        }
+    }
+
+    override fun volumePercent(): Int = runCatching {
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val now = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) 0 else (now * 100 / max).coerceIn(0, 100)
+    }.getOrDefault(0)
+
+    override fun setVolumePercent(percent: Int) {
+        runCatching {
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            if (max <= 0) return
+            val target = (max * percent.coerceIn(0, 100) / 100).coerceIn(0, max)
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_PLAY_SOUND)
         }
     }
 }

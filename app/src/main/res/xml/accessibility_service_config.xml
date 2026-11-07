@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    无障碍服务配置。
+
+    几个字段的意思，答辩时会用到：
+    - canRetrieveWindowContent：允许读屏（不发它，rootInActiveWindow 永远是 null）；
+    - accessibilityEventTypes：只订阅「窗口切换」和「内容变化」，不订阅点击、滚动那些
+      高频事件——少收事件省电，我们本来也不用事件驱动；
+    - flagReportViewIds：必须开，否则 findAccessibilityNodeInfosByViewId 找不到节点；
+    - flagRetrieveInteractiveWindows：多窗口场景下也能拿到当前窗口；
+    - notificationTimeout=100：事件合并窗口，100ms 足够，太小反而频繁唤醒；
+    - description：系统设置页里给用户看的用途说明，必须如实写「辅助语音操作」。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canPerformGestures="false"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_description"
+    android:notificationTimeout="100"
+    android:settingsActivity="com.example.voiceassistant.ui.VoiceAssistantActivity" />

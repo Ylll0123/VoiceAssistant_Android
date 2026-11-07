@@ -39,6 +39,19 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_TTS_ENGINE, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_TTS_ENGINE, value).apply()
 
+    // ---------------------------------------------------------------- 语音唤醒
+
+    /**
+     * 是否常驻监听唤醒词。
+     *
+     * 默认关：系统识别引擎一直跑着明显费电，而且会占着麦克风。
+     * 落盘是为了进程被杀、设备重启之后能把前台服务接回来——
+     * 用户开了就应该一直开着，不能每次重进应用都要再点一次。
+     */
+    var wakeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WAKE, false)
+        set(value) = prefs.edit().putBoolean(KEY_WAKE, value).apply()
+
     // ---------------------------------------------------------------- 对话风格
 
     /** 回答详细程度：0 简洁 / 1 标准 / 2 详细 */
@@ -50,6 +63,16 @@ class AppSettings(context: Context) {
     var proactiveFollowUp: Boolean
         get() = prefs.getBoolean(KEY_FOLLOW_UP, true)
         set(value) = prefs.edit().putBoolean(KEY_FOLLOW_UP, value).apply()
+
+    /**
+     * 对话模式：qa（问答）/ msg（消息）/ study（学习）。
+     *
+     * 落盘是为了下次打开还停在同一个模式——用户切到消息模式往往是为了
+     * 连着回几个人，退出应用再进来还是这个模式才顺手。
+     */
+    var assistantMode: String
+        get() = prefs.getString(KEY_MODE, "qa").orEmpty().ifEmpty { "qa" }
+        set(value) = prefs.edit().putString(KEY_MODE, value).apply()
 
     /**
      * 是否显示「理解过程」：回答出来之前，先用淡色小字展示本地是怎么拆分、
@@ -167,8 +190,10 @@ class AppSettings(context: Context) {
         private const val KEY_SPEAK = "speak_enabled"
         private const val KEY_CONTINUOUS = "continuous"
         private const val KEY_TTS_ENGINE = "tts_engine"
+        private const val KEY_WAKE = "wake_enabled"
         private const val KEY_STYLE = "reply_style"
         private const val KEY_FOLLOW_UP = "proactive_follow_up"
+        private const val KEY_MODE = "assistant_mode"
         private const val KEY_THINKING = "show_thinking"
         private const val KEY_ONLINE = "online_search"
         private const val KEY_CLOUD = "cloud_enabled"

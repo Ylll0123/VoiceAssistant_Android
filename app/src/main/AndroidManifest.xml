@@ -27,6 +27,24 @@
         android:name="android.hardware.camera.flash"
         android:required="false" />
 
+    <!--
+        唤醒词：麦克风要常驻，只能是前台服务。
+        FOREGROUND_SERVICE_MICROPHONE 是 Android 14 起的前台服务类型声明，
+        没有它 startForeground 会抛异常（系统不让后台随便占麦克风）。
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!-- 改系统亮度：属于「特殊权限」，要在设置页里由用户手动授予 -->
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- 蓝牙开关状态查询 / 连接（Android 12+ 必需） -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_CONNECT"
+        tools:ignore="MissingPermission" />
+
     <!-- Android 11+ 需要声明可见性，否则找不到系统的识别 / 播报服务 -->
     <queries>
         <intent>
@@ -40,6 +58,13 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!--
+            包名可见性：不加这两条，Android 11+ 上
+            getLaunchIntentForPackage / getPackageInfo 会直接返回 null，
+            表现就是「手机里明明装了微信，助手说没装」。
+        -->
+        <package android:name="com.tencent.mm" />
+        <package android:name="com.tencent.mobileqq" />
     </queries>
 
     <application
@@ -77,6 +102,34 @@
         <receiver
             android:name=".reminder.ReminderReceiver"
             android:exported="false" />
+
+        <!--
+            唤醒词监听：常驻前台服务。
+            foregroundServiceType="microphone" 是 Android 14 的硬要求，
+            同时要在代码里用 FOREGROUND_SERVICE_TYPE_MICROPHONE 调 startForeground。
+        -->
+        <service
+            android:name=".kws.WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!--
+            无障碍服务：发消息自动化的那只手。
+            必须在系统设置里由用户手动勾选，应用无法自己打开。
+            用途说明写在 @string/accessibility_description，上架审核会看这一段。
+        -->
+        <service
+            android:name=".im.ImAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
 
         <!-- 开机 / 覆盖安装后把还没到点的提醒重排（AlarmManager 的登记会丢） -->
         <receiver
