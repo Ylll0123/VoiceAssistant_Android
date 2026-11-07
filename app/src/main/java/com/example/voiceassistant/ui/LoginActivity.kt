@@ -37,7 +37,6 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var etPassword: EditText
     private lateinit var etConfirm: EditText
     private lateinit var btnSubmit: MaterialButton
-    private lateinit var tvSubtitle: TextView
 
     /** 当前是注册模式还是登录模式 */
     private var registerMode = false
@@ -69,7 +68,6 @@ class LoginActivity : AppCompatActivity() {
         etPassword = findViewById(R.id.etPassword)
         etConfirm = findViewById(R.id.etConfirm)
         btnSubmit = findViewById(R.id.btnSubmit)
-        tvSubtitle = findViewById(R.id.tvLoginSubtitle)
 
         bindMode()
         bindActions()
@@ -108,7 +106,6 @@ class LoginActivity : AppCompatActivity() {
         btnSubmit.setText(
             if (registerMode) R.string.login_submit_register else R.string.login_submit_login
         )
-        tvSubtitle.setText(R.string.login_subtitle)
         // 切换模式时清掉密码：避免「注册失败后残留的密码」被拿去登录
         etPassword.setText("")
         etConfirm.setText("")

@@ -26,15 +26,11 @@ Try: 现在几点 (time), 帮我算 12 乘 8 (math), 提醒我八点交作业 (r
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
-    <string name="settings_subtitle">Only the essentials</string>
     <string name="settings_answer_style">Answer style</string>
     <string name="settings_style_concise">Concise</string>
     <string name="settings_style_detailed">Detailed</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_title">Choose interface language</string>
-    <string name="settings_chat">Chat</string>
-    <string name="settings_clear_chat">Clear chat history</string>
-    <string name="settings_clear_chat_done">Chat cleared</string>
     <string name="settings_account">Account</string>
     <string name="settings_logout">Sign out</string>
     <string name="settings_about">About</string>
@@ -71,7 +67,6 @@ Try: 现在几点 (time), 帮我算 12 乘 8 (math), 提醒我八点交作业 (r
 
     <!-- Sign in / sign up -->
     <string name="login_brand_sub">On-device voice assistant</string>
-    <string name="login_subtitle">Accounts stay on this phone and keep chats and reminders separate for each account</string>
     <string name="login_tab_login">Sign in</string>
     <string name="login_tab_register">Sign up</string>
     <string name="login_hint_username">Username</string>

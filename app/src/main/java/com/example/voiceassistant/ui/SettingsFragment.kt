@@ -284,10 +284,6 @@ class SettingsFragment : Fragment() {
     // ------------------------------------------------------------------ 其他动作
 
     private fun bindActions() {
-        requireView().findViewById<MaterialButton>(R.id.btnClearChat).setOnClickListener {
-            host.clearCurrentConversation()
-            toast(getString(R.string.settings_clear_chat_done))
-        }
         requireView().findViewById<MaterialButton>(R.id.btnResetSettings).setOnClickListener {
             confirmReset()
         }

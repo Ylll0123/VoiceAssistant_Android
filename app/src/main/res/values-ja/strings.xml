@@ -26,15 +26,11 @@
 
     <!-- 設定 -->
     <string name="settings_title">設定</string>
-    <string name="settings_subtitle">よく使う項目だけを残しました</string>
     <string name="settings_answer_style">回答の仕方</string>
     <string name="settings_style_concise">簡潔</string>
     <string name="settings_style_detailed">詳しく</string>
     <string name="settings_language">言語</string>
     <string name="settings_language_title">表示言語を選択</string>
-    <string name="settings_chat">会話</string>
-    <string name="settings_clear_chat">会話履歴を消去</string>
-    <string name="settings_clear_chat_done">会話を消去しました</string>
     <string name="settings_account">アカウント</string>
     <string name="settings_logout">ログアウト</string>
     <string name="settings_about">このアプリについて</string>
@@ -71,7 +67,6 @@
 
     <!-- ログイン・登録 -->
     <string name="login_brand_sub">端末内の音声アシスタント</string>
-    <string name="login_subtitle">アカウントはこの端末にだけ保存され、会話履歴とリマインダーを人ごとに分けます</string>
     <string name="login_tab_login">ログイン</string>
     <string name="login_tab_register">新規登録</string>
     <string name="login_hint_username">ユーザー名</string>

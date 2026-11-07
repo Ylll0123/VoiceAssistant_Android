@@ -389,6 +389,13 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             .setPositiveButton(R.string.action_confirm) { _, _ ->
                 val wasCurrent = current?.id == conversation.id
                 conversations.delete(conversation.id)
+
+                // 全删光了就立刻补一段新的：抽屉里不该出现「一条都没有」的空状态
+                if (conversations.list().isEmpty()) {
+                    openConversation(conversations.create(getString(R.string.conv_new_title)))
+                    toast(getString(R.string.conv_deleted))
+                    return@setPositiveButton
+                }
                 refreshDrawer()
                 if (wasCurrent) openConversation(conversations.current()) else toast(
                     getString(R.string.conv_deleted)
@@ -699,15 +706,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     }
 
     /** 清空**当前这条**对话记录（其它记录不受影响） */
-    fun clearCurrentConversation() {
-        turnSeq++
-        setThinking(null)
-        session.clear()
-        session.load(listOf(welcome()))
-        saveCurrent()
-        chatView?.refresh()
-    }
-
     fun gotoLogin() {
         startActivity(
             Intent(this, LoginActivity::class.java).apply {

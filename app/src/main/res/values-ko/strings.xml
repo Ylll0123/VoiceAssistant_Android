@@ -26,15 +26,11 @@
 
     <!-- 설정 -->
     <string name="settings_title">설정</string>
-    <string name="settings_subtitle">자주 쓰는 항목만 남겼습니다</string>
     <string name="settings_answer_style">답변 방식</string>
     <string name="settings_style_concise">간단히</string>
     <string name="settings_style_detailed">자세히</string>
     <string name="settings_language">언어</string>
     <string name="settings_language_title">표시 언어 선택</string>
-    <string name="settings_chat">대화</string>
-    <string name="settings_clear_chat">대화 기록 지우기</string>
-    <string name="settings_clear_chat_done">대화를 지웠습니다</string>
     <string name="settings_account">계정</string>
     <string name="settings_logout">로그아웃</string>
     <string name="settings_about">정보</string>
@@ -71,7 +67,6 @@
 
     <!-- 로그인 · 가입 -->
     <string name="login_brand_sub">기기 내 음성 비서</string>
-    <string name="login_subtitle">계정은 이 기기에만 저장되며 대화 기록과 알림을 사람별로 구분합니다</string>
     <string name="login_tab_login">로그인</string>
     <string name="login_tab_register">회원가입</string>
     <string name="login_hint_username">사용자 이름</string>
