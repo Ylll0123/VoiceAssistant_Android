@@ -33,7 +33,7 @@ class KwsSupply(private val context: Context) {
     private val app: Context = context.applicationContext
 
     val all: List<Supply> = listOf(
-        start(), stop(), setWakeWord(), setSensitivity(), setSessionTimeout()
+        start(), stop(), setWakeWord(), setSensitivity(), setSessionTimeout(), status()
     )
 
     // ------------------------------------------------------------------ 开关
@@ -82,6 +82,54 @@ class KwsSupply(private val context: Context) {
             runCatching { app.stopService(Intent(app, WakeWordService::class.java)) }
             WakeConfig.enabled = false
             return BusReply.ok("唤醒词监听关了。")
+        }
+    }
+
+    // ------------------------------------------------------------------ 自查
+
+    /**
+     * 唤醒为什么叫不醒。
+     *
+     * 「语音唤醒无法使用」这类反馈，靠开关位置是看不出来的：
+     * 开关是开的，可能是服务没起来、权限被收回、系统缺中文识别包，或者引擎一直报错。
+     * 这里一次性把该看的状态都摊开，并给一句能落地的建议。
+     */
+    private fun status(): Supply = object : Supply {
+        override val name = "kws/status"
+        override val summary =
+            "自查唤醒词为什么叫不醒：开关、服务、录音权限、系统识别服务、最近一次错误码。"
+
+        override fun invoke(args: BusArgs): BusReply {
+            val points = mutableListOf<String>()
+            points += if (WakeConfig.enabled) "监听开关是开的" else "监听开关是关的"
+            points += if (WakeWordService.instance != null) "监听服务在跑" else "监听服务没起来"
+
+            val hasMic = ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+            points += if (hasMic) "有录音权限" else "没有录音权限"
+
+            val hasEngine = runCatching { SpeechRecognizer.isRecognitionAvailable(app) }
+                .getOrDefault(false)
+            points += if (hasEngine) "系统识别服务可用" else "系统没有语音识别服务"
+
+            val error = WakeWordService.lastError
+            val suggestion = when {
+                !hasMic -> "去系统设置里给它录音权限，再把开关关一下重开。"
+                !hasEngine -> "这台手机没有语音识别服务，唤醒词用不了，只能点麦克风说话。"
+                !WakeConfig.enabled -> "把设置里的「语音唤醒」打开。"
+                WakeWordService.instance == null ->
+                    "开关是开的但服务没起来：到系统设置里允许自启动和后台运行，再把开关关一下重开。"
+
+                error == 12 || error == 13 ->
+                    "系统缺中文识别包（错误码 $error）：去系统设置里下载离线语音包，或者连上网络再试。"
+
+                error == 1 || error == 2 || error == 11 ->
+                    "识别需要联网，现在网络不通（错误码 $error）。"
+
+                error == 9 -> "录音权限被系统收回了，重新给一次。"
+                else -> "开着就能叫「${WakeConfig.wakeWord}」，说完整一点更稳。"
+            }
+            return BusReply.ok(points.joinToString("，") + "。$suggestion")
         }
     }
 

@@ -20,6 +20,7 @@ import android.util.Log
 import com.example.voiceassistant.R
 import com.example.voiceassistant.bus.AssistantBus
 import com.example.voiceassistant.bus.Event
+import com.example.voiceassistant.network.NetworkState
 import com.example.voiceassistant.ui.VoiceAssistantActivity
 
 /** 唤醒命中事件：界面收到开麦、播「我在」 */
@@ -50,6 +51,21 @@ class WakeWordService : Service() {
 
     private var recognizer: SpeechRecognizer? = null
     private var listening = false
+
+    /** 连续失败次数：攒够就重建识别器（引擎会卡在坏状态里，光 cancel 救不回来） */
+    private var consecutiveErrors = 0
+
+    /**
+     * 联网识别一直失败时改走离线。
+     *
+     * 国内机器连不上 Google 语音服务是常态：`isOnline()` 明明为 true，
+     * 识别请求却一直 ERROR_NETWORK，表现同样是「开关开着、叫不醒」。
+     * 连续两次网络类错误就切离线，有离线包就能继续用。
+     */
+    private var forceOffline = false
+
+    /** 连续的网络类错误计数 */
+    private var networkErrors = 0
 
     /** 被界面主动暂停（例如用户在长按说话、或界面在前台） */
     private var paused = false
@@ -174,8 +190,16 @@ class WakeWordService : Service() {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            // 尽量走离线识别：唤醒词就那么几个字，没必要每次都联网
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            /*
+             * 只在**本来就没网**、或者联网识别一直失败时才要求离线识别。
+             *
+             * 以前是永远带 EXTRA_PREFER_OFFLINE=true：没装中文离线包的机器
+             * （国产 ROM、精简系统很常见）每一轮都直接失败，开关亮着却永远叫不醒。
+             * 有网就让引擎走在线识别，准确率高得多；连不上再压离线，成不成就看本机包。
+             */
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                (forceOffline || !NetworkState.isOnline())
+            ) {
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             }
             // 短句：1 秒静音就收尾，否则循环一轮要等很久
@@ -187,6 +211,7 @@ class WakeWordService : Service() {
         listening = true
         runCatching { engine.startListening(intent) }.onFailure {
             listening = false
+            noteError(0)
             scheduleLoop(RETRY_MS)
         }
     }
@@ -207,14 +232,30 @@ class WakeWordService : Service() {
 
         override fun onError(error: Int) {
             listening = false
-            when (error) {
-                // 权限被撤了就别硬撑，否则只是不停地报同一个错
-                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
-                    Log.w(TAG, "录音权限没了，唤醒停止")
-                    WakeConfig.enabled = false
-                    stopSelf()
-                }
 
+            // 权限被撤了就别硬撑，否则只是不停地报同一个错
+            if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                Log.w(TAG, "录音权限没了，唤醒停止")
+                WakeConfig.enabled = false
+                stopSelf()
+                return
+            }
+            if (!noteError(error)) return
+
+            // 网络类错误：连续两次就切离线识别，别在「连不上」上空转
+            if (error == SpeechRecognizer.ERROR_NETWORK ||
+                error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT ||
+                error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED
+            ) {
+                networkErrors++
+                if (networkErrors >= 2 && !forceOffline) {
+                    forceOffline = true
+                    Log.w(TAG, "联网识别连不上，改用离线识别")
+                    recycleRecognizer()
+                }
+            }
+
+            when (error) {
                 // 引擎还没从上一次收尾里缓过来：多等一会儿，别把循环压得更紧
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
                 SpeechRecognizer.ERROR_CLIENT -> scheduleLoop(BUSY_RETRY_MS)
@@ -231,6 +272,8 @@ class WakeWordService : Service() {
 
         override fun onResults(results: Bundle?) {
             listening = false
+            consecutiveErrors = 0
+            networkErrors = 0
             val candidates = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 ?.map { it.trim() }
@@ -239,10 +282,45 @@ class WakeWordService : Service() {
 
             val hit = candidates.firstOrNull { WakeWord.matches(it, WakeConfig.wakeWord, WakeConfig.strict) }
             if (hit != null) {
+                Log.i(TAG, "听到唤醒词：$hit")
                 onWake(hit)
             } else {
                 scheduleLoop(QUIET_RETRY_MS)
             }
+        }
+    }
+
+    /**
+     * 记一次失败；连续失败太多就把识别器整个重建。
+     *
+     * 有些引擎（尤其国产 ROM 自带那套）出错后会卡在坏状态：
+     * cancel 不报错、startListening 也不报错，但再也不会有结果回来。
+     * 只有 destroy + create 才能恢复，表现上就是「不重启 App 永远叫不醒」。
+     *
+     * @return false 表示已经彻底停了，调用方不要再排下一轮
+     */
+    private fun noteError(error: Int): Boolean {
+        lastError = error
+        lastErrorAt = System.currentTimeMillis()
+        consecutiveErrors++
+        Log.w(TAG, "识别失败 error=$error（连续 $consecutiveErrors 次）")
+        if (consecutiveErrors >= RECYCLE_AFTER) {
+            recycleRecognizer()
+            return WakeConfig.enabled
+        }
+        return true
+    }
+
+    private fun recycleRecognizer() {
+        Log.w(TAG, "识别器连续失败，重建一个")
+        consecutiveErrors = 0
+        listening = false
+        runCatching { recognizer?.destroy() }
+        recognizer = null
+        if (!ensureRecognizer()) {
+            Log.w(TAG, "重建失败，唤醒停止")
+            WakeConfig.enabled = false
+            stopSelf()
         }
     }
 
@@ -373,6 +451,17 @@ class WakeWordService : Service() {
         @Volatile
         var instance: WakeWordService? = null
             private set
+
+        /** 最近一次识别错误码，给 [com.example.voiceassistant.provider.KwsSupply] 自查用 */
+        @Volatile
+        var lastError: Int = 0
+
+        /** 最近一次出错的时间 */
+        @Volatile
+        var lastErrorAt: Long = 0L
+
+        /** 连续失败这么多次就重建识别器 */
+        private const val RECYCLE_AFTER = 5
 
         /** 没人说话时歇久一点，省电 */
         private const val QUIET_RETRY_MS = 800L

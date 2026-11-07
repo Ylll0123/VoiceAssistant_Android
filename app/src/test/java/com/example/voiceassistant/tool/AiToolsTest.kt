@@ -46,7 +46,8 @@ class AiToolsTest {
                 "device_wifi_ctrl", "device_bluetooth_ctrl",
                 "audio_volume_ctrl", "audio_tts_stop",
                 "tool_calc", "tool_time", "tool_translate", "tool_weather",
-                "msg_send_text", "msg_confirm_send", "msg_query_can_send"
+                "msg_send_text", "msg_confirm_send", "msg_query_can_send",
+                "kws_status"
             ),
             toolNames()
         )

@@ -101,8 +101,15 @@ object WakeConfig {
     @Volatile
     var sensitivity: Int = 60
 
-    /** 严格匹配 = 低灵敏度（≥ 75 视为「别老误唤醒」） */
-    val strict: Boolean get() = sensitivity < 75
+    /**
+     * 严格匹配 = 必须完整说出唤醒词。
+     *
+     * 只有灵敏度很低（<30）才这么要求。**默认必须宽松**：
+     * 中文 ASR 对叠词的尾巴很不稳，「小豆小豆」经常只回来「小豆」「小豆小」，
+     * 严格匹配的表现就是「开关开着、怎么叫都没反应」——这正是用户反馈的「唤醒用不了」。
+     * 唤醒不了的代价比偶尔误唤醒大得多：误唤醒只是应一声，叫不醒就是功能坏了。
+     */
+    val strict: Boolean get() = sensitivity < 30
 
     @Volatile
     var enabled: Boolean = false

@@ -360,11 +360,16 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
      * 等于把自己的声音录进识别里。直接进聆听态最干净，用户马上就能说话。
      */
     private fun beginVoiceFromWake(): Boolean {
-        // 离线时不光听不了，也没法把话说出去，直接回绝，别让用户对着手机白说
-        if (!NetworkState.isOnline()) return false
+        /*
+         * 离线也照样开麦。
+         *
+         * 以前这里 `if (!NetworkState.isOnline()) return false`：断网时被叫醒等于毫无反应，
+         * 用户看到的就是「叫了没动静」——而离线时本地指令（开关灯、音量、闹钟）本来就能用，
+         * 问答类自然会在下游回一句「现在没联网」，不需要在这里提前拦掉。
+         */
         main.postDelayed({
             if (isFinishing || isDestroyed) return@postDelayed
-            if (NetworkState.isOnline()) beginVoice()
+            beginVoice()
         }, 400)
         return true
     }

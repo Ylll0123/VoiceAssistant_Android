@@ -75,6 +75,8 @@ enum class ImPlatform(val key: String, val packageName: String, val label: Strin
  * ## 已知脆弱点
  * - 微信/QQ 的节点 id 随版本变，查找顺序是「viewId → 文字 → 无障碍描述 → 坐标」；
  * - 首次启动对方应用可能有开屏广告/更新弹窗，会卡在搜索那一步超时；
+ * - **搜索框和聊天输入框长得一样**（都是 EditText），靠「搜索在屏幕上半、聊天输入在底部」
+ *   加提示文字/id 区分；两者都判不出来时宁可报「没进到聊天页」，也不往输入框里写字；
  * - 自动发送失败时不会硬撑，会如实说失败原因（能分享就把内容带过去）。
  */
 class ImAutomator(
@@ -290,6 +292,16 @@ class ImAutomator(
     /**
      * 打开 → 搜人 → 进聊天 → 填字。停在**发送前**。
      * 每一步失败都返回带步骤的说明，上层据此决定降级还是报错。
+     *
+     * ## 为什么「进聊天页」要单独确认
+     * 之前点完联系人只睡 700ms 就去找输入框。结果对方应用偶尔没响应这次点击，
+     * 页面还停在搜索页——搜索框本身就是个 EditText，于是**消息内容被填进了搜索栏**，
+     * 表现就是「搜了个联系人，却在搜索框里搜消息内容」。
+     *
+     * 现在把「进没进聊天页」当成一道硬门槛：
+     * - 搜索框在屏幕**上半**，聊天输入框在**底部**，用几何位置区分；
+     * - 没进聊天页就重试点击（含 QQ 的资料卡要先点「发消息」），
+     * - 三次都不行就如实报失败，**绝不把内容写进搜索框**。
      */
     private fun openChatAndFill(platform: ImPlatform, to: String, content: String): Filled {
         if (!launch(platform)) return Filled.Error("打不开${platform.label}")
@@ -304,8 +316,8 @@ class ImAutomator(
             ?: return Filled.Error("没找到${platform.label}的搜索入口")
         if (!driver.click(searchEntry)) return Filled.Error("搜索框点不开")
 
-        // 2) 在搜索框里填联系人名字
-        val searchBox = driver.findEditable(timeoutMs = 3_000)
+        // 2) 在搜索框里填联系人名字（只认上半屏的输入框）
+        val searchBox = findSearchBox(3_000)
             ?: return Filled.Error("搜索框没弹出来")
         if (!driver.setText(searchBox, to)) {
             driver.click(searchBox)
@@ -316,46 +328,192 @@ class ImAutomator(
         }
         Thread.sleep(1_100)
 
-        // 3) 点开联系人：完全同名优先
-        val exact = driver.findCustom(timeoutMs = 2_500) { node ->
-            node.isVisibleToUser && node.text?.toString()?.trim() == to
-        }
-        val contact = exact ?: driver.findCustom(timeoutMs = 1_200) { node ->
-            val text = node.text?.toString()?.trim().orEmpty()
-            node.isVisibleToUser && text.contains(to) &&
-                text.length in to.length..(to.length + 8)
-        } ?: return Filled.Error("搜索结果里没有叫「$to」的联系人")
-
+        // 3) 点开联系人：完全同名优先，且排除「搜索 xxx」这类网络搜索行
+        val searchBottom = driver.bounds(searchBox)?.bottom ?: 0
+        val contact = findContact(to, searchBottom)
+            ?: return Filled.Error("搜索结果里没有叫「$to」的联系人")
         val matched = runCatching { contact.text?.toString()?.trim().orEmpty() }
             .getOrDefault("")
             .ifEmpty { to }
 
-        driver.click(contact)
-        Thread.sleep(700)
-        if (driver.currentPackage() != platform.packageName) {
-            return Filled.Error("点了「$matched」之后跳出了${platform.label}")
-        }
+        // 4) 必须真的进到聊天页，才允许写字
+        val inputBox = enterChat(platform, to, contact)
+            ?: return Filled.Error("点了「$matched」，但一直没进到聊天页（还停在搜索页）")
 
-        // 4) 找到聊天输入框并填字
-        val input = driver.findEditable(timeoutMs = 4_000)
-            ?: return Filled.Error("没进到聊天页")
-
-        var filled = driver.setText(input, content)
+        // 5) 填字
+        var filled = driver.setText(inputBox, content)
         if (!filled) {
-            driver.click(input)
+            driver.click(inputBox)
             Thread.sleep(350)
-            filled = driver.setText(input, content)
+            filled = driver.setText(inputBox, content)
         }
         if (!filled) return Filled.Error("字填不进去")
 
         Thread.sleep(250)
-        val actual = runCatching { input.text?.toString().orEmpty() }.getOrDefault("")
+        val actual = runCatching { inputBox.text?.toString().orEmpty() }.getOrDefault("")
         if (actual.isNotBlank() && actual.trim() != content.trim()) {
-            driver.setText(input, content)
+            driver.setText(inputBox, content)
             Thread.sleep(250)
         }
 
-        return Filled.Ok(matched, input)
+        return Filled.Ok(matched, inputBox)
+    }
+
+    // ------------------------------------------------------------------ 页面判定
+
+    /**
+     * 从搜索结果进入聊天页。返回聊天输入框；**进不去就返回 null，绝不硬填**。
+     *
+     * 分四步递进，每一步都以「真的看到聊天输入框」为准：
+     * 1. 节点点击——大多数情况一次就进；
+     * 2. 还在搜索页 → 重新定位条目、按条目中心派发触摸（节点点击偶发不响应）；
+     * 3. 进了资料卡（QQ 常见）→ 点「发消息」；
+     * 4. 还不行 → 退回搜索页重搜一遍再点，最后仍失败就报错。
+     *
+     * 老版本只有第 1 步、睡 700ms 就往下走，于是「没点进去」时
+     * 搜索框被当成聊天输入框，消息内容就填进了搜索栏。
+     */
+    private fun enterChat(
+        platform: ImPlatform,
+        to: String,
+        firstContact: AccessibilityNodeInfo
+    ): AccessibilityNodeInfo? {
+        driver.click(firstContact)
+        waitChatInput(CHAT_ENTER_TIMEOUT_MS)?.let { return it }
+
+        // 还在搜索页：条目可能没响应这次点击，改用坐标再点一次
+        if (findSearchBox(0) != null) {
+            val below = driver.bounds(findSearchBox(0))?.bottom ?: 0
+            tapOrClick(findContact(to, below) ?: firstContact)
+            waitChatInput(2_500)?.let { return it }
+        }
+
+        // QQ 点搜索结果先进资料卡，要再点「发消息」
+        driver.find(byText = "发消息", timeoutMs = 700)?.let { button ->
+            driver.click(button)
+            waitChatInput(2_500)?.let { chat -> return chat }
+        }
+
+        // 跑到别的应用了就别再折腾
+        if (driver.currentPackage() != platform.packageName) return null
+
+        // 退回搜索页，重新搜一遍再点
+        driver.back()
+        Thread.sleep(500)
+        val box = findSearchBox(1_500) ?: return null
+        driver.setText(box, to)
+        Thread.sleep(1_000)
+        tapOrClick(findContact(to, driver.bounds(box)?.bottom ?: 0) ?: return null)
+        return waitChatInput(2_500)
+    }
+
+    /** 优先按矩形中心派发触摸，拿不到矩形再退回节点点击 */
+    private fun tapOrClick(node: AccessibilityNodeInfo) {
+        val rect = driver.bounds(node)
+        if (rect != null) driver.tap(rect.exactCenterX(), rect.exactCenterY())
+        else driver.click(node)
+    }
+
+    /**
+     * 找搜索结果里的联系人行。
+     *
+     * 三个必须排除的对象：
+     * - **搜索框本身**——我们刚把联系人名字填进去，它里面的文字和联系人一模一样，
+     *   而且常常排在节点树更前面，点它就等于「又点了搜索框」，人根本没进去；
+     * - 「搜索 xxx」「网络查找」这类行，点下去是网页搜索；
+     * - 搜索框上方的任何东西（标题栏等）。
+     *
+     * @param belowY 只在搜索框下边缘以下的节点里找
+     */
+    private fun findContact(to: String, belowY: Int = 0): AccessibilityNodeInfo? {
+        fun usable(node: AccessibilityNodeInfo): Boolean {
+            if (node.isEditable || !node.isVisibleToUser) return false
+            if (!ImPageRules.usableContact(node.text?.toString())) return false
+            if (belowY > 0) {
+                val rect = driver.bounds(node) ?: return false
+                if (rect.top < belowY - 8) return false
+            }
+            return true
+        }
+
+        driver.findCustom(timeoutMs = 2_500) { node ->
+            usable(node) && node.text?.toString()?.trim() == to
+        }?.let { return it }
+
+        return driver.findCustom(timeoutMs = 1_200) { node ->
+            val text = node.text?.toString()?.trim().orEmpty()
+            usable(node) && text.contains(to) && text.length in to.length..(to.length + 8)
+        }
+    }
+
+    /** 搜索框：可编辑 + （看着像搜索框 或 在屏幕上半部分） */
+    private fun findSearchBox(timeoutMs: Long): AccessibilityNodeInfo? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        do {
+            driver.findAll { node -> driver.isEditable(node) && looksLikeSearchBox(node) }
+                .firstOrNull()?.let { return it }
+            if (timeoutMs <= 0) return null
+            Thread.sleep(250)
+        } while (System.currentTimeMillis() < deadline)
+        return null
+    }
+
+    /**
+     * 聊天输入框：可编辑、不是搜索框、明确落在屏幕下半部分。
+     *
+     * 必须拿**正向证据**（在底部）才返回：只凭「搜索框不见了」就认，
+     * 万一这一版的搜索框没被认出来，消息内容照样会被填进搜索栏。
+     * 唯一的例外是量不到屏幕高度（极老或特殊 ROM），那时没有几何可用。
+     */
+    private fun waitChatInput(timeoutMs: Long): AccessibilityNodeInfo? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        do {
+            val boxes = driver.findAll { node ->
+                driver.isEditable(node) && !looksLikeSearchBox(node)
+            }
+            boxes.firstOrNull { looksLikeChatInput(it) }?.let { return it }
+            if (driver.screenHeight() <= 0) boxes.firstOrNull()?.let { return it }
+            Thread.sleep(250)
+        } while (System.currentTimeMillis() < deadline)
+        return null
+    }
+
+    private fun looksLikeSearchBox(node: AccessibilityNodeInfo): Boolean = ImPageRules.isSearchBox(
+        centerY = nodeCenterY(node),
+        screenHeight = driver.screenHeight(),
+        hint = hintOf(node),
+        text = runCatching { node.text?.toString() }.getOrNull(),
+        ids = viewIdsOf(node)
+    )
+
+    private fun looksLikeChatInput(node: AccessibilityNodeInfo): Boolean = ImPageRules.isChatInput(
+        centerY = nodeCenterY(node),
+        screenHeight = driver.screenHeight(),
+        hint = hintOf(node),
+        text = runCatching { node.text?.toString() }.getOrNull(),
+        ids = viewIdsOf(node)
+    )
+
+    /** 节点中心 Y；量不到返回 -1 */
+    private fun nodeCenterY(node: AccessibilityNodeInfo): Int =
+        driver.bounds(node)?.centerY() ?: -1
+
+    private fun hintOf(node: AccessibilityNodeInfo): String =
+        runCatching { node.hintText?.toString().orEmpty() }.getOrDefault("")
+
+    /** 自身加近几层祖先的资源 id（判断是不是搜索框用） */
+    private fun viewIdsOf(node: AccessibilityNodeInfo): List<String> {
+        val ids = ArrayList<String>(4)
+        var cur: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (cur != null && depth < 4) {
+            runCatching { cur.viewIdResourceName }.getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { ids += it }
+            cur = runCatching { cur.parent }.getOrNull()
+            depth++
+        }
+        return ids
     }
 
     /**
@@ -387,19 +545,30 @@ class ImAutomator(
         return driver.findRightOf(input, timeoutMs = 800)
     }
 
+    /**
+     * 退到首页。
+     *
+     * 判据是「有搜索入口 **且** 页面上没有输入框」——搜索结果页同样有「搜索」两个字，
+     * 光看搜索入口会把搜索页当首页，接着就点了页面上已有的搜索文字，
+     * 于是搜索框里填的、后面填的都是上一轮的残留内容。
+     */
     private fun backToHome(platform: ImPlatform) {
-        if (searchEntry(0) != null) return
+        if (atHome()) return
         repeat(2) {
             if (driver.currentPackage() != platform.packageName) return
             driver.back()
-            Thread.sleep(450)
-            if (searchEntry(0) != null) return
+            Thread.sleep(500)
+            if (atHome()) return
         }
         if (driver.currentPackage() != platform.packageName) {
             launch(platform)
             waitForApp(platform, 4_000)
         }
     }
+
+    /** 首页：找得到搜索入口，且没有输入框 */
+    private fun atHome(): Boolean =
+        searchEntry(0) != null && driver.findEditable(0) == null
 
     private fun searchEntry(timeoutMs: Long): AccessibilityNodeInfo? {
         driver.find(byDescription = "搜索", timeoutMs = timeoutMs)?.let { return it }
@@ -493,5 +662,8 @@ class ImAutomator(
 
         /** 等消息出现在聊天里的时间 */
         const val SENT_TIMEOUT_MS = 2_200L
+
+        /** 点完联系人后，等聊天页出现的时间 */
+        const val CHAT_ENTER_TIMEOUT_MS = 3_000L
     }
 }

@@ -157,11 +157,42 @@ class ImDriver {
 
     /** 找第一个可编辑的输入框（聊天页输入框的通用特征） */
     fun findEditable(timeoutMs: Long = 0): AccessibilityNodeInfo? =
-        findCustom(timeoutMs) { node ->
-            val editable = node.isEditable ||
-                node.className?.toString()?.contains("EditText") == true
-            editable && node.isVisibleToUser
-        }
+        findCustom(timeoutMs) { node -> isEditable(node) }
+
+    /** 这个节点是不是输入框 */
+    fun isEditable(node: AccessibilityNodeInfo): Boolean =
+        (node.isEditable || node.className?.toString()?.contains("EditText") == true) &&
+            node.isVisibleToUser
+
+    /** 节点在屏幕上的矩形；拿不到返回 null */
+    fun bounds(node: AccessibilityNodeInfo?): android.graphics.Rect? {
+        if (node == null) return null
+        val rect = android.graphics.Rect()
+        runCatching { node.getBoundsInScreen(rect) }
+        return if (rect.isEmpty) null else rect
+    }
+
+    /** 屏幕高度（px）。判断「输入框在屏幕上半还是下半」用 */
+    fun screenHeight(): Int = runCatching {
+        android.content.res.Resources.getSystem().displayMetrics.heightPixels
+    }.getOrDefault(0)
+
+    /**
+     * 按坐标点一下（不依赖节点自身可点）。
+     *
+     * 列表条目、发送圆圈这类节点经常 `isClickable=false`，
+     * 但服务开了 `canPerformGestures` 就能直接派发轻点。
+     */
+    fun tap(x: Float, y: Float): Boolean = runCatching {
+        val service = ImAccessibilityService.instance ?: return false
+        val path = android.graphics.Path().apply { moveTo(x, y) }
+        val gesture = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(
+                android.accessibilityservice.GestureDescription
+                    .StrokeDescription(path, 0, 60L)
+            ).build()
+        service.dispatchGesture(gesture, null, null)
+    }.getOrDefault(false)
 
     /** 自定义条件查找（带重试） */
     fun findCustom(timeoutMs: Long, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
@@ -174,6 +205,17 @@ class ImDriver {
             runCatching { Thread.sleep(STEP_MS) }
         } while (System.currentTimeMillis() < deadline)
         return null
+    }
+
+    /**
+     * 一次遍历，收集**所有**满足条件的节点。
+     *
+     * 用在「页面上有好几个输入框，得挑对那一个」的场合：
+     * 微信搜索页有搜索框，聊天页有输入框，只取第一个很容易取错。
+     */
+    fun findAll(predicate: (AccessibilityNodeInfo) -> Boolean): List<AccessibilityNodeInfo> {
+        val root = root() ?: return emptyList()
+        return walk(root).filter(predicate)
     }
 
     /**

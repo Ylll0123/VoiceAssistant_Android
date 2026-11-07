@@ -61,6 +61,7 @@ object LocalNlu {
 
         val hit = sendMessage(text)
             ?: messageDiagnostic(text)
+            ?: wakeDiagnostic(text)
             ?: torch(text)
             ?: brightness(text)
             ?: volume(text)
@@ -365,6 +366,22 @@ object LocalNlu {
         return Hit("msg/query_can_send", BusArgs.of("platform" to key))
     }
 
+    // ------------------------------------------------------------------ 唤醒诊断
+
+    /**
+     * 「唤醒用不了」「小豆小豆没反应」「怎么开启语音唤醒」。
+     *
+     * 唤醒是唯一只能由用户在设置里手动打开的能力，出问题时没有别的入口能看状态。
+     * 留一条口语入口，问一句就把开关 / 服务 / 权限 / 离线包四层一次说清。
+     * 只认带「唤醒/小豆/叫不醒」且带诊断措辞的句子，不会抢「打开手电筒」这类指令。
+     */
+    private fun wakeDiagnostic(text: String): Hit? {
+        val mentions = text.contains("唤醒") || text.contains("小豆") || text.contains("叫不醒")
+        if (!mentions) return null
+        if (!WAKE_DIAG.containsMatchIn(text)) return null
+        return Hit("kws/status", BusArgs.EMPTY)
+    }
+
     // ------------------------------------------------------------------ 规则表
 
     /**
@@ -407,6 +424,12 @@ object LocalNlu {
     private val SEND_DIAG = Regex(
         "为什么|咋发|怎么发不|发不(出|了|上去)|发不了|不能发|没法发|" +
             "能发|可以发|能不能发|检查一下|检查下|自检|诊断|查一下发|看看发"
+    )
+
+    /** 唤醒诊断的措辞；「怎么开启」也算——问怎么开的人，最该先知道现在为什么没开 */
+    private val WAKE_DIAG = Regex(
+        "为什么|咋|怎么|用不了|用不上|不能用|没反应|没动静|叫不醒|叫不动|不灵|" +
+            "检查|查一下|自检|诊断|看看|失败|不行|开启|打开"
     )
 
     /** 「计时 10 分钟」里「计时」后面那截当作名字 */

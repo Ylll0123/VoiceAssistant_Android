@@ -188,7 +188,11 @@ class AiTools(private val bus: ServiceBus) {
     "description":"诊断发消息能力：应用装没装、无障碍连没连上、系统分享通路能不能用。用户问「为什么发不出去」「能发微信吗」「检查一下发消息」时调用，把原因原样转述给用户。",
     "parameters":{"type":"object","properties":{
       "platform":{"type":"string","enum":["wechat","qq"],"description":"默认 wechat"}
-    }}}}
+    }}}},
+  {"type":"function","function":{
+    "name":"kws_status",
+    "description":"诊断语音唤醒：监听开关、服务是否在跑、录音权限、系统识别服务、最近一次识别错误码。用户说「唤醒用不了」「叫不醒」「小豆小豆没反应」「检查一下唤醒」时调用。注意：真正打开/关闭唤醒需要用户在设置页操作，这个工具只查不改。",
+    "parameters":{"type":"object","properties":{}}}}
 ]
 """.trimIndent()
     }
