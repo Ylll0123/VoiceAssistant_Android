@@ -25,6 +25,10 @@ class LocalNluTest {
 
     private fun args(text: String, key: String): String? = hit(text)?.args?.str(key)
 
+    /** 假装本机装了这些应用，用来测「常用表之外也能打开」 */
+    private fun hitWithApps(text: String, installed: Set<String>): LocalNlu.Hit? =
+        LocalNlu.route(text, now, appMatcher = { it in installed })
+
     // ------------------------------------------------------------ 设备
 
     @Test
@@ -42,6 +46,26 @@ class LocalNluTest {
         assertEquals("设置", args("打开设置页面", "name"))
         // 「打开这个思路」不是打开应用，必须放给大模型
         assertNull(service("打开这个思路"))
+    }
+
+    @Test
+    fun `常用表以外的应用靠本机安装列表认领`() {
+        // 没有安装列表时保守放弃：「原神」不在内置表里
+        assertNull(service("打开原神"))
+
+        val installed = setOf("原神", "学习通", "微信")
+        val hit = hitWithApps("打开原神", installed)
+        assertEquals("device/open_app", hit?.service)
+        assertEquals("原神", hit?.args?.str("name"))
+
+        // 「打开学习通」里的名字短，也要能认出来
+        assertEquals("学习通", hitWithApps("打开学习通吧", installed)?.args?.str("name"))
+
+        // 装了微信：内置表优先，走归一后的「微信」
+        assertEquals("微信", hitWithApps("打开微信", installed)?.args?.str("name"))
+
+        // 名字不像应用，就算有安装列表也不能认领
+        assertNull(hitWithApps("打开这个思路", installed))
     }
 
     @Test

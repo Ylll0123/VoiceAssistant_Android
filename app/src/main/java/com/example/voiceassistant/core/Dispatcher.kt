@@ -49,7 +49,14 @@ class Dispatcher(
     private val bus: ServiceBus,
     private val ai: AiChat,
     private val msg: PendingSend,
-    private val now: () -> LocalDateTime = { LocalDateTime.now() }
+    private val now: () -> LocalDateTime = { LocalDateTime.now() },
+    /**
+     * 「这个名字是不是本机真实装了的应用」。
+     *
+     * 交给外面注入（`AppCatalog`）：本地代码跑不了 PackageManager 单测，
+     * 但「打开原神」这种常用表外的应用也得在本地认出来，不必绕一趟大模型。
+     */
+    private val appMatcher: ((String) -> Boolean)? = null
 ) {
 
     /** 一句话的处理结果 */
@@ -101,7 +108,7 @@ class Dispatcher(
         }
 
         // ② 本地能认领的指令，一律不碰网络
-        val hit = LocalNlu.route(input, now())
+        val hit = LocalNlu.route(input, now(), appMatcher)
         if (hit != null) {
             return runLocal(hit.service, hit.args)
         }

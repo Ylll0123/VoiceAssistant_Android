@@ -160,8 +160,13 @@ class ConversationStore(context: Context) {
         /** v3.x 的旧文件名 */
         private const val LEGACY_PREFS = "chat_history"
 
-        /** 标题最多几个字（模型偶尔会写一长句） */
-        const val MAX_TITLE = 16
+        /**
+         * 标题最多几个字。
+         *
+         * 抽屉占屏幕 4/5，条目能放两行——32 个汉字差不多正好。
+         * 以前是 16，用户的问题稍长就被切掉半句，看不出这次聊的是什么。
+         */
+        const val MAX_TITLE = 32
 
         /** 一次会话最多留多少条消息 */
         const val MAX_MESSAGES = 200

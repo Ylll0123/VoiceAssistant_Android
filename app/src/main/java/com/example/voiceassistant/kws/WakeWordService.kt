@@ -64,9 +64,23 @@ class WakeWordService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundCompat()
+        /*
+         * 前台服务起不来就直接收摊，不要留一个「开关亮着、其实什么都没干」的服务。
+         * Android 12+ 在后台启动前台服务会被拒，14 起没有麦克风类型权限也会抛异常——
+         * 这些情况下用户看到的应该是开关自己弹回去，而不是永远叫不醒。
+         */
+        if (!startForegroundCompat()) {
+            WakeConfig.enabled = false
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!ensureRecognizer()) {
+            WakeConfig.enabled = false
+            stopSelf()
+            return START_NOT_STICKY
+        }
         WakeConfig.enabled = true
-        ensureRecognizer()
+        paused = false
         scheduleLoop(0)
         return START_STICKY
     }
@@ -89,13 +103,22 @@ class WakeWordService : Service() {
     fun pause() {
         paused = true
         stopListening()
-        main.removeCallbacksAndMessages(null)
+        main.removeCallbacks(loop)
     }
 
-    /** 界面离开后恢复 */
+    /**
+     * 恢复监听。
+     *
+     * **幂等**：没暂停时什么也不做。因为界面会从好几条路径调它
+     * （识别结束、回答完、切回前台），重复排队只会让循环越来越慢。
+     */
     fun resume() {
+        if (!WakeConfig.enabled) return
+        if (!paused) return
         paused = false
-        scheduleLoop(600)
+        // 留 400ms：上一轮 cancel 之后系统还没把麦克风还回来，
+        // 立刻 startListening 十有八九是 ERROR_RECOGNIZER_BUSY
+        scheduleLoop(RESUME_DELAY_MS)
     }
 
     // ------------------------------------------------------------------ 循环
@@ -106,7 +129,20 @@ class WakeWordService : Service() {
     }
 
     private val loop: Runnable = Runnable {
-        if (!WakeConfig.enabled || paused) return@Runnable
+        if (!WakeConfig.enabled) return@Runnable
+
+        /*
+         * 暂停时**不要退出循环**，而是隔一秒再看。
+         *
+         * 以前这里直接 return，等于把循环掐死了：只要有一次 pause 之后没走到 resume
+         * （比如用户按着说话直接退出应用），唤醒就永远醒不过来，
+         * 表现是「开关还开着，但再也不响应」。
+         */
+        if (paused) {
+            main.postDelayed(loop, 1_000)
+            return@Runnable
+        }
+
         // 会话窗口内不抢麦克风
         if (System.currentTimeMillis() < sessionUntil) {
             main.postDelayed(loop, 1_000)
@@ -115,21 +151,24 @@ class WakeWordService : Service() {
         startListening()
     }
 
-    private fun ensureRecognizer() {
-        if (recognizer != null) return
+    private fun ensureRecognizer(): Boolean {
+        if (recognizer != null) return true
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             Log.w(TAG, "系统没有可用的语音识别服务，唤醒不可用")
-            stopSelf()
-            return
+            return false
         }
         recognizer = SpeechRecognizer.createSpeechRecognizer(this).also {
             it.setRecognitionListener(listener)
         }
+        return true
     }
 
     private fun startListening() {
         if (listening) return
         val engine = recognizer ?: return
+        // 上一轮可能还没彻底收尾。先 cancel 再开，否则会一直 ERROR_RECOGNIZER_BUSY，
+        // 表现就是「开关是开着的，但怎么叫都没反应」
+        runCatching { engine.cancel() }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
@@ -168,10 +207,24 @@ class WakeWordService : Service() {
 
         override fun onError(error: Int) {
             listening = false
-            // NO_MATCH / SPEECH_TIMEOUT 是常态（没人说话），不算错，歇一下接着听
-            scheduleLoop(if (error == SpeechRecognizer.ERROR_NO_MATCH ||
-                error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-            ) QUIET_RETRY_MS else RETRY_MS)
+            when (error) {
+                // 权限被撤了就别硬撑，否则只是不停地报同一个错
+                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                    Log.w(TAG, "录音权限没了，唤醒停止")
+                    WakeConfig.enabled = false
+                    stopSelf()
+                }
+
+                // 引擎还没从上一次收尾里缓过来：多等一会儿，别把循环压得更紧
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+                SpeechRecognizer.ERROR_CLIENT -> scheduleLoop(BUSY_RETRY_MS)
+
+                // 没人说话 / 说的不是唤醒词，属于常态，歇一下接着听
+                SpeechRecognizer.ERROR_NO_MATCH,
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> scheduleLoop(QUIET_RETRY_MS)
+
+                else -> scheduleLoop(RETRY_MS)
+            }
         }
 
         override fun onPartialResults(partialResults: Bundle?) = Unit
@@ -199,16 +252,65 @@ class WakeWordService : Service() {
         sessionUntil = now + WakeConfig.sessionMs
         WakeConfig.lastWakeAt = now
 
-        AssistantBus.publish(WakeDetected(WakeConfig.wakeWord, now))
+        if (WakeConfig.uiAlive) {
+            AssistantBus.publish(WakeDetected(WakeConfig.wakeWord, now))
+        } else {
+            /*
+             * 界面已经没了，进程内事件发出去也没人接。
+             *
+             * 又不能在后台直接 startActivity——Android 10 起后台启动界面会被系统拦，
+             * 唯一的合法通道是通知。用户点一下进来，界面恢复后再叫一次就能接着说。
+             */
+            notifyHeard()
+        }
 
         // 麦克风让给对话链路，窗口结束后自己回来
         main.removeCallbacks(loop)
         main.postDelayed(loop, WakeConfig.sessionMs + 500)
     }
 
+    /** 界面不在时，用一条通知告诉用户「我听见了」 */
+    private fun notifyHeard() {
+        runCatching {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            createHeardChannel(manager)
+            val open = PendingIntent.getActivity(
+                this,
+                // requestCode 必须和常驻通知的不一样：两个 PendingIntent 的 Intent 只差 extras，
+                // 用同一个 code + UPDATE_CURRENT 会互相覆盖，常驻通知也会变成「点了就开麦」
+                1,
+                Intent(this, VoiceAssistantActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra(WakeConfig.EXTRA_WAKE_OPEN, true),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification = Notification.Builder(this, HEARD_CHANNEL_ID)
+                .setContentTitle(getString(R.string.wake_notification_title))
+                .setContentText(getString(R.string.wake_hit_text))
+                .setSmallIcon(R.drawable.ic_menu)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setPriority(Notification.PRIORITY_HIGH)
+                .build()
+            manager.notify(HEARD_NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun createHeardChannel(manager: NotificationManager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (manager.getNotificationChannel(HEARD_CHANNEL_ID) != null) return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                HEARD_CHANNEL_ID,
+                getString(R.string.wake_channel_name),
+                NotificationManager.IMPORTANCE_HIGH
+            )
+        )
+    }
+
     // ------------------------------------------------------------------ 通知
 
-    private fun startForegroundCompat() {
+    private fun startForegroundCompat(): Boolean = runCatching {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -219,6 +321,10 @@ class WakeWordService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        true
+    }.getOrElse { error ->
+        Log.w(TAG, "前台服务起不来：${error.message}")
+        false
     }
 
     private fun buildNotification(): Notification {
@@ -256,7 +362,12 @@ class WakeWordService : Service() {
     companion object {
         private const val TAG = "WakeWordService"
         private const val CHANNEL_ID = "wake_word"
+
+        /** 「叫醒了但界面不在」时用的高优先级通知 */
+        private const val HEARD_CHANNEL_ID = "wake_hit"
+
         private const val NOTIFICATION_ID = 0x9E01
+        private const val HEARD_NOTIFICATION_ID = 0x9E02
 
         /** 活着的那一个；界面用它暂停/恢复，避免麦克风打架 */
         @Volatile
@@ -268,5 +379,11 @@ class WakeWordService : Service() {
 
         /** 出错时稍等再试 */
         private const val RETRY_MS = 1_500L
+
+        /** 引擎还没缓过来：等够再试，避免把循环压成空转 */
+        private const val BUSY_RETRY_MS = 2_000L
+
+        /** 让出麦克风后，等系统真正释放再回来 */
+        private const val RESUME_DELAY_MS = 400L
     }
 }

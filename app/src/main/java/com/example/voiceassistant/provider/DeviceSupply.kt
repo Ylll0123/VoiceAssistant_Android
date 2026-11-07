@@ -121,12 +121,15 @@ class DeviceSupply(
     private fun openApp(): Supply = object : Supply {
         override val name = "device/open_app"
         override val summary =
-            "打开手机上的应用。参数 name 是应用名，例如「微信」「B站」「浏览器」「设置」。"
+            "打开手机里装好的任意应用。参数 name 是应用名，例如「微信」「B站」「原神」「学习通」。" +
+                "常用应用走内置表，其余按安装列表模糊匹配。"
 
         override fun invoke(args: BusArgs): BusReply {
-            val name = args.str("name") ?: return BusReply.fail("要打开哪个应用？")
-            val opened = device.openApp(name)
-                ?: return BusReply.fail("手机里没找到「$name」，也许是没装，或者名字对不上。")
+            val name = args.str("name")?.trim() ?: return BusReply.fail("要打开哪个应用？")
+            if (name.isEmpty()) return BusReply.fail("要打开哪个应用？")
+            val opened = device.openApp(name) ?: return BusReply.fail(
+                "手机里没找到「$name」，也许真没装，或者叫别的名字。"
+            )
             return BusReply.ok("已经打开$opened。")
         }
     }

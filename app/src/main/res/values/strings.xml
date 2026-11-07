@@ -134,6 +134,7 @@
     <string name="wake_channel_name">唤醒词</string>
     <string name="wake_notification_title">唤醒词监听中</string>
     <string name="wake_notification_text">说「%1$s」就能叫醒我</string>
+    <string name="wake_hit_text">我听见了，点一下回来说话</string>
 
     <!-- 无障碍（发消息自动化）：这段说明会在系统设置里给用户看，必须如实写用途 -->
     <string name="accessibility_label">HardlySeek 语音操作</string>

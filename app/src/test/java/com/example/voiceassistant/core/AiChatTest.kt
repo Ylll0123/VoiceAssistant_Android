@@ -114,13 +114,15 @@ class AiChatTest {
     // ------------------------------------------------------------ 起名兜底
 
     @Test
-    fun `起名失败时用首句前十二个字`() {
+    fun `起名失败时直接用用户那句话`() {
+        // 短句原样保留：用户问什么，标题就是什么
         assertEquals("提醒我明天八点交作业", AiChat.fallbackTitle("提醒我明天八点交作业"))
-        val long = "帮我看看明天北京上海广州三个城市的天气怎么样要不要带伞"
+
+        val long = "帮我看看明天北京上海广州三个城市的天气怎么样要不要带伞出门比较好呢"
         val title = AiChat.fallbackTitle(long)
-        assertEquals(13, title.length)
+        assertEquals(25, title.length)
         assertTrue(title.endsWith("…"))
-        assertEquals(long.take(12) + "…", title)
+        assertEquals(long.take(24) + "…", title)
     }
 
     @Test

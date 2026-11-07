@@ -66,10 +66,10 @@ import com.example.voiceassistant.reminder.ReminderFired
 import com.example.voiceassistant.reminder.Reminders
 import com.example.voiceassistant.service.AndroidAudioController
 import com.example.voiceassistant.service.AndroidDeviceController
+import com.example.voiceassistant.service.AppCatalog
 import com.example.voiceassistant.service.AsrManager
 import com.example.voiceassistant.service.TtsManager
 import com.example.voiceassistant.tool.AiTools
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.util.concurrent.Executors
 
 /**
@@ -120,6 +120,9 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     private lateinit var ai: AiChat
     private lateinit var aiTools: AiTools
+
+    /** 本机全部可启动应用：用于「打开原神」这类常用表之外的应用 */
+    private val appCatalog by lazy { AppCatalog(this) }
 
     /** 供需总线：本地 NLU 和大模型工具调用共用这一张表 */
     private lateinit var bus: ServiceBus
@@ -172,11 +175,20 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private val micPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
-                startVoiceInput()
+                // 唤醒服务在 beginVoice 里已经让过位了，这里同样等麦克风真正释放
+                main.removeCallbacks(voiceStart)
+                main.postDelayed(voiceStart, MIC_HANDOVER_MS)
             } else {
                 toast(getString(R.string.error_no_permission))
+                resumeWake()
             }
         }
+
+    /** 延后一点再开麦：等唤醒服务把麦克风交出来 */
+    private val voiceStart = Runnable {
+        if (isFinishing || isDestroyed) return@Runnable
+        startVoiceInput()
+    }
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -260,7 +272,10 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         askNotificationPermission()
         main.postDelayed({ cleanInstallerOnce() }, 1200)
 
-        if (savedInstanceState == null) handleExternalQuery(intent)
+        if (savedInstanceState == null) {
+            handleExternalQuery(intent)
+            handleWakeIntent(intent)
+        }
     }
 
     /**
@@ -307,7 +322,13 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
         aiTools = AiTools(bus)
         ai = AiChat(aiTools, config = { cloudConfig })
-        dispatcher = Dispatcher(bus, ai, msgSupply)
+        dispatcher = Dispatcher(
+            bus = bus,
+            ai = ai,
+            msg = msgSupply,
+            // 常用表之外的应用（原神、学习通……）也走本地，不必绕一趟大模型
+            appMatcher = { appCatalog.matches(it) }
+        )
     }
 
     /** 亮度服务改不了系统亮度时的退路：只改本应用窗口 */
@@ -378,6 +399,19 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         super.onNewIntent(intent)
         setIntent(intent)
         handleExternalQuery(intent)
+        handleWakeIntent(intent)
+    }
+
+    /**
+     * 从「我听见了」那条通知点进来：直接开麦，不用再喊一次唤醒词。
+     *
+     * 后台唤醒只能走通知（Android 不允许后台直接拉起界面），
+     * 那就把「拉起来之后立刻能说话」这一步也接上，别让用户白点一次。
+     */
+    private fun handleWakeIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(WakeConfig.EXTRA_WAKE_OPEN, false) != true) return
+        intent.removeExtra(WakeConfig.EXTRA_WAKE_OPEN)
+        main.postDelayed({ beginVoiceFromWake() }, 700)
     }
 
     private fun handleExternalQuery(intent: Intent?) {
@@ -585,7 +619,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     }
 
     private fun confirmDeleteConversation(conversation: Conversation) {
-        MaterialAlertDialogBuilder(this)
+        this.appDialog()
             .setTitle(getString(R.string.bubble_delete_confirm_title))
             .setMessage(conversation.title)
             .setNegativeButton(R.string.action_cancel, null)
@@ -606,7 +640,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 refreshDrawer()
                 toast(getString(R.string.conv_deleted))
             }
-            .show()
+            .showWhite()
     }
 
     private fun welcome(): ChatMessage =
@@ -819,22 +853,48 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             toast(getString(R.string.status_offline_hint))
             return
         }
-        if (hasMicPermission()) {
-            startVoiceInput()
-        } else {
+
+        /*
+         * 麦克风是独占的。唤醒服务正在循环的话，识别一启动就会报
+         * ERROR_AUDIO / ERROR_RECOGNIZER_BUSY——用户看到的现象是「按了没反应」。
+         * 所以先让它退出，等系统真正把麦克风还回来再开。
+         */
+        WakeWordService.instance?.pause()
+
+        if (!hasMicPermission()) {
             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
         }
+        main.removeCallbacks(voiceStart)
+        main.postDelayed(voiceStart, MIC_HANDOVER_MS)
     }
 
     /** 松手：结束收音。cancel=true 表示上滑取消 */
     fun endVoice(cancel: Boolean) {
-        if (!asr.isListening) return
-        if (cancel) {
-            asr.cancel()
-            setThinking(null)
-        } else {
-            asr.stop()
+        main.removeCallbacks(voiceStart)
+        if (asr.isListening) {
+            if (cancel) {
+                asr.cancel()
+                setThinking(null)
+            } else {
+                asr.stop()
+            }
         }
+        // 不管有没有真的在录，都要把麦克风还给唤醒服务，否则它就一直停着
+        resumeWake()
+    }
+
+    /**
+     * 恢复唤醒监听。
+     *
+     * 留 900ms：识别引擎把最终结果吐出来、彻底释放麦克风大概要这么久。
+     * 早于它恢复，两边会互相抢，结果谁都听不清。
+     */
+    private fun resumeWake() {
+        main.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            if (WakeConfig.enabled) WakeWordService.instance?.resume()
+        }, WAKE_RESUME_MS)
     }
 
     private fun startVoiceInput() {
@@ -865,12 +925,14 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         chatView?.setListening(false, false)
         // 识别结果放进输入框，让用户看一眼再发——长按说话不等于立刻发送
         chatView?.setInput(text)
+        resumeWake()
     }
 
     override fun onError(message: String) {
         setThinking(null)
         chatView?.setListening(false, false)
         toast(message)
+        resumeWake()
     }
 
     override fun onSpeakingFinished() {
@@ -1082,22 +1144,44 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         super.onStart()
         // 只有界面在前台才巡检网络：后台没必要每几秒醒一次
         NetworkState.addListener(networkListener)
-        // 界面在前台就让出麦克风：手动长按比常驻监听可靠，也不抢录音
-        WakeWordService.instance?.pause()
+
+        /*
+         * 界面在前台**不再**整体暂停唤醒。
+         *
+         * v5.0 在这里无条件 pause()，结果是「开着 App 怎么叫都没反应」——
+         * 用户测试唤醒时界面恰好就在前台，等于永远测不到。
+         * 现在只在真正开麦的那几百毫秒让位（见 beginVoice）。
+         */
+        WakeConfig.uiAlive = true
+        if (WakeConfig.enabled) WakeWordService.instance?.resume()
     }
 
     override fun onStop() {
         NetworkState.removeListener(networkListener)
-        // 人离开界面了，常驻监听才有意义
+        WakeConfig.uiAlive = false
+        // 人离开界面了，把可能还停着的唤醒循环放回去（beginVoice 之后直接退出会走到这里）
         if (WakeConfig.enabled) WakeWordService.instance?.resume()
         super.onStop()
     }
 
     override fun onPause() {
         isForeground = false
-        main.removeCallbacksAndMessages(null)
+        /*
+         * 这里**不能**再 main.removeCallbacksAndMessages(null)。
+         *
+         * 「打开微信」「打开设置」这类指令会立刻把别的应用拉到前台，本页随即 onPause；
+         * 而「已经打开 XX」这句话正排在主线程队列里等着落盘。
+         * 一刀清空的结果就是：应用确实打开了，但对话里永远少一句回复。
+         * 延迟任务各自有明确的取消点（voiceStart / resumeWake），不需要在这里统一清。
+         */
         if (::asr.isInitialized) asr.cancel()
-        if (::tts.isInitialized) tts.stop()
+        /*
+         * 也不在这里停 TTS。
+         *
+         * 「打开微信」是助手自己把别的应用拉到前台的，紧接着要念的那句
+         * 「已经打开微信。」会被这一下掐掉——用户听到的就是「打开了但没吭声」。
+         * 真正需要停的场景只有「用户要说话了」，那条路径在 startVoiceInput 里停。
+         */
         super.onPause()
     }
 
@@ -1120,5 +1204,11 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
         /** 抽屉打开时内容区的模糊半径：够糊、又能看清大致轮廓 */
         const val BLUR_RADIUS = 22f
+
+        /** 唤醒服务让出麦克风后，等这么久再开识别（系统释放麦克风不是即时的） */
+        const val MIC_HANDOVER_MS = 300L
+
+        /** 说完话之后隔这么久把麦克风还给唤醒服务 */
+        const val WAKE_RESUME_MS = 900L
     }
 }

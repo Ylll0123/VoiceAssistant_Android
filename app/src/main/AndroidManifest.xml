@@ -40,6 +40,16 @@
         android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
+    <!--
+        「打开任意应用」的关键：Android 11 起应用默认看不到别人装了什么，
+        不加这条，PackageManager 只会返回系统白名单里的几个包，
+        「打开原神」「打开学习通」就永远查不到。
+        应用商店会问用途（辅助语音操作），侧载自用无影响。
+    -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
     <!-- 蓝牙开关状态查询 / 连接（Android 12+ 必需） -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT"

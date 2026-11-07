@@ -1,8 +1,11 @@
 package com.example.voiceassistant.im
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Context
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 
 /**
@@ -31,6 +34,12 @@ class ImAccessibilityService : AccessibilityService() {
         connected = true
     }
 
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        connected = false
+        instance = null
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
         connected = false
         instance = null
@@ -51,6 +60,21 @@ class ImAccessibilityService : AccessibilityService() {
         @Volatile
         var connected: Boolean = false
             private set
+
+        /**
+         * 系统设置里到底有没有勾上我们。
+         *
+         * 和 [connected] 的区别很关键：用户明明开了权限、但服务还没被系统 bind 上时，
+         * 光看 `connected` 会误报「还没开权限」——用户当然会觉得「我明明给了」。
+         * 这里直接问系统的已启用列表，把两种情况分开说。
+         */
+        fun enabledInSystem(context: Context): Boolean = runCatching {
+            val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+            manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                .any { info ->
+                    info.resolveInfo?.serviceInfo?.packageName == context.packageName
+                }
+        }.getOrDefault(false)
     }
 }
 

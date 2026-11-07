@@ -33,9 +33,16 @@ object LocalNlu {
     /**
      * 识别一句话。
      *
+     * @param appMatcher 「这个名字是不是一个真实安装了的应用」。
+     *        常用表之外的应用（原神、学习通……）要靠它判断，不传就只认 [KnownApps]。
+     *        用回调注入而不是直接查 `PackageManager`，这一层才能继续当纯函数测。
      * @return 命中返回 [Hit]；认不出（或不敢确定）返回 null，表示「交给大模型」
      */
-    fun route(raw: String, now: LocalDateTime = LocalDateTime.now()): Hit? {
+    fun route(
+        raw: String,
+        now: LocalDateTime = LocalDateTime.now(),
+        appMatcher: ((String) -> Boolean)? = null
+    ): Hit? {
         val text = raw.trim()
         if (text.isEmpty()) return null
         // 太长的话一律交给模型：本地规则是为短指令写的，长句里往往带着条件、转折
@@ -45,7 +52,7 @@ object LocalNlu {
             ?: brightness(text)
             ?: volume(text)
             ?: radio(text)
-            ?: openApp(text)
+            ?: openApp(text, appMatcher)
             ?: clock(text)
             ?: timer(text)
             ?: alarm(text, now)
@@ -140,17 +147,28 @@ object LocalNlu {
         return null
     }
 
-    /** 「打开微信」「启动 B 站」「打开浏览器」 */
-    private fun openApp(text: String): Hit? {
+    /** 「打开微信」「启动 B 站」「打开原神」 */
+    private fun openApp(text: String, matcher: ((String) -> Boolean)?): Hit? {
         val match = OPEN_APP.find(text) ?: return null
         val target = match.groupValues[1].trim()
             .trim('。', '！', '!', '，', ',', '吧', '呗', '呀', '啊')
             .trim()
-        if (target.isEmpty() || target.length > 10) return null
-        // 只认真实存在的应用名，并归一到表里的写法。
-        // 「打开这个思路」不是打开应用，得留给大模型；「打开设置页面」要变成「设置」
-        val app = KnownApps.canonical(target) ?: return null
-        return Hit("device/open_app", BusArgs.of("name" to app))
+        if (target.isEmpty() || target.length > 12) return null
+
+        // 常用表先归一：「打开设置页面」→「设置」
+        KnownApps.canonical(target)?.let { app ->
+            return Hit("device/open_app", BusArgs.of("name" to app))
+        }
+
+        /*
+         * 表里没有的，交给本机的应用目录判断。
+         *
+         * 这一关不能省：没有 matcher 时（单测、或目录还没准备好），
+         * 「打开这个思路」会被当成应用名，那就把一句正经问题截胡了。
+         * 宁可漏判交给大模型，也不能错判。
+         */
+        if (matcher == null || !matcher(target)) return null
+        return Hit("device/open_app", BusArgs.of("name" to target))
     }
 
     // ------------------------------------------------------------------ 时间与日程

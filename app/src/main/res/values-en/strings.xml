@@ -135,6 +135,7 @@
     <string name="wake_channel_name">Wake word</string>
     <string name="wake_notification_title">Wake word listening</string>
     <string name="wake_notification_text">Say “%1$s” to wake me up</string>
+    <string name="wake_hit_text">I heard you — tap to keep talking</string>
 
     <string name="accessibility_label">HardlySeek voice actions</string>
     <string name="accessibility_description">Turns voice commands like “message someone” into real actions: opens WeChat, finds the contact, fills in the text. Sending only happens after you confirm.</string>

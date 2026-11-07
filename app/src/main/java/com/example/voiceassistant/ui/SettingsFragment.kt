@@ -18,7 +18,6 @@ import com.example.voiceassistant.reminder.Reminders
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.materialswitch.MaterialSwitch
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 设置页：只留最常用的几项。
@@ -145,14 +144,14 @@ class SettingsFragment : Fragment() {
         val labels = AppSettings.LANGUAGES.map { it.second }.toTypedArray()
         val current = tags.indexOf(host.appSettings().language).coerceAtLeast(0)
 
-        MaterialAlertDialogBuilder(requireContext())
+        requireContext().appDialog()
             .setTitle(R.string.settings_language_title)
             .setSingleChoiceItems(labels, current) { dialog, which ->
                 dialog.dismiss()
                 applyLanguage(tags[which])
             }
             .setNegativeButton(R.string.action_cancel, null)
-            .show()
+            .showWhite()
     }
 
     private fun applyLanguage(tag: String) {
@@ -243,7 +242,7 @@ class SettingsFragment : Fragment() {
             addView(inputPrompt)
         }
 
-        MaterialAlertDialogBuilder(context)
+        context.appDialog()
             .setTitle(R.string.settings_cloud_title)
             .setMessage(R.string.settings_cloud_hint)
             .setView(container)
@@ -272,7 +271,7 @@ class SettingsFragment : Fragment() {
                 applyCloud(next)
                 toast(getString(R.string.settings_cloud_saved, next.model.ifBlank { next.baseUrl }))
             }
-            .show()
+            .showWhite()
     }
 
     /** 把四个输入框读成一份配置：保存过就是想用，所以 enabled 恒为 true */
@@ -323,7 +322,7 @@ class SettingsFragment : Fragment() {
     }
 
     private fun confirmReset() {
-        MaterialAlertDialogBuilder(requireContext())
+        requireContext().appDialog()
             .setTitle(R.string.settings_reset)
             .setMessage(R.string.settings_reset_done)
             .setNegativeButton(R.string.action_cancel, null)
@@ -341,11 +340,11 @@ class SettingsFragment : Fragment() {
                     requireActivity().recreate()
                 }
             }
-            .show()
+            .showWhite()
     }
 
     private fun confirmLogout() {
-        MaterialAlertDialogBuilder(requireContext())
+        requireContext().appDialog()
             .setTitle(R.string.settings_logout)
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(R.string.action_ok) { _, _ ->
@@ -355,7 +354,7 @@ class SettingsFragment : Fragment() {
                 AccountStore(requireContext()).signOut()
                 host.gotoLogin()
             }
-            .show()
+            .showWhite()
     }
 
     private fun refresh() {

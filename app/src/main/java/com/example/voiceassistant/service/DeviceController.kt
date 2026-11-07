@@ -44,6 +44,9 @@ class AndroidDeviceController(context: Context) : DeviceController {
 
     private val app: Context = context.applicationContext
 
+    /** 本机全部可启动应用；常用表里没有的，都靠它 */
+    private val catalog = AppCatalog(app)
+
     override fun battery(): String? = runCatching {
         val sticky = app.registerReceiver(
             null,
@@ -78,25 +81,43 @@ class AndroidDeviceController(context: Context) : DeviceController {
     }.getOrDefault(false)
 
     override fun openApp(name: String): String? {
-        val key = name.trim().lowercase()
+        val key = name.trim()
         if (key.isEmpty()) return null
+        val lower = key.lowercase()
 
-        // 系统级入口：用标准 Intent，不依赖包名
-        SYSTEM_INTENTS.entries.firstOrNull { key.contains(it.key) }?.let { (label, intent) ->
+        // 1) 系统入口：完全同名才认，避免「微信读书」被「微信」截胡
+        SYSTEM_INTENTS.entries.firstOrNull { it.key == lower }?.let { (label, intent) ->
             if (launch(intent)) return label
         }
 
-        // 常用第三方应用：包名表
-        PACKAGES.entries.firstOrNull { key.contains(it.key) }?.let { (label, pkg) ->
-            val intent = app.packageManager.getLaunchIntentForPackage(pkg)
-            if (intent != null && launch(intent)) return label
-            return null
+        // 2) 常用第三方：完全同名
+        PACKAGES.entries.firstOrNull { it.key == lower }?.let { (label, pkg) ->
+            app.packageManager.getLaunchIntentForPackage(pkg)?.let { if (launch(it)) return label }
         }
 
-        // 传进来的本来就是包名
-        if (key.contains('.')) {
-            val intent = app.packageManager.getLaunchIntentForPackage(key)
-            if (intent != null && launch(intent)) return key
+        /*
+         * 3) 全量目录：任意已安装应用。
+         *
+         * 这一步才是「打开所有应用」的关键——上面两张表只是常用项的快速路径，
+         * 原神、学习通、企业微信这些没进表的，都从这里认。
+         */
+        catalog.open(key)?.let { return it }
+
+        // 4) 老表兜底：包含即可，取最长的那个键（「哔哩哔哩」优先于「哔哩」）
+        SYSTEM_INTENTS.entries.filter { lower.contains(it.key) }
+            .maxByOrNull { it.key.length }
+            ?.let { (label, intent) -> if (launch(intent)) return label }
+        PACKAGES.entries.filter { lower.contains(it.key) }
+            .maxByOrNull { it.key.length }
+            ?.let { (label, pkg) ->
+                app.packageManager.getLaunchIntentForPackage(pkg)
+                    ?.let { if (launch(it)) return label }
+            }
+
+        // 5) 传进来的本来就是包名
+        if (lower.contains('.')) {
+            app.packageManager.getLaunchIntentForPackage(lower)
+                ?.let { if (launch(it)) return lower }
         }
         return null
     }

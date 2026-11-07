@@ -113,9 +113,9 @@ class AiTools(private val bus: ServiceBus) {
     }}}},
   {"type":"function","function":{
     "name":"device_open_app",
-    "description":"打开手机上的应用。用户说「打开微信」「打开 B 站」时调用。",
+    "description":"打开手机里装好的任意应用。用户说「打开微信」「打开原神」「打开学习通」时调用。名字按用户原话传，找不到会自动模糊匹配。",
     "parameters":{"type":"object","properties":{
-      "name":{"type":"string","description":"应用名，例如「微信」「浏览器」"}
+      "name":{"type":"string","description":"应用名，例如「微信」「B站」「原神」「学习通」"}
     },"required":["name"]}}},
   {"type":"function","function":{
     "name":"device_battery",

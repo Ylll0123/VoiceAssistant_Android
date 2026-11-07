@@ -110,4 +110,17 @@ object WakeConfig {
     /** 最近一次命中的时间戳，界面据此显示「刚被叫醒」 */
     @Volatile
     var lastWakeAt: Long = 0L
+
+    /**
+     * 对话界面还活着吗（onStart 置 true、onStop 置 false）。
+     *
+     * 唤醒服务用它决定「叫醒之后怎么办」：
+     * - 界面活着 → 发进程内事件，界面自己开麦；
+     * - 界面没了 → 事件没人收，只能发一条通知，等用户点进来。
+     */
+    @Volatile
+    var uiAlive: Boolean = false
+
+    /** 通知点击进来时带这一位：界面起来后直接开麦，不用再喊一次 */
+    const val EXTRA_WAKE_OPEN = "wake_open"
 }

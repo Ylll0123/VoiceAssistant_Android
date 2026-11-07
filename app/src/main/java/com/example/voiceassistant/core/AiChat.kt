@@ -125,8 +125,9 @@ class AiChat(
     /**
      * 给一段对话起标题。
      *
-     * 单独发一次很小的请求（max_tokens 很小），失败就用首句话截断——
-     * 抽屉里绝不会出现「未命名」。
+     * 标题要让人一眼看出「这次我问了什么」，所以让它**尽量沿用用户的原话**，
+     * 只去掉「请 / 帮我 / 麻烦」这类客套词——而不是另起一个概括性的短语。
+     * 单独发一次很小的请求（max_tokens 很小），失败就用首句话截断。
      */
     fun title(firstUser: String, firstAssistant: String): String {
         val cfg = config()
@@ -135,18 +136,24 @@ class AiChat(
         val url = CloudLlmHandler.chatUrl(cfg.baseUrl)
         if (url.isEmpty()) return fallback
 
-        val prompt = "给下面这段对话起一个标题，不超过 8 个字，不要引号、标点、序号，" +
-            "只输出标题本身。\n用户：${firstUser.take(120)}\n助手：${firstAssistant.take(160)}"
-        val body = buildBody(cfg.model, listOf(messageJson("user", prompt)), maxTokens = 32, tools = null)
+        val prompt = "给下面这段对话起标题。要求：\n" +
+            "1. 优先直接沿用用户问的那句话，只删掉「请」「帮我」「麻烦」「你能不能」这类客套词；\n" +
+            "2. 不要另起一个概括性的短语，也不要加引号、书名号、序号或标点；\n" +
+            "3. 不超过 18 个字，只输出标题本身。\n" +
+            "用户：${firstUser.take(140)}\n助手：${firstAssistant.take(120)}"
+        val body = buildBody(cfg.model, listOf(messageJson("user", prompt)), maxTokens = 64, tools = null)
         val (raw, code) = runCatching {
             Http.postJson(url, cfg.apiKey, body, cfg.timeoutMs)
         }.getOrElse { null to 0 }
         if (raw == null || code !in 200..299) return fallback
 
         val text = CloudLlmHandler.parseContent(raw)?.trim().orEmpty()
-            .trim('"', '\'', '「', '」', '。', '，', '.', ' ')
-        if (text.isEmpty() || text.length > 20) return fallback
-        return text
+            .trim('"', '\'', '「', '」', '。', '，', '.', ' ', '\n')
+            .replace(Regex("\\s+"), " ")
+        // 模型偶尔会把「标题：」也吐出来
+        val cleaned = text.removePrefix("标题：").removePrefix("标题:").trim()
+        if (cleaned.isEmpty() || cleaned.length > 36) return fallback
+        return cleaned
     }
 
 
@@ -201,11 +208,11 @@ class AiChat(
      */
     companion object {
 
-        /** 起名失败时的兜底：首句前 12 个字 */
+        /** 起名失败时的兜底：直接用用户问的那句话，最多 24 个字 */
         fun fallbackTitle(firstUser: String): String {
             val cleaned = firstUser.replace(Regex("\\s+"), " ").trim()
             if (cleaned.isEmpty()) return Conversation.UNTITLED
-            return if (cleaned.length <= 12) cleaned else cleaned.take(12) + "…"
+            return if (cleaned.length <= 24) cleaned else cleaned.take(24) + "…"
         }
 
         /**

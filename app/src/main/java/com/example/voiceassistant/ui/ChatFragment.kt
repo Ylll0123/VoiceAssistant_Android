@@ -17,7 +17,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.voiceassistant.R
 import com.example.voiceassistant.data.ChatMessage
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 对话页：消息列表 + 输入区。
@@ -49,10 +48,6 @@ class ChatFragment : Fragment(), ChatSessionView {
     private var listening = false
     private var cancelArmed = false
     private var downY = 0f
-
-    private val holdToTalk = Runnable {
-        if (host.isOnline()) startListening() else toast(getString(R.string.status_offline_hint))
-    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -120,48 +115,74 @@ class ChatFragment : Fragment(), ChatSessionView {
             host.sendText(text)
         }
 
+        etInput.setOnClickListener {
+            // 点一下就聚焦并弹键盘；光标位置由 EditText 自己算，这里只负责把输入法叫出来
+            focusInput()
+        }
+
+        /*
+         * 长按说话用系统的长按回调，而不是自己按时间算。
+         *
+         * 两个原因：
+         * 1. 返回 true 就把长按**消费掉**了，EditText 不会再去弹「全选 / 复制」那套菜单，
+         *    否则一边录音一边弹菜单，界面会乱；
+         * 2. 长按已经消费，抬手时 TextView 不会 performClick，光标也不会被拽到手指位置。
+         */
+        etInput.setOnLongClickListener {
+            if (host.isOnline()) startListening() else toast(getString(R.string.status_offline_hint))
+            true
+        }
+
+        /*
+         * 触摸只干两件事：记下起点、上滑判断取消。
+         *
+         * ⚠️ ACTION_DOWN 必须返回 false。返回 true 等于告诉系统「这个事件我全接了」，
+         * EditText 再也收不到按下事件——用户点哪儿都放不了光标（v5.0 的 bug）。
+         * 交给它处理之后，点一下就能定位、拖动就能选字，而 MOVE / UP 依然会先经过这里。
+         */
         etInput.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downY = event.rawY
                     cancelArmed = false
-                    etInput.postDelayed(holdToTalk, HOLD_MS)
-                    true
+                    false
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    if (!listening) return@setOnTouchListener true
-                    // 上滑够了就进入「松手取消」，松回去还能救回来
-                    val armed = downY - event.rawY > dp(CANCEL_DP)
-                    if (armed != cancelArmed) {
-                        cancelArmed = armed
-                        etInput.hint = getString(
-                            if (armed) R.string.status_listening_cancel
-                            else R.string.status_listening_hold
-                        )
+                    if (!listening) {
+                        false
+                    } else {
+                        // 上滑够了就进入「松手取消」，松回去还能救回来
+                        val armed = downY - event.rawY > dp(CANCEL_DP)
+                        if (armed != cancelArmed) {
+                            cancelArmed = armed
+                            etInput.hint = getString(
+                                if (armed) R.string.status_listening_cancel
+                                else R.string.status_listening_hold
+                            )
+                        }
+                        // 录音时吃掉移动事件，否则输入框会跟着手指滚
+                        true
                     }
-                    true
                 }
 
                 MotionEvent.ACTION_UP -> {
-                    etInput.removeCallbacks(holdToTalk)
-                    if (listening) {
+                    if (!listening) {
+                        // 短按：交给 EditText 自己收尾（定位光标、弹键盘）
+                        false
+                    } else {
                         host.endVoice(cancelArmed)
                         resetListening()
-                    } else {
-                        // 没到长按时长：当成一次点击，聚焦并弹键盘
-                        focusInput()
+                        true
                     }
-                    true
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
-                    etInput.removeCallbacks(holdToTalk)
                     if (listening) {
                         host.endVoice(true)
                         resetListening()
                     }
-                    true
+                    false
                 }
 
                 else -> false
@@ -203,7 +224,7 @@ class ChatFragment : Fragment(), ChatSessionView {
             return
         }
         val items = arrayOf(getString(R.string.action_edit), getString(R.string.action_delete))
-        MaterialAlertDialogBuilder(requireContext())
+        requireContext().appDialog()
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> host.startEdit(index)
@@ -211,18 +232,18 @@ class ChatFragment : Fragment(), ChatSessionView {
                 }
             }
             .setNegativeButton(R.string.action_cancel, null)
-            .show()
+            .showWhite()
     }
 
     private fun confirmDelete(index: Int) {
-        MaterialAlertDialogBuilder(requireContext())
+        requireContext().appDialog()
             .setTitle(R.string.bubble_delete_confirm_title)
             .setMessage(R.string.bubble_delete_confirm_msg)
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(R.string.action_confirm) { _, _ ->
                 if (host.deleteTurn(index)) toast(getString(R.string.bubble_delete_done))
             }
-            .show()
+            .showWhite()
     }
 
     // ------------------------------------------------------------------ 对外
@@ -284,16 +305,12 @@ class ChatFragment : Fragment(), ChatSessionView {
     }
 
     override fun onDestroyView() {
-        etInput.removeCallbacks(holdToTalk)
         host.session.attach(null)
         host.unbindChatUi(this)
         super.onDestroyView()
     }
 
     private companion object {
-        /** 长按多久算「要说话」：380ms 接近系统长按手感 */
-        const val HOLD_MS = 380L
-
         /** 上滑多少像素算取消 */
         // 用 dp 在代码里算，避免不同密度下手感差太多
         val CANCEL_DP = 56
