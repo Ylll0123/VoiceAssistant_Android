@@ -9,13 +9,15 @@
     - flagReportViewIds：必须开，否则 findAccessibilityNodeInfosByViewId 找不到节点；
     - flagRetrieveInteractiveWindows：多窗口场景下也能拿到当前窗口；
     - notificationTimeout=100：事件合并窗口，100ms 足够，太小反而频繁唤醒；
+    - canPerformGestures：节点整条链都不可点时，按矩形中心派发一次轻点手势，
+      微信/QQ 的联系人条目和发送按钮常需要这一招；
     - description：系统设置页里给用户看的用途说明，必须如实写「辅助语音操作」。
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows"
-    android:canPerformGestures="false"
+    android:canPerformGestures="true"
     android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_description"
     android:notificationTimeout="100"

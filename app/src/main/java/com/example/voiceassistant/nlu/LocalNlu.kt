@@ -45,10 +45,15 @@ object LocalNlu {
     ): Hit? {
         val text = raw.trim()
         if (text.isEmpty()) return null
-        // 太长的话一律交给模型：本地规则是为短指令写的，长句里往往带着条件、转折
-        if (text.length > 40) return null
+        // 太长的话一律交给模型：本地规则是为短指令写的，长句里往往带着条件、转折。
+        // 但「发消息」常常带一整句话的内容，不能因为内容长就丢给模型——
+        // 离线时模型不可用，用户会直接收到「没联网」，消息根本发不出去。
+        val cap = if (looksLikeSendMessage(text)) 120 else 40
+        if (text.length > cap) return null
 
-        return torch(text)
+        return sendMessage(text)
+            ?: messageDiagnostic(text)
+            ?: torch(text)
             ?: brightness(text)
             ?: volume(text)
             ?: radio(text)
@@ -57,7 +62,6 @@ object LocalNlu {
             ?: timer(text)
             ?: alarm(text, now)
             ?: math(text)
-            ?: sendMessage(text)
     }
 
     // ------------------------------------------------------------------ 设备
@@ -253,29 +257,80 @@ object LocalNlu {
     // ------------------------------------------------------------------ 消息
 
     /**
-     * 「给妈妈发微信说我晚点到」
+     * 发消息：「给妈妈发微信说我晚点到」以及一大堆换语序的说法。
      *
-     * 内容为空（「给妈妈发个微信」）时不认领——那需要先让模型写一句话，
-     * 属于「生成内容」的范畴，交给大模型更合适。
+     * 以前只认 `给X发微信说Y` 一个正则，用户说「发微信给妈妈说我晚点到」
+     * 「帮我发条消息给妈妈：我晚点到」就会漏给大模型；离线时模型不可用，
+     * 用户只会看到「没联网」，消息压根发不出去。现在改成：
+     * **先确认这像发消息 → 抽联系人 → 抽内容 → 抽平台**，语序无关。
+     *
+     * 内容为空（「给妈妈发个微信」）仍然不认领——那需要先让模型写一句话。
      */
     private fun sendMessage(text: String): Hit? {
-        if (!text.contains("发")) return null
-        val match = SEND_MSG.find(text) ?: return null
-        val to = match.groupValues[1].trim()
-        val platform = match.groupValues[2].trim().ifEmpty { "wechat" }
-        val content = match.groupValues[3].trim().trim('。', '！', '!', '？', '?')
+        if (!looksLikeSendMessage(text)) return null
 
+        val to = SEND_TO.find(text)?.groupValues?.get(1)?.trim().orEmpty()
         if (to.isEmpty() || to.length > 12) return null
+
+        val content = extractSendContent(text, to)
         if (content.isEmpty() || content.length > 100) return null
 
-        val key = when {
-            platform.contains("q", ignoreCase = true) -> "qq"
-            else -> "wechat"
-        }
+        val key = if (QQ_WORD.containsMatchIn(text)) "qq" else "wechat"
         return Hit(
             "msg/send_text",
             BusArgs.of("platform" to key, "to" to to, "content" to content)
         )
+    }
+
+    /** 像发消息吗：要有「发/回」+ 收件人 + 平台或「消息」字样，三者缺一不可 */
+    private fun looksLikeSendMessage(text: String): Boolean {
+        if (!text.contains("发") && !text.contains("回")) return false
+        if (!text.contains("给") && !text.contains("发给")) return false
+        return PLATFORM_WORD.containsMatchIn(text) ||
+            text.contains("消息") || text.contains("信息") || text.contains("短信")
+    }
+
+    /**
+     * 抽内容：优先「说/讲/告诉/内容是/冒号」引导的那句；
+     * 没有引导词时（「给妈妈发微信我晚点到」），取「发」之后的残余，
+     * 把平台词、量词、收件人、句首标点一层层剥掉。
+     */
+    private fun extractSendContent(text: String, to: String): String {
+        val cued = SEND_CONTENT_CUE.find(text)?.groupValues?.get(1)
+            ?: SEND_CONTENT_COLON.find(text)?.groupValues?.get(1)
+        val raw = cued ?: run {
+            val idx = maxOf(text.lastIndexOf('发'), text.lastIndexOf('回'))
+            if (idx < 0 || idx == text.length - 1) return ""
+            text.substring(idx + 1)
+        }
+        var body = raw.trim()
+        // 剥掉「一条/个/送」等量词和平台词，可能叠着来（发一条微信给…）
+        repeat(3) {
+            val before = body
+            body = body
+                .removePrefix("给$to").removePrefix("给 $to")
+                .replaceFirst(Regex("^(?:一?条|个|送|一句|一下)\\s*"), "")
+                .replaceFirst(Regex("^(?:微信|QQ|qq|消息|信息|短信|发给)\\s*", RegexOption.IGNORE_CASE), "")
+                .trim()
+                .trimStart('，', ',', '：', ':', '、')
+                .trim()
+            if (body == before) return@repeat
+        }
+        return body.trim().trim('。', '！', '!', '？', '?', '，', ',', ' ', '~', '～')
+    }
+
+    /**
+     * 「为什么发不出消息」「能发微信吗」「检查一下发消息」。
+     *
+     * 用户报障时最需要的是**能自己问出原因**，不然只能看到一句笼统的失败提示。
+     * 这条必须排在 [sendMessage] 后面，且只认明确的诊断措辞，
+     * 免得把「给妈妈发微信说我晚点到」抢走。
+     */
+    private fun messageDiagnostic(text: String): Hit? {
+        if (!SEND_DIAG.containsMatchIn(text)) return null
+        if (!text.contains("发") && !text.contains("消息")) return null
+        val key = if (QQ_WORD.containsMatchIn(text)) "qq" else "wechat"
+        return Hit("msg/query_can_send", BusArgs.of("platform" to key))
     }
 
     // ------------------------------------------------------------------ 规则表
@@ -284,8 +339,27 @@ object LocalNlu {
 
     private val OPEN_APP = Regex("^(?:请|帮我|麻烦)?\\s*(?:打开|启动|运行|进入)\\s*(.{1,10}?)(?:吧|呗|呀|啊)?[。！!]?$")
 
-    private val SEND_MSG = Regex(
-        "给\\s*([^，,。\\s]{1,12}?)\\s*(?:发|回)(?:个|一条|条)?\\s*(微信|qq|QQ)?\\s*(?:说|讲|一句|一下)?[：:]?\\s*(.*)"
+    private val PLATFORM_WORD = Regex("微信|wechat|weixin|QQ|qq|企鹅", RegexOption.IGNORE_CASE)
+    private val QQ_WORD = Regex("QQ|qq|企鹅", RegexOption.IGNORE_CASE)
+
+    /** 收件人：「给X」「发给X」「给X发」都行；在动词/标点/平台词前收住，不把内容吞进来 */
+    private val SEND_TO = Regex(
+        "(?:给|发给|跟|和)\\s*([^，,。\\s：:发回说讲]{1,12}?)\\s*" +
+            "(?=发|回|说|讲|告诉|，|,|：|:|$|微信|QQ|qq|消息|信息)"
+    )
+
+    /** 「说我晚点到」「告诉他十分钟后到」「内容是xxx」 */
+    private val SEND_CONTENT_CUE = Regex(
+        "(?:[，,]\\s*)?(?:说|讲|告诉(?:他|她)?|内容是?|写)[：:]?\\s*(.+)$"
+    )
+
+    /** 「：我晚点到」 */
+    private val SEND_CONTENT_COLON = Regex("[：:]\\s*(.+)$")
+
+    /** 明确的报障/自检措辞，不含这些就不抢给诊断服务 */
+    private val SEND_DIAG = Regex(
+        "为什么|咋发|怎么发不|发不(出|了|上去)|发不了|不能发|没法发|" +
+            "能发|可以发|能不能发|检查一下|检查下|自检|诊断|查一下发|看看发"
     )
 
     /** 「计时 10 分钟」里「计时」后面那截当作名字 */

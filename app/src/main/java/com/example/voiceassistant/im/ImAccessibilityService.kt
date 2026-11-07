@@ -86,8 +86,14 @@ class ImAccessibilityService : AccessibilityService() {
  */
 class ImDriver {
 
-    /** 无障碍服务是否可用 */
-    fun available(): Boolean = ImAccessibilityService.connected && ImAccessibilityService.instance != null
+    /**
+     * 无障碍服务是否真的能读屏。
+     *
+     * 只认 `instance != null`：它是系统 bind 上服务时亲手设的，进程被杀后
+     * 静态布尔会残留，但 instance 不会。至于当前窗口有没有节点，
+     * 交给 [root] 去试，失败就返回 null，上层会降级到系统分享。
+     */
+    fun available(): Boolean = ImAccessibilityService.instance != null
 
     private fun root(): AccessibilityNodeInfo? = runCatching {
         ImAccessibilityService.instance?.rootInActiveWindow
@@ -173,7 +179,9 @@ class ImDriver {
     /**
      * 点一下。
      *
-     * 有些节点自己不可点（可点在父布局上），所以失败时沿着 parent 往上找一层。
+     * 有些节点自己不可点（可点在父布局上），所以失败时沿着 parent 往上找一层；
+     * 微信/QQ 的发送按钮、联系人条目经常整条链都 `isClickable=false`，
+     * 这时最后一招是按节点在屏幕上的矩形派发一次点击手势。
      */
     fun click(node: AccessibilityNodeInfo?): Boolean {
         if (node == null) return false
@@ -189,8 +197,24 @@ class ImDriver {
                 depth++
             }
         }
-        return false
+        return clickByBounds(node)
     }
+
+    /** 兜底：按坐标派发一次轻点（需要 canPerformGestures=true） */
+    private fun clickByBounds(node: AccessibilityNodeInfo): Boolean = runCatching {
+        val service = ImAccessibilityService.instance ?: return false
+        val rect = android.graphics.Rect()
+        node.getBoundsInScreen(rect)
+        if (rect.isEmpty) return false
+        val path = android.graphics.Path().apply {
+            moveTo(rect.exactCenterX(), rect.exactCenterY())
+        }
+        val stroke = android.accessibilityservice.GestureDescription
+            .StrokeDescription(path, 0, 60L)
+        val gesture = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(stroke).build()
+        service.dispatchGesture(gesture, null, null)
+    }.getOrDefault(false)
 
     /** 把文字直接写进输入框（比逐个字符点键盘可靠得多） */
     fun setText(node: AccessibilityNodeInfo?, text: String): Boolean {

@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.voiceassistant.R
 import com.example.voiceassistant.data.ChatMessage
+import kotlin.math.abs
 
 /**
  * 对话页：消息列表 + 输入区。
@@ -48,6 +49,8 @@ class ChatFragment : Fragment(), ChatSessionView {
     private var listening = false
     private var cancelArmed = false
     private var downY = 0f
+    private var downX = 0f
+    private var movedWhileDown = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -134,22 +137,32 @@ class ChatFragment : Fragment(), ChatSessionView {
         }
 
         /*
-         * 触摸只干两件事：记下起点、上滑判断取消。
+         * 触摸只干两件事：记下起点、上滑判断取消、**短按时精确定位光标**。
          *
-         * ⚠️ ACTION_DOWN 必须返回 false。返回 true 等于告诉系统「这个事件我全接了」，
-         * EditText 再也收不到按下事件——用户点哪儿都放不了光标（v5.0 的 bug）。
-         * 交给它处理之后，点一下就能定位、拖动就能选字，而 MOVE / UP 依然会先经过这里。
+         * ⚠️ ACTION_DOWN / 短按的 ACTION_UP 一律返回 false，事件要完整交回 EditText，
+         * 否则系统不会自己弹键盘、也不会亮起光标手柄。
+         *
+         * 但只靠系统默认定位是不够的：
+         * 1) 输入框还没拿到焦点时，第一次点击 Android 只做「聚焦」，光标仍留在原处；
+         * 2) 多行文字里点行末、点换行附近，系统会把光标归到上一行/下一行。
+         * 所以短按抬手时按手指坐标自己算一次插入点，补上这两种情况。
+         * 长按说话和滑动取消的语义完全不变。
          */
         etInput.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downY = event.rawY
-                    cancelArmed = false
+                    downX = event.x
+                    movedWhileDown = false
                     false
                 }
 
                 MotionEvent.ACTION_MOVE -> {
+                    if (abs(event.rawY - downY) > dp(8) || abs(event.x - downX) > dp(8)) {
+                        movedWhileDown = true
+                    }
                     if (!listening) {
+                        // 不录音时连移动也放行：系统要靠它拖光标手柄、选文字
                         false
                     } else {
                         // 上滑够了就进入「松手取消」，松回去还能救回来
@@ -168,7 +181,16 @@ class ChatFragment : Fragment(), ChatSessionView {
 
                 MotionEvent.ACTION_UP -> {
                     if (!listening) {
-                        // 短按：交给 EditText 自己收尾（定位光标、弹键盘）
+                        // 短按（没拖动、没触发长按）：把光标精确放到手指点中的字符间。
+                        // 必须 post 到队尾——performClick → focusInput → 弹键盘排在后面，
+                        // 输入法重启有概率把 selection 拉回末尾，抢在它前面会被覆盖。
+                        if (!movedWhileDown) {
+                            val x = event.x
+                            val y = event.y
+                            etInput.post {
+                                if (!listening && !movedWhileDown) placeCursorAt(x, y)
+                            }
+                        }
                         false
                     } else {
                         host.endVoice(cancelArmed)
@@ -187,6 +209,41 @@ class ChatFragment : Fragment(), ChatSessionView {
 
                 else -> false
             }
+        }
+    }
+
+    /**
+     * 把光标精确放到手指点中的位置。
+     *
+     * 关键是**换算到文字坐标系**：EditText 有内边距、多行时还能纵向滚动，
+     * 直接拿 `event.x/y` 去问 Layout 会整体偏一段。哪一行用 vertical 反查，
+     * 行内第几个字交给 [CursorMath] 取最近的插入点。
+     *
+     * 只在「短按且没拖动」时调用：拖动是系统在拖光标手柄 / 选文字，
+     * 这时候插一脚会把手柄抢走。
+     */
+    private fun placeCursorAt(x: Float, y: Float) {
+        val layout = etInput.layout ?: return
+        val text = etInput.text ?: return
+        if (text.isEmpty()) return
+
+        val textX = x - etInput.totalPaddingLeft + etInput.scrollX
+        val textY = y - etInput.totalPaddingTop + etInput.scrollY
+        val lastY = (layout.height - 1).coerceAtLeast(0)
+        val line = layout.getLineForVertical(textY.toInt().coerceIn(0, lastY))
+        val start = layout.getLineStart(line)
+        val end = layout.getLineEnd(line)
+
+        // 行内每个插入点的 x。
+        // 最后那个位置必须用「文末那个字符的右边界」，不能用 getLineRight：
+        // EditText 是撑满整行的，getLineRight 是整行右边界（近 800px），
+        // 点行尾空白时它反而离手指最远，光标会停在倒数第二位。
+        val positions = FloatArray(end - start + 1) { i ->
+            layout.getPrimaryHorizontal(start + i)
+        }
+        val offset = CursorMath.clamp(start + CursorMath.nearestIndex(positions, textX), text.length)
+        if (offset != etInput.selectionStart || offset != etInput.selectionEnd) {
+            etInput.setSelection(offset)
         }
     }
 

@@ -291,7 +291,8 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         val device = AndroidDeviceController(applicationContext)
         val audioCtl = AndroidAudioController(applicationContext)
         val bridge = CloudLlmBridge { cloudConfig }
-        val automator = ImAutomator(applicationContext)
+        // 进程级单例：待确认的发送不能随 Activity 重建丢失
+        val automator = ImAutomator.of(applicationContext)
 
         // 「我上一条跟他说的什么」：读当前会话里助手说过的话
         msgSupply = MsgSupply(applicationContext, automator) {

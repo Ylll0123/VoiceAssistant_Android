@@ -138,5 +138,5 @@
     <string name="wake_hit_text">I heard you — tap to keep talking</string>
 
     <string name="accessibility_label">HardlySeek voice actions</string>
-    <string name="accessibility_description">Turns voice commands like “message someone” into real actions: opens WeChat, finds the contact, fills in the text. Sending only happens after you confirm.</string>
+    <string name="accessibility_description">Turns voice commands like “message someone” into real actions: opens WeChat/QQ, finds the contact, fills in the text, and taps by coordinates when a control cannot be clicked directly. Sending happens only after you confirm. If the service is unavailable, the system share sheet is used and you pick the contact and send manually.</string>
 </resources>

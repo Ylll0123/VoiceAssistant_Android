@@ -171,7 +171,7 @@ class AiTools(private val bus: ServiceBus) {
     }}}},
   {"type":"function","function":{
     "name":"msg_send_text",
-    "description":"给联系人发微信/QQ 消息。只会打开聊天并填好内容，不会真的发出去——用户确认后再调 msg_confirm_send。找不到同名联系人会失败，这时别自己换人。",
+    "description":"给联系人发微信/QQ 消息。只会准备好内容、不会真的发出去——用户确认后再调 msg_confirm_send。无障碍不可用或自动填字失败时会自动改用系统分享，把文字带过去由用户自己选联系人并发送。找不到同名联系人会失败，这时别自己换人。",
     "parameters":{"type":"object","properties":{
       "platform":{"type":"string","enum":["wechat","qq"],"description":"默认 wechat"},
       "to":{"type":"string","description":"联系人的名字，要和通讯录里一致"},
@@ -182,6 +182,12 @@ class AiTools(private val bus: ServiceBus) {
     "description":"确认并真正发送刚才准备好的那条消息。只有用户明确说「确认 / 发吧」时才调。",
     "parameters":{"type":"object","properties":{
       "trace_id":{"type":"string","description":"msg_send_text 返回的编号，不知道就别填"}
+    }}}},
+  {"type":"function","function":{
+    "name":"msg_query_can_send",
+    "description":"诊断发消息能力：应用装没装、无障碍连没连上、系统分享通路能不能用。用户问「为什么发不出去」「能发微信吗」「检查一下发消息」时调用，把原因原样转述给用户。",
+    "parameters":{"type":"object","properties":{
+      "platform":{"type":"string","enum":["wechat","qq"],"description":"默认 wechat"}
     }}}}
 ]
 """.trimIndent()

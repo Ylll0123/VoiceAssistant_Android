@@ -18,15 +18,32 @@ enum class ImPlatform(val key: String, val packageName: String, val label: Strin
         true
     }.getOrDefault(false)
 
-    companion object {
-        fun of(raw: String?): ImPlatform? {
-            val key = raw?.trim()?.lowercase() ?: return WECHAT
-            return when {
-                key.contains("qq") -> QQ
-                key.contains("wechat") || key.contains("wx") || key.contains("微信") -> WECHAT
-                else -> null
-            }
+    /** 系统分享面板能不能把文字交给它 */
+    fun shareable(context: Context): Boolean = runCatching {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            setPackage(packageName)
         }
+        context.packageManager.queryIntentActivities(intent, 0).isNotEmpty()
+    }.getOrDefault(false)
+
+    companion object {
+        /**
+         * 平台别名：本地 NLU、大模型、界面传过来的写法都得认。
+         * 以前只认 wechat/qq/wx，模型写「微信」「腾讯QQ」就直接被判成「不支持」。
+         */
+        fun of(raw: String?): ImPlatform? {
+            val key = raw?.trim()?.lowercase().orEmpty()
+            if (key.isEmpty()) return WECHAT
+            if (QQ_KEYS.any { key.contains(it) }) return QQ
+            if (WECHAT_KEYS.any { key.contains(it) }) return WECHAT
+            return null
+        }
+
+        private val QQ_KEYS = listOf("qq", "企鹅", "腾讯qq", "mobileqq")
+        private val WECHAT_KEYS = listOf(
+            "wechat", "weixin", "wx", "微信", "微訊", "mm", "tencent.mm"
+        )
     }
 }
 
@@ -34,25 +51,30 @@ enum class ImPlatform(val key: String, val packageName: String, val label: Strin
  * 发消息的自动化流程。
  *
  * ```
- * prepare()  打开应用 → 回到首页 → 搜索联系人 → 进聊天 → 填好文字  ⇢ 返回 traceId
- * confirm()  点「发送」                                          ⇢ 用户说过「确认」才走这一步
+ * prepare()  ① 无障碍可用：打开应用 → 搜人 → 进聊天 → 填好文字  ⇢ NeedConfirm
+ *            ② 否则 / ① 失败：只记下内容，什么都不打开            ⇢ NeedConfirm（分享模式）
+ * confirm()  ① 点「发送」
+ *            ② 拉起系统分享面板，文字已预填，用户自己选人并点发送
  * ```
  *
- * ## 为什么一定要拆成两步
- * 发错人、发错话是**不可撤销**的。自动化点错一次，代价比多点一下大得多。
- * 所以总线上的 `msg/send_text` 永远只做到「填好、没发」，
- * 必须再来一次 `msg/confirm_send` 才真的点发送，中间由界面复述给用户听。
+ * ## 为什么加了分享这条降级路
+ * 微信 / QQ 会限制无障碍自动化：节点不暴露、`ACTION_SET_TEXT` 失效、搜索入口改版，
+ * 甚至明确拦截自动化操作。只押注无障碍，用户看到的就是「明明开了权限还是发不出去」。
+ * 系统 `ACTION_SEND` 是两家都公开支持的入口，不受改版影响，也不需要任何权限。
+ * 代价是联系人要用户自己选——但**发错人比发不出更严重**，这一步本来就该由人把关。
+ *
+ * ## 红线没变
+ * `msg/send_text` 永远不点发送。分享模式下连应用都不打开，
+ * 用户说过「确认」才把内容带过去，最后那一下发送始终是人自己点的。
  *
  * ## 幂等
- * 每次 prepare 生成一个 traceId，状态从 `PREPARED` 走到 `SENT`。
- * 同一个 traceId 重复 confirm 只会真正发送一次——自动化最怕的就是「点了两下」。
+ * 每次 prepare 生成一个 traceId，同一个 traceId 重复 confirm 只会生效一次。
+ * [of] 返回进程级单例：切去微信/分享面板再回来，Activity 重建也不会把待确认弄丢。
  *
- * ## 已知脆弱点（真机出问题先看这里）
- * - 微信/QQ 的节点 id 随版本变，所以查找顺序是「viewId → 文字 → 无障碍描述」，
- *   都对不上会失败并说明卡在第几步；
- * - 首次启动对方应用可能有开屏广告/更新弹窗，流程会卡在搜索那一步超时；
- * - 重名联系人会优先选**完全同名**的那个；没有完全同名时取名字最短的包含项，
- *   并把实际选中的名字写进确认语，让用户听得出来是不是发错人了。
+ * ## 已知脆弱点（全自动那条路）
+ * - 微信/QQ 的节点 id 随版本变，查找顺序是「viewId → 文字 → 无障碍描述」；
+ * - 首次启动对方应用可能有开屏广告/更新弹窗，会卡在搜索那一步超时；
+ * - 全自动失败不报错，直接降级到分享，并把原因写进确认语里。
  */
 class ImAutomator(
     private val context: Context,
@@ -63,12 +85,14 @@ class ImAutomator(
     private data class Pending(
         val platform: ImPlatform,
         val to: String,
-        /** 搜索结果里实际点中的那个名字（可能比 [to] 长，例如「妈妈」→「妈妈(工作)」） */
         val matched: String,
         val content: String,
+        val mode: Mode,
         val at: Long,
         var sent: Boolean = false
     )
+
+    private enum class Mode { AUTO, SHARE }
 
     sealed class Outcome {
         data class NeedConfirm(val traceId: String, val preview: String) : Outcome()
@@ -78,7 +102,6 @@ class ImAutomator(
 
     /** 「把界面铺好、字填进去」的结果 */
     private sealed class Filled {
-        /** @param matched 真正点开的那个联系人名 */
         data class Ok(val matched: String) : Filled()
         data class Error(val reason: String) : Filled()
     }
@@ -89,19 +112,30 @@ class ImAutomator(
     // ------------------------------------------------------------------ 能力检查
 
     /**
-     * 能不能发；能发返回 null，不能发返回原因（这句话会直接给用户看）。
-     *
-     * 这里刻意把「没开权限」和「开了但没连上」分开说：
-     * 用户已经去系统里勾过了，再被告知「还没开权限」只会让人怀疑人生。
+     * 为什么不能走全自动；能走返回 null。
+     * 注意这里**不再阻断发送**——它只决定用哪条通路，而不是能不能发。
      */
-    fun check(platform: ImPlatform): String? {
-        if (!platform.installed(context)) return "手机里没装${platform.label}。"
-        if (ImAccessibilityService.connected) return null
-
+    private fun autoBlocked(): String? {
+        if (driver.available()) return null
         return if (ImAccessibilityService.enabledInSystem(context)) {
-            "无障碍权限是开着的，但服务还没连上。到系统设置里把「HardlySeek」关一下再打开就好。"
+            "无障碍权限是开着的，但服务还没连上（到系统设置里把「HardlySeek」关一下再打开）"
         } else {
-            "还没开无障碍权限，我点不动${platform.label}。要不要现在去开一下？"
+            "还没开无障碍权限"
+        }
+    }
+
+    /**
+     * 给用户看的分步自检：装没装、全自动通不通、分享通不通。
+     * 「为什么发不出去」这类问题，靠这句话就能定位，不用猜。
+     */
+    fun diagnose(platform: ImPlatform): String {
+        if (!platform.installed(context)) return "手机里没装${platform.label}，先装一个吧。"
+        val share = if (platform.shareable(context)) "能用" else "用不了"
+        val blocked = autoBlocked()
+        return if (blocked == null) {
+            "${platform.label}已安装，无障碍已连上，可以全自动发送；系统分享备用通路$share。"
+        } else {
+            "${platform.label}已安装，$blocked。系统分享通路$share，可以把内容带过去由你手动发送。"
         }
     }
 
@@ -114,47 +148,53 @@ class ImAutomator(
         true
     }.getOrDefault(false)
 
-    // ------------------------------------------------------------------ 第一步：填好不发
+    // ------------------------------------------------------------------ 第一步：准备（不发送）
 
     /**
-     * 准备发送：打开应用 → 搜人 → 进聊天 → 填字。
-     *
-     * **会阻塞**（每一步都要等界面），必须在后台线程调用。
+     * 准备发送。全自动那条路会阻塞（要等界面），必须在后台线程调用。
+     * 失败一律降级到分享，不把用户晾在「发不出去」上。
      */
     @Synchronized
     fun prepare(platform: ImPlatform, to: String, content: String): Outcome {
-        check(platform)?.let { return Outcome.Failed(it) }
+        if (!platform.installed(context)) return Outcome.Failed("手机里没装${platform.label}。")
         if (to.isBlank()) return Outcome.Failed("要发给谁？")
         if (content.isBlank()) return Outcome.Failed("要发什么？")
 
-        val filled = when (val result = fillScreen(platform, to, content)) {
-            is Filled.Error -> return Outcome.Failed(result.reason)
-            is Filled.Ok -> result
+        val blocked = autoBlocked()
+        val filled = if (blocked == null) fillScreen(platform, to, content) else null
+        val auto = filled as? Filled.Ok
+        val mode = if (auto != null) Mode.AUTO else Mode.SHARE
+
+        // 全自动失败的原因要如实说出来，别让用户以为是权限没开
+        val why = when {
+            blocked != null -> blocked
+            filled is Filled.Error -> "自动填字没走通（${filled.reason}）"
+            else -> ""
         }
 
-        // 走到这里：对方应用里已经填好、但**没有点发送**
         val traceId = "im-${System.currentTimeMillis()}-${counter.incrementAndGet()}"
         pending[traceId] = Pending(
             platform = platform,
             to = to,
-            matched = filled.matched,
+            matched = auto?.matched ?: to,
             content = content,
+            mode = mode,
             at = System.currentTimeMillis()
         )
         purgeExpired()
 
-        val preview = "要给「${filled.matched}」发${platform.label}，内容是：$content。确认发送吗？"
+        val preview = if (mode == Mode.AUTO) {
+            "要给「${auto!!.matched}」发${platform.label}，内容是：$content。确认发送吗？"
+        } else {
+            "要给「$to」发${platform.label}，内容是：$content。" +
+                if (why.isEmpty()) "我会把内容带到${platform.label}，你选一下联系人再点发送。确认吗？"
+                else "$why，我会把内容带到${platform.label}，你选一下联系人再点发送。确认吗？"
+        }
         return Outcome.NeedConfirm(traceId, preview)
     }
 
-    // ------------------------------------------------------------------ 第二步：确认后发送
+    // ------------------------------------------------------------------ 第二步：确认后执行
 
-    /**
-     * 用户说「确认」之后才点发送。
-     *
-     * 如果这时候界面已经不在聊天页（用户切走了、或者被系统收掉了），
-     * 会**重新铺一遍**（打开 → 搜索 → 进聊天 → 填字）再点，而不是直接失败。
-     */
     @Synchronized
     fun confirm(traceId: String): Outcome {
         val item = pending[traceId] ?: return Outcome.Failed("这次发送已经过期了，重新说一遍吧。")
@@ -164,12 +204,31 @@ class ImAutomator(
             return Outcome.Failed("等太久了，这条过期了，重新说一遍吧。")
         }
 
+        if (item.mode == Mode.SHARE) {
+            return if (openShare(item.platform, item.content)) {
+                item.sent = true
+                pending.remove(traceId)
+                Outcome.Done(
+                    "已经把内容带到${item.platform.label}了，选一下「${item.to}」再点发送就好。"
+                )
+            } else {
+                Outcome.Failed("打不开${item.platform.label}的分享页，可能版本不支持，得手动发了。")
+            }
+        }
+
         var sendButton = findSendButton()
 
         // 找不到发送按钮，多半是人跑到别处去了：重来一遍再点
         if (sendButton == null) {
             when (val again = fillScreen(item.platform, item.matched, item.content)) {
-                is Filled.Error -> return Outcome.Failed(again.reason)
+                is Filled.Error -> {
+                    // 重铺也失败就别硬撑了，改走分享
+                    return if (openShare(item.platform, item.content)) {
+                        item.sent = true
+                        pending.remove(traceId)
+                        Outcome.Done("自动填字没走通，已经把内容带到${item.platform.label}了，选一下联系人再点发送就好。")
+                    } else Outcome.Failed("${again.reason} 也打不开分享页，只能手动发了。")
+                }
                 is Filled.Ok -> sendButton = findSendButton()
             }
         }
@@ -200,13 +259,41 @@ class ImAutomator(
         return pending.maxByOrNull { it.value.at }?.key
     }
 
-    // ------------------------------------------------------------------ 界面操作
+    // ------------------------------------------------------------------ 系统分享通路
+
+    /**
+     * 把文字交给微信 / QQ 的官方分享入口，联系人由用户自己选。
+     *
+     * 优先定向 `setPackage`，避免弹出一堆不相关的应用；
+     * 万一对方这版没注册 `text/plain`，退回系统选择器，让用户挑一个能收的。
+     */
+    private fun openShare(platform: ImPlatform, content: String): Boolean = runCatching {
+        val base = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, content)
+            // 部分 QQ 版本读 subject，两个都塞一份，保险
+            putExtra(Intent.EXTRA_SUBJECT, content)
+        }
+        val targeted = Intent(base).apply {
+            setPackage(platform.packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        val intent = if (targeted.resolveActivity(context.packageManager) != null) {
+            targeted
+        } else {
+            Intent.createChooser(base, "发送给").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+        context.startActivity(intent)
+        true
+    }.getOrDefault(false)
+
+    // ------------------------------------------------------------------ 全自动通路
 
     /**
      * 把「打开 → 搜人 → 进聊天 → 填字」整条走完，停在**发送前**。
-     *
-     * 每一步失败都返回带步骤的说明，而不是笼统的「失败了」——
-     * 用户报问题的时候，那句提示就是唯一的线索。
+     * 每一步失败都返回带步骤的说明，上层据此降级到分享。
      */
     private fun fillScreen(platform: ImPlatform, to: String, content: String): Filled {
         if (!launch(platform)) return Filled.Error("打不开${platform.label}。")
@@ -225,14 +312,12 @@ class ImAutomator(
         val searchBox = driver.findEditable(timeoutMs = 3_000)
             ?: return Filled.Error("搜索框没弹出来，先退回去了，可以再试一次。")
         if (!driver.setText(searchBox, to)) {
-            // 有的搜索框要先获得焦点才收得进字
             driver.click(searchBox)
             Thread.sleep(300)
             if (!driver.setText(searchBox, to)) {
                 return Filled.Error("联系人名字填不进搜索框。")
             }
         }
-        // 等搜索结果刷新，这一步只能靠等（各家都是输入即搜）
         Thread.sleep(1_100)
 
         // 3) 点开联系人：完全同名优先
@@ -261,18 +346,15 @@ class ImAutomator(
 
         var filled = driver.setText(input, content)
         if (!filled) {
-            // 聊天输入框常常要先点一下才变成可编辑
             driver.click(input)
             Thread.sleep(350)
             filled = driver.setText(input, content)
         }
         if (!filled) return Filled.Error("字填不进去，输入框可能被限制了。")
 
-        // 5) 校验：performAction 返回 true 不代表内容真的进去了
         Thread.sleep(250)
         val actual = runCatching { input.text?.toString().orEmpty() }.getOrDefault("")
         if (actual.isNotBlank() && actual.trim() != content.trim()) {
-            // 再写一次；还不行就算了，让用户在确认前能看到内容不对
             driver.setText(input, content)
             Thread.sleep(250)
         }
@@ -280,12 +362,6 @@ class ImAutomator(
         return Filled.Ok(matched)
     }
 
-    /**
-     * 回到应用首页。
-     *
-     * 搜索入口只在首页。用户上次停在与某人的聊天里，直接找「搜索」会找不到，
-     * 然后整个流程就失败在第一步——这是「点了没反应」最常见的原因。
-     */
     private fun backToHome(platform: ImPlatform) {
         if (searchEntry(0) != null) return
         repeat(2) {
@@ -294,19 +370,12 @@ class ImAutomator(
             Thread.sleep(450)
             if (searchEntry(0) != null) return
         }
-        // 退过头退到桌面了：重新拉起来，至少保证人还在应用里
         if (driver.currentPackage() != platform.packageName) {
             launch(platform)
             waitForApp(platform, 4_000)
         }
     }
 
-    /**
-     * 找搜索入口。
-     *
-     * 顺序：无障碍描述 → 文字 → 顶部可编辑框。
-     * 微信把搜索挂在 contentDescription 上，QQ 更常见的是文字「搜索」。
-     */
     private fun searchEntry(timeoutMs: Long): AccessibilityNodeInfo? {
         driver.find(byDescription = "搜索", timeoutMs = timeoutMs)?.let { return it }
         driver.find(byText = "搜索", timeoutMs = if (timeoutMs > 0) timeoutMs / 2 else 0)
@@ -314,7 +383,6 @@ class ImAutomator(
         return null
     }
 
-    /** 发送按钮：先按文字找，再退回「可见且可点、文字就是发送」 */
     private fun findSendButton(): AccessibilityNodeInfo? {
         driver.find(byText = "发送", timeoutMs = 2_500)?.let { return it }
         driver.find(byText = "Send", timeoutMs = 600)?.let { return it }
@@ -334,7 +402,6 @@ class ImAutomator(
         true
     }.getOrDefault(false)
 
-    /** 等前台真的切到目标应用 */
     private fun waitForApp(platform: ImPlatform, timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         do {
@@ -344,21 +411,26 @@ class ImAutomator(
         return false
     }
 
-    /** 超过两分钟的待确认直接丢掉，避免「早上没确认的，下午说确认就发出去了」 */
     private fun purgeExpired() {
         val now = System.currentTimeMillis()
         pending.entries.removeAll { now - it.value.at > EXPIRE_MS }
     }
 
-    private companion object {
+    companion object {
+        /**
+         * 进程级单例。待确认消息存在实例里，切到微信 / 分享面板再回来时
+         * Activity 可能被重建，new 一个就会把 traceId 弄丢，用户说「确认」会白说。
+         */
+        @Volatile
+        private var shared: ImAutomator? = null
+
+        fun of(context: Context): ImAutomator = shared ?: synchronized(this) {
+            shared ?: ImAutomator(context.applicationContext).also { shared = it }
+        }
+
         const val EXPIRE_MS = 120_000L
-
-        /** 等应用切到前台的上限 */
         const val LAUNCH_TIMEOUT_MS = 6_000L
-
-        /** 找搜索入口的上限 */
         const val SEARCH_TIMEOUT_MS = 2_500L
-
         val SEND_TEXTS = setOf("发送", "Send")
     }
 }

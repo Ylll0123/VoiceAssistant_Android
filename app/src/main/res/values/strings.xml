@@ -138,5 +138,5 @@
 
     <!-- 无障碍（发消息自动化）：这段说明会在系统设置里给用户看，必须如实写用途 -->
     <string name="accessibility_label">HardlySeek 语音操作</string>
-    <string name="accessibility_description">把「给谁发什么」这类语音指令变成实际操作：打开微信、搜索联系人、把内容填进聊天框。只有你确认之后才会点发送，不会在后台静默发送。</string>
+    <string name="accessibility_description">把「给谁发什么」这类语音指令变成实际操作：打开微信/QQ、搜索联系人、把内容填进聊天框；节点点不动时会派发一次轻点手势。你确认之后才会点发送，不会在后台静默发送。没连上无障碍时改用系统分享，由你自己选联系人并点发送。</string>
 </resources>

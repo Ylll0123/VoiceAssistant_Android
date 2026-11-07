@@ -36,8 +36,9 @@ class MsgSupply(
     private fun sendText(): Supply = object : Supply {
         override val name = "msg/send_text"
         override val summary =
-            "给联系人发消息。参数 platform（wechat / qq）、to（联系人名）、content（要发的内容）。" +
-                "这个服务只会打开聊天并填好内容，不会真的发送——发送要用户确认后再调 msg/confirm_send。"
+            "给联系人发消息。参数 platform（wechat / qq，也认中文别名）、to（联系人名）、content（要发的内容）。" +
+                "这个服务只准备、不发送——发送要用户确认后再调 msg/confirm_send。" +
+                "无障碍没连上或自动填字失败时会自动走系统分享，把内容带过去由用户手动点发送。"
 
         override fun invoke(args: BusArgs): BusReply {
             val platform = ImPlatform.of(args.str("platform"))
@@ -73,13 +74,13 @@ class MsgSupply(
 
     private fun canSend(): Supply = object : Supply {
         override val name = "msg/query_can_send"
-        override val summary = "检查现在能不能自动发消息（无障碍权限、应用是否安装）。"
+        override val summary = "检查现在能不能自动发消息（应用是否安装、无障碍是否连上、系统分享通路是否可用）。"
 
         override fun invoke(args: BusArgs): BusReply {
             val platform = ImPlatform.of(args.str("platform")) ?: ImPlatform.WECHAT
-            val reason = automator.check(platform)
-                ?: return BusReply.ok("可以发，${platform.label}和无障碍权限都齐了。")
-            return BusReply.fail(reason)
+            val diagnosis = automator.diagnose(platform)
+            return if (diagnosis.contains("没装")) BusReply.fail(diagnosis)
+            else BusReply.ok(diagnosis)
         }
     }
 
