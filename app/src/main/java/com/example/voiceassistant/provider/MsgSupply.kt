@@ -24,7 +24,14 @@ class MsgSupply(
     context: Context,
     private val automator: ImAutomator,
     /** 读当前会话最近几条消息：用户问「我上一条跟他说的什么」时用 */
-    private val recentMessages: () -> List<String> = { emptyList() }
+    private val recentMessages: () -> List<String> = { emptyList() },
+    /**
+     * 设置里的「发送前免确认」。
+     *
+     * 默认 false：先复述一遍再问「确认吗？」。用户自己打开这个开关之后，
+     * `msg/send_text` 会直接执行到底——那时候「确认」这层是用户在设置里授权的。
+     */
+    private val autoSend: () -> Boolean = { false }
 ) : PendingSend {
 
     private val app: Context = context.applicationContext
@@ -37,8 +44,8 @@ class MsgSupply(
         override val name = "msg/send_text"
         override val summary =
             "给联系人发消息。参数 platform（wechat / qq，也认中文别名）、to（联系人名）、content（要发的内容）。" +
-                "这个服务只准备、不发送——发送要用户确认后再调 msg/confirm_send。" +
-                "无障碍没连上或自动填字失败时会自动走系统分享，把内容带过去由用户手动点发送。"
+                "默认只准备、不打开应用；用户确认后由 msg/confirm_send 全自动进入聊天页并发送。" +
+                "开了「发送前免确认」设置时，这个服务会直接发出去。"
 
         override fun invoke(args: BusArgs): BusReply {
             val platform = ImPlatform.of(args.str("platform"))
@@ -47,8 +54,19 @@ class MsgSupply(
             val content = args.str("content") ?: return BusReply.fail("要发什么？")
 
             return when (val outcome = automator.prepare(platform, to, content)) {
-                is ImAutomator.Outcome.NeedConfirm ->
-                    BusReply.confirm(outcome.preview, outcome.traceId, "to" to to)
+                is ImAutomator.Outcome.NeedConfirm -> {
+                    // 免确认模式：不问了，直接执行（会阻塞到发完）
+                    if (autoSend()) {
+                        when (val done = automator.confirm(outcome.traceId)) {
+                            is ImAutomator.Outcome.Done -> BusReply.ok(done.message)
+                            is ImAutomator.Outcome.Failed -> BusReply.fail(done.message)
+                            is ImAutomator.Outcome.NeedConfirm ->
+                                BusReply.confirm(outcome.preview, outcome.traceId, "to" to to)
+                        }
+                    } else {
+                        BusReply.confirm(outcome.preview, outcome.traceId, "to" to to)
+                    }
+                }
 
                 is ImAutomator.Outcome.Done -> BusReply.ok(outcome.message)
 
@@ -59,7 +77,7 @@ class MsgSupply(
 
     private fun confirmSend(): Supply = object : Supply {
         override val name = "msg/confirm_send"
-        override val summary = "确认并真正发送上一条待发的消息。参数 trace_id 由 msg/send_text 返回。"
+        override val summary = "确认并真正发送上一条待发的消息：自动进入聊天页、填字、点发送并校验结果。参数 trace_id 由 msg/send_text 返回。"
 
         override fun invoke(args: BusArgs): BusReply {
             val traceId = args.str("trace_id") ?: automator.latestTraceId()

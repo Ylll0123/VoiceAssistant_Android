@@ -36,12 +36,20 @@ object LocalNlu {
      * @param appMatcher 「这个名字是不是一个真实安装了的应用」。
      *        常用表之外的应用（原神、学习通……）要靠它判断，不传就只认 [KnownApps]。
      *        用回调注入而不是直接查 `PackageManager`，这一层才能继续当纯函数测。
+     * @param strict **整句模式**：为 true 时，只有「短句 + 单一意图」才允许本地认领。
+     *
+     *        这一条是给语音输入加的。以前只要是句子里**含有**某个关键词就抢着执行：
+     *        「把亮度调暗一点然后放首歌」会被当成单纯调亮度，后半句直接丢掉。
+     *        语音识别出来的又是一整段话，这种误判特别显眼。
+     *        严格模式下这类复合句返回 null，交给大模型把整句拆开依次做——
+     *        网络可用时精度优先；离线时上层仍会用宽松模式，保证本机指令还能用。
      * @return 命中返回 [Hit]；认不出（或不敢确定）返回 null，表示「交给大模型」
      */
     fun route(
         raw: String,
         now: LocalDateTime = LocalDateTime.now(),
-        appMatcher: ((String) -> Boolean)? = null
+        appMatcher: ((String) -> Boolean)? = null,
+        strict: Boolean = false
     ): Hit? {
         val text = raw.trim()
         if (text.isEmpty()) return null
@@ -51,7 +59,7 @@ object LocalNlu {
         val cap = if (looksLikeSendMessage(text)) 120 else 40
         if (text.length > cap) return null
 
-        return sendMessage(text)
+        val hit = sendMessage(text)
             ?: messageDiagnostic(text)
             ?: torch(text)
             ?: brightness(text)
@@ -62,7 +70,31 @@ object LocalNlu {
             ?: timer(text)
             ?: alarm(text, now)
             ?: math(text)
+            ?: return null
+
+        // 整句模式：复合意图、或者一长串话里只捞到一个关键词，都不许本地拍板
+        if (strict && !acceptsLongText(hit.service)) {
+            if (looksComposite(text)) return null
+            if (text.length > QUICK_CAP) return null
+        }
+        return hit
     }
+
+    /**
+     * 只有「发消息」的参数本身就是用户原话，句子里出现「然后」「顺便」很正常，
+     * 不能因为像复合句就丢掉——否则「给妈妈发微信说然后我晚点到」这种就发不出去了。
+     *
+     * 提醒类刻意**不**豁免：那多半真的是「先提醒我一件事，然后再做另一件事」，
+     * 让大模型拆开做更稳；离线时上层用的是宽松模式，照样能建提醒。
+     */
+    private fun acceptsLongText(service: String): Boolean = service == "msg/send_text"
+
+    /**
+     * 像不像「一句话里有两件事」。
+     *
+     * 只认明确的连接词，不做语义猜测：宁可多交给大模型一次，也不要少做一半。
+     */
+    private fun looksComposite(text: String): Boolean = COMPOSITE.containsMatchIn(text)
 
     // ------------------------------------------------------------------ 设备
 
@@ -334,6 +366,21 @@ object LocalNlu {
     }
 
     // ------------------------------------------------------------------ 规则表
+
+    /**
+     * 一句话里明显有第二件事的连接词。
+     *
+     * 「还有」也收进来：「打开手电筒还有把音量调到一半」就是两件事。
+     * 不用担心误伤「还有多少电」——本地根本没有电量规则，那句本来就走大模型。
+     */
+    private val COMPOSITE = Regex(
+        "然后|接着|顺便|另外|同时|并且|以及|还要|还有|再帮我|帮我再|" +
+            "但是|不过|可是|如果|要是|的话|因为|所以|要不然|否则|" +
+            "先.{0,12}再"
+    )
+
+    /** 整句模式下，短于这个长度才允许本地直接拍板；再长就交给大模型通读 */
+    private const val QUICK_CAP = 24
 
     private val PERCENT = Regex("(\\d{1,3})\\s*%")
 

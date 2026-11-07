@@ -35,6 +35,7 @@ class SettingsFragment : Fragment() {
     private lateinit var toggleStyle: MaterialButtonToggleGroup
     private lateinit var switchSpeak: MaterialSwitch
     private lateinit var switchWake: MaterialSwitch
+    private lateinit var switchMsgAuto: MaterialSwitch
     private lateinit var tvLanguageValue: TextView
     private lateinit var tvModelValue: TextView
     private lateinit var tvAccount: TextView
@@ -55,6 +56,7 @@ class SettingsFragment : Fragment() {
         toggleStyle = view.findViewById(R.id.toggleStyle)
         switchSpeak = view.findViewById(R.id.switchSpeak)
         switchWake = view.findViewById(R.id.switchWake)
+        switchMsgAuto = view.findViewById(R.id.switchMsgAuto)
         tvLanguageValue = view.findViewById(R.id.tvLanguageValue)
         tvModelValue = view.findViewById(R.id.tvModelValue)
         tvAccount = view.findViewById(R.id.tvAccount)
@@ -63,6 +65,7 @@ class SettingsFragment : Fragment() {
         bindStyle()
         bindSpeak()
         bindWake()
+        bindMsgAuto()
         bindAccessibility()
         bindLanguage()
         bindModel()
@@ -116,6 +119,19 @@ class SettingsFragment : Fragment() {
     private fun bindAccessibility() {
         requireView().findViewById<View>(R.id.rowAccessibility).setOnClickListener {
             host.openAccessibilitySettings()
+        }
+    }
+
+    /**
+     * 发送前免确认。
+     *
+     * 默认关。打开后「给妈妈发微信说我晚点到」这一句就直接发出去，
+     * 不再问「确认吗」——属于用户明确授权，不是偷偷改的默认行为。
+     */
+    private fun bindMsgAuto() {
+        switchMsgAuto.isChecked = host.isMsgAutoSend()
+        switchMsgAuto.setOnCheckedChangeListener { _, checked ->
+            if (checked != host.isMsgAutoSend()) host.setMsgAutoSend(checked)
         }
     }
 
@@ -361,6 +377,7 @@ class SettingsFragment : Fragment() {
         updateModelRow()
         // 唤醒可能被系统掐掉（后台限制 / 用户撤了麦克风权限），回来时以真实状态为准
         switchWake.isChecked = host.isWakeEnabled()
+        switchMsgAuto.isChecked = host.isMsgAutoSend()
         tvAccount.text = AccountStore(requireContext()).currentUser.orEmpty()
         tvVersion.text = getString(R.string.settings_version, appVersionName())
         tvLanguageValue.text = languageLabel(host.appSettings().language)

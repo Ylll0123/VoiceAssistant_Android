@@ -130,6 +130,8 @@
     <string name="settings_speak_desc">Speak replies; turn off for text only</string>
     <string name="settings_wake">Wake word</string>
     <string name="settings_access">Auto-send messages</string>
+    <string name="settings_msg_auto">Send without confirming</string>
+    <string name="settings_msg_auto_on_toast">Okay — messages will go out as soon as you say them.</string>
     <string name="settings_access_failed">Couldn\'t open accessibility settings; find it in system settings</string>
 
     <string name="wake_channel_name">Wake word</string>

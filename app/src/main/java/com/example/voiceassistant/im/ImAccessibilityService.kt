@@ -177,6 +177,33 @@ class ImDriver {
     }
 
     /**
+     * 找锚点右侧、同一行、可点击的节点。
+     *
+     * 微信/QQ 的发送键在部分版本里是**没有文字的圆形图标**，
+     * 按「发送」两个字根本找不到。但它们的位置很固定：就在输入框右边。
+     * 这里用几何关系兜底——宽不超过输入框，避免把整行列表当成按钮。
+     */
+    fun findRightOf(anchor: AccessibilityNodeInfo?, timeoutMs: Long = 0): AccessibilityNodeInfo? {
+        if (anchor == null) return null
+        val rect = android.graphics.Rect()
+        runCatching { anchor.getBoundsInScreen(rect) }
+        if (rect.isEmpty) return null
+
+        return findCustom(timeoutMs) { node ->
+            if (!node.isVisibleToUser || !node.isClickable) {
+                false
+            } else {
+                val bounds = android.graphics.Rect()
+                runCatching { node.getBoundsInScreen(bounds) }
+                !bounds.isEmpty &&
+                    bounds.centerY() in (rect.top - 40)..(rect.bottom + 40) &&
+                    bounds.left >= rect.right - 40 &&
+                    bounds.width() <= rect.width()
+            }
+        }
+    }
+
+    /**
      * 点一下。
      *
      * 有些节点自己不可点（可点在父布局上），所以失败时沿着 parent 往上找一层；

@@ -130,6 +130,8 @@
     <string name="settings_speak_desc">回答を音声で読み上げます。オフにすると文字だけ</string>
     <string name="settings_wake">ウェイクワード</string>
     <string name="settings_access">メッセージ自動送信</string>
+    <string name="settings_msg_auto">確認なしで送信</string>
+    <string name="settings_msg_auto_on_toast">わかりました。今後は話した内容をそのまま送信します。</string>
     <string name="settings_access_failed">ユーザー補助の設定を開けませんでした。システム設定から開いてください</string>
 
     <string name="wake_channel_name">ウェイクワード</string>

@@ -295,9 +295,14 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         val automator = ImAutomator.of(applicationContext)
 
         // 「我上一条跟他说的什么」：读当前会话里助手说过的话
-        msgSupply = MsgSupply(applicationContext, automator) {
-            session.messages.filter { !it.isUser }.map { it.text }.takeLast(5)
-        }
+        msgSupply = MsgSupply(
+            context = applicationContext,
+            automator = automator,
+            recentMessages = {
+                session.messages.filter { !it.isUser }.map { it.text }.takeLast(5)
+            },
+            autoSend = { settings.msgAutoSend }
+        )
         kwsSupply = KwsSupply(this)
 
         bus = ServiceBus().apply {
@@ -574,9 +579,17 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         setContentBlurred(true)
     }
 
+    /**
+     * 收起抽屉。
+     *
+     * **顺手退出编辑模式**：抽屉一收，用户接下来就是要打字或说话。
+     * 如果编辑状态留着，下次拉出来每条右边还是垃圾桶、右上角还写着「完成」，
+     * 点一下标题也不切会话——看着像应用坏了。
+     */
     private fun closeDrawer() {
         if (!drawerOpen) return
         drawerOpen = false
+        setChatsEditing(false)
         val width = drawerPanel.width.toFloat().coerceAtLeast(1f)
         drawerPanel.animate().translationX(-width).setDuration(180)
             .withEndAction { drawerPanel.visibility = View.GONE }
@@ -1049,6 +1062,20 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         if (!msgSupply.openAccessibilitySettings()) {
             toast(getString(R.string.settings_access_failed))
         }
+    }
+
+    /** 设置页「发送前免确认」的当前值 */
+    fun isMsgAutoSend(): Boolean = settings.msgAutoSend
+
+    /**
+     * 切换「发送前免确认」。
+     *
+     * 打开时提醒一句：这是唯一会动到别人的操作，说错就发出去了。
+     * 提醒归提醒，**不拦着**——用户在设置里点了开关就是明确授权。
+     */
+    fun setMsgAutoSend(enabled: Boolean) {
+        settings.msgAutoSend = enabled
+        if (enabled) toast(getString(R.string.settings_msg_auto_on_toast))
     }
 
     /** 清空**当前这条**对话记录（其它记录不受影响） */

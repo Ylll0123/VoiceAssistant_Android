@@ -54,6 +54,9 @@ class AsrManager(context: Context) {
     private val appContext: Context = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
 
+    /** 最后一条中间结果：引擎超时不给最终结果时，拿它兜底 */
+    private var lastPartial: String = ""
+
     /** 系统是否提供语音识别服务 */
     fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(appContext)
 
@@ -79,13 +82,31 @@ class AsrManager(context: Context) {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "zh-CN")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, MAX_RESULTS)
-            // 说完后停顿约 1.2 秒自动结束，避免一直等着
+            /*
+             * 停顿判定：以前是 1.2 秒，短到一句话说到一半换口气就被判「说完了」，
+             * 用户看到的现象就是「只识别到几个字」。
+             *
+             * 现在给到 2.6 秒：正常说话的句中停顿（1～2 秒）都能接上，
+             * complete 与 possiblyComplete 之间再留 0.6 秒余量，
+             * 让引擎有机会把后半句补全再收口。
+             */
             putExtra(
                 RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
                 SILENCE_END_MS
             )
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                POSSIBLY_SILENCE_MS
+            )
+            // 太短的「嗯」不急着结束，否则一句长话刚开口就被收走
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
+                MIN_LENGTH_MS
+            )
+            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, appContext.packageName)
         }
 
+        lastPartial = ""
         isListening = true
         speechRecognizer.startListening(intent)
     }
@@ -100,6 +121,7 @@ class AsrManager(context: Context) {
     fun cancel() {
         if (!isListening) return
         isListening = false
+        lastPartial = ""
         recognizer?.cancel()
     }
 
@@ -108,6 +130,7 @@ class AsrManager(context: Context) {
         recognizer?.destroy()
         recognizer = null
         isListening = false
+        lastPartial = ""
         listener = null
     }
 
@@ -129,6 +152,22 @@ class AsrManager(context: Context) {
 
         override fun onError(error: Int) {
             isListening = false
+            /*
+             * 超时 / 没匹配上，但已经听到了半句：把它当结果交出去。
+             *
+             * 这两条错误最常见的成因不是「用户没说」，而是「说话超过了引擎的等待时间」。
+             * 直接回「没听到声音」，用户刚才说的那半句就白说了——
+             * 这也是「只能识别到某个词」的另一种表现。
+             */
+            if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT ||
+                error == SpeechRecognizer.ERROR_NO_MATCH
+            ) {
+                val kept = lastPartial.trim()
+                if (kept.length >= 2) {
+                    listener?.onFinalResult(kept, listOf(kept))
+                    return
+                }
+            }
             listener?.onError(errorMessage(error))
         }
 
@@ -140,10 +179,13 @@ class AsrManager(context: Context) {
                 ?.filter { it.isNotEmpty() }
                 ?.distinct()
                 .orEmpty()
-            if (candidates.isEmpty()) {
+            // 候选按置信度排，但**不一定按完整度排**；这里挑最完整的那句
+            val best = AsrPick.choose(candidates, lastPartial)
+            if (best.isEmpty()) {
                 listener?.onError("没听清，再说一次？")
             } else {
-                listener?.onFinalResult(candidates.first(), candidates)
+                val all = if (best in candidates) candidates else listOf(best) + candidates
+                listener?.onFinalResult(best, all)
             }
         }
 
@@ -153,7 +195,10 @@ class AsrManager(context: Context) {
                 ?.firstOrNull()
                 ?.trim()
                 .orEmpty()
-            if (text.isNotEmpty()) listener?.onPartialResult(text)
+            if (text.isNotEmpty()) {
+                lastPartial = text
+                listener?.onPartialResult(text)
+            }
         }
 
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
@@ -176,6 +221,14 @@ class AsrManager(context: Context) {
 
     private companion object {
         const val MAX_RESULTS = 5
-        const val SILENCE_END_MS = 1200L
+
+        /** 完全静音多久算「说完了」。给足句中换气的余地 */
+        const val SILENCE_END_MS = 2_600L
+
+        /** 「可能说完了」的判定点，比上一条早 0.6 秒 */
+        const val POSSIBLY_SILENCE_MS = 2_000L
+
+        /** 最短录音时长：避免刚开口就被收走 */
+        const val MIN_LENGTH_MS = 1_200L
     }
 }

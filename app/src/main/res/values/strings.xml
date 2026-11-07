@@ -128,6 +128,8 @@
     <string name="settings_speak_desc">回答时念出来，关掉就只看文字</string>
     <string name="settings_wake">语音唤醒</string>
     <string name="settings_access">自动发消息权限</string>
+    <string name="settings_msg_auto">发送前免确认</string>
+    <string name="settings_msg_auto_on_toast">好，以后说完就直接发出去。</string>
     <string name="settings_access_failed">打不开无障碍设置，到系统设置里找一下「无障碍」</string>
 
     <!-- 唤醒词 -->

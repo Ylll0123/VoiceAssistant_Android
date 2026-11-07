@@ -164,7 +164,7 @@ class AiChat(
         val now = clock()
         val timeLine = "现在是 ${now.year} 年 ${now.monthValue} 月 ${now.dayOfMonth} 日 " +
             "${now.hour} 点 ${String.format("%02d", now.minute)} 分（${weekday(now)}）。"
-        return listOf(cfg.systemPrompt, timeLine, AssistantMode.hint(), styleHint)
+        return listOf(cfg.systemPrompt, VOICE_INPUT_RULES, timeLine, AssistantMode.hint(), styleHint)
             .filter { it.isNotBlank() }
             .joinToString("\n")
     }
@@ -207,6 +207,19 @@ class AiChat(
      * 放在伴生对象里，单测可以直接调，不用先造一个假的 [AiTools]。
      */
     companion object {
+
+        /**
+         * 固定拼进 system 的「语音输入须知」。
+         *
+         * 和用户可改的人设分开写：这条是**功能正确性的前提**，不能被自定义人设挤掉。
+         * 语音识别一定会出错，错的最多的是同音字和断句；模型如果照着错字硬理解，
+         * 就会答非所问，用户感受到的就是「识别能力太差」。
+         */
+        private const val VOICE_INPUT_RULES =
+            "用户的话多半来自语音识别，可能带同音字、漏字或断句错误（例如「日立」其实是「日历」）。\n" +
+                "先把整句还原成最合理的意思，再决定做什么；不要因为个别字词不合理就说无法理解。\n" +
+                "一句话里如果有几件事，按顺序全部做完，最后用一句话总结结果。\n" +
+                "指代不清（「发给他」而他并不存在）时问一句，不要自己猜一个对象。"
 
         /** 起名失败时的兜底：直接用用户问的那句话，最多 24 个字 */
         fun fallbackTitle(firstUser: String): String {

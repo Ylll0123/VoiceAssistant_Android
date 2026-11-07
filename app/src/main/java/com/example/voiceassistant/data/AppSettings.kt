@@ -52,6 +52,22 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_WAKE, false)
         set(value) = prefs.edit().putBoolean(KEY_WAKE, value).apply()
 
+    // ---------------------------------------------------------------- 自动发消息
+
+    /**
+     * 发消息前是否跳过「确认吗？」这一问。
+     *
+     * 默认关：发消息是唯一会动到别人的操作，说错发错收不回来，
+     * 所以默认先复述一遍、等用户说「确认」。
+     *
+     * 打开之后，用户说「给妈妈发微信说我晚点到」就直接发出去，
+     * 全程不需要再说话、也不需要点任何按钮——这是用户显式授权的结果，
+     * 不是默认行为。
+     */
+    var msgAutoSend: Boolean
+        get() = prefs.getBoolean(KEY_MSG_AUTO_SEND, false)
+        set(value) = prefs.edit().putBoolean(KEY_MSG_AUTO_SEND, value).apply()
+
     // ---------------------------------------------------------------- 对话风格
 
     /** 回答详细程度：0 简洁 / 1 标准 / 2 详细 */
@@ -191,6 +207,7 @@ class AppSettings(context: Context) {
         private const val KEY_CONTINUOUS = "continuous"
         private const val KEY_TTS_ENGINE = "tts_engine"
         private const val KEY_WAKE = "wake_enabled"
+        private const val KEY_MSG_AUTO_SEND = "msg_auto_send"
         private const val KEY_STYLE = "reply_style"
         private const val KEY_FOLLOW_UP = "proactive_follow_up"
         private const val KEY_MODE = "assistant_mode"

@@ -130,6 +130,8 @@
     <string name="settings_speak_desc">답변을 읽어 줍니다. 끄면 텍스트만 표시</string>
     <string name="settings_wake">호출어</string>
     <string name="settings_access">메시지 자동 전송</string>
+    <string name="settings_msg_auto">확인 없이 전송</string>
+    <string name="settings_msg_auto_on_toast">알겠습니다. 이제 말한 내용을 바로 전송합니다.</string>
     <string name="settings_access_failed">접근성 설정을 열 수 없습니다. 시스템 설정에서 열어 주세요</string>
 
     <string name="wake_channel_name">호출어</string>

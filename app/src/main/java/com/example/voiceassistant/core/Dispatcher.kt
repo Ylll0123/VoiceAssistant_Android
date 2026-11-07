@@ -107,8 +107,10 @@ class Dispatcher(
             }
         }
 
-        // ② 本地能认领的指令，一律不碰网络
-        val hit = LocalNlu.route(input, now(), appMatcher)
+        // ② 本地能认领的指令，一律不碰网络。
+        //    在线时用「整句模式」：复合句、长句交给大模型通读，
+        //    不让一条只认识关键词的规则把后半句吞掉；离线时放宽，保证本机能力可用。
+        val hit = LocalNlu.route(input, now(), appMatcher, strict = online)
         if (hit != null) {
             return runLocal(hit.service, hit.args)
         }
