@@ -148,4 +148,15 @@
     <string name="settings_wake_beep">呼びかけに応答音</string>
     <string name="settings_battery">バックグラウンド維持設定</string>
     <string name="settings_battery_failed">バッテリー設定を開けませんでした。システム設定から開いてください。</string>
+    <string name="settings_wake_engine">ウェイクエンジン</string>
+    <string name="settings_wake_engine_system">システム認識</string>
+    <string name="settings_wake_engine_ifly">iFlytek オフライン起動</string>
+    <string name="settings_ifly_title">iFlytek オフライン起動</string>
+    <string name="settings_ifly_hint">iFlytek コンソールでアプリを作り、オフライン起動サービスから AppID / APIKey / APISecret を取得してください。起動語はリソースと一致する必要があります。しきい値は 0〜3000、小さいほど敏感（既定 1450）。</string>
+    <string name="settings_ifly_appid_hint">AppID</string>
+    <string name="settings_ifly_key_hint">APIKey</string>
+    <string name="settings_ifly_secret_hint">APISecret</string>
+    <string name="settings_ifly_threshold_hint">しきい値（既定 1450、小さいほど敏感）</string>
+    <string name="settings_ifly_need_all">3 項目すべて入力してください。</string>
+    <string name="settings_ifly_saved">保存しました。起動サービスを再起動します。</string>
 </resources>

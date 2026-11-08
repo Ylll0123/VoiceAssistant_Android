@@ -3,6 +3,7 @@ package com.example.voiceassistant.im
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 
 /** 能自动发消息的平台 */
@@ -83,11 +84,31 @@ class ImAutomator(
         data class Failed(val message: String) : Outcome()
     }
 
-    /** 「把界面铺好、字填进去」的结果 */
+    /**
+     * 「把界面铺好、字填进去」的结果。
+     *
+     * [verified] 指**真的从输入框里读回了这段文字**。以前只要能调用成功就算填好了，
+     * 遇到读不到内容的控件就会「其实没填上，却回一句已填好」——用户看到的是
+     * 「说已经发了，实际什么都没发生」。现在读不回来就如实说读不到。
+     */
     private sealed class Filled {
-        data class Ok(val matched: String, val input: AccessibilityNodeInfo?) : Filled()
-        data class Error(val reason: String) : Filled()
+        data class Ok(
+            val matched: String,
+            val input: AccessibilityNodeInfo?,
+            val verified: Boolean = true
+        ) : Filled()
+
+        data class Error(val reason: String, val kind: Fail = Fail.PAGE) : Filled()
     }
+
+    /**
+     * 失败发生在哪一层。
+     *
+     * 这一层决定「还能不能降级到系统分享」：
+     * - 找不到人：分享也没用，而且很容易发错人，只能如实说没找到；
+     * - 界面没走通 / 字没填进去：内容还有价值，可以丢进分享页让用户自己选人。
+     */
+    private enum class Fail { CONTACT, PAGE, FILL }
 
     // ------------------------------------------------------------------ 能力检查
 
@@ -144,6 +165,7 @@ class ImAutomator(
 
         val blocked = autoBlocked()
         if (blocked != null) {
+            Log.i(TAG, "deliver: 无障碍不可用（$blocked），改走系统分享")
             return if (openShare(platform, content)) {
                 Outcome.Done(
                     "已经把内容带到${platform.label}了，选一下「$to」再点发送就好。" +
@@ -155,14 +177,37 @@ class ImAutomator(
         }
 
         val filled = openChatAndFill(platform, to, content)
+        Log.i(
+            TAG,
+            "deliver: " + when (filled) {
+                is Filled.Ok -> "填好了 matched=${filled.matched} verified=${filled.verified}"
+                is Filled.Error -> "失败(${filled.kind}) ${filled.reason}"
+            }
+        )
         return when (filled) {
-            is Filled.Ok -> Outcome.Done(
-                "已经在${platform.label}里给「${filled.matched}」填好了，点一下发送就行。"
-            )
+            is Filled.Ok -> if (filled.verified) {
+                Outcome.Done(
+                    "已经在${platform.label}里给「${filled.matched}」填好了，点一下发送就行。"
+                )
+            } else {
+                // 读不到输入框内容：不能替用户拍板说填好了，更不能说发出去了
+                Outcome.Done(
+                    "已经打开${platform.label}里「${filled.matched}」的聊天页，也把内容填进去了，" +
+                        "但读不到输入框里的字，你低头看一眼再点发送。"
+                )
+            }
 
             is Filled.Error -> {
-                // 自动填字没成：能分享就把内容带过去，至少不让用户白说一遍
-                if (openShare(platform, content)) {
+                /*
+                 * 找不到人时**不走分享**。
+                 *
+                 * 那时候分享页里根本选不出这个人，用户很可能顺手点了别人——
+                 * 一条消息就发错了。这种「办不到」必须直说。
+                 */
+                if (filled.kind == Fail.CONTACT) {
+                    Outcome.Failed(filled.reason)
+                } else if (openShare(platform, content)) {
+                    // 自动填字没成：能分享就把内容带过去，至少不让用户白说一遍
                     Outcome.Done(
                         "没能自己填进去（${filled.reason}），已经把内容带到${platform.label}了，" +
                             "选「$to」再点发送就好。"
@@ -190,11 +235,31 @@ class ImAutomator(
     private fun openChatAndFill(platform: ImPlatform, to: String, content: String): Filled {
         if (!launch(platform)) return Filled.Error("打不开${platform.label}")
         if (!waitForApp(platform, LAUNCH_TIMEOUT_MS)) {
-            return Filled.Error("${platform.label}没打开，可能被系统拦了")
+            // 有些 ROM 第一次拉起只是把任务提到后台，再试一次通常就上来了
+            launch(platform)
+            if (!waitForApp(platform, 2_500)) {
+                return Filled.Error("${platform.label}没跳出来，系统可能拦了后台跳转")
+            }
+        }
+
+        /*
+         * 0) 已经停在这个人的聊天页（上一轮填完、用户没退出）。
+         *
+         * 这一步是「第二次发送不跳转」的正面解法：不再依赖返回键把用户
+         * 从聊天页一路退回首页——那条路上任何一次返回没人接，就会把应用退出，
+         * 后面自然「没跳转、也没填字」。停在对的地方就直接填。
+         */
+        if (currentChatMatches(to)) {
+            Log.i(TAG, "already in chat with $to")
+            val input = waitChatInput(1_200) ?: return Filled.Error("没找到聊天输入框")
+            return fillContent(input, to, content)
         }
 
         // 1) 先回到首页：搜索入口只在首页。用户上次可能停在某个聊天里
         backToHome(platform)
+        if (driver.currentPackage() != platform.packageName) {
+            return Filled.Error("从${platform.label}里被弹出来了")
+        }
 
         // 2) 首页上直接点会话进聊天。
         //    比「搜索 → 等联想 → 点第一条」少两次跳页，也避开搜索框那个坑：
@@ -206,17 +271,22 @@ class ImAutomator(
                     node.text?.toString()?.trim() == to &&
                     (driver.bounds(node)?.top ?: 0) >= homeBottom - 8
             }
-            if (exact != null && enterChat(platform, to, exact) != null) {
-                val chatInput = waitChatInput(1_200) ?: return Filled.Error("没进到聊天页")
-                return fillContent(chatInput, to, content)
+            if (exact != null) {
+                val entered = enterChat(platform, to, exact)
+                if (entered != null) return fillContent(entered, to, content)
+                Log.i(TAG, "首页同名会话点不进去，改走搜索")
             }
         }
 
+        // 3) 搜索：首页 → 点搜索入口 → 填名字
         val searchEntry = searchEntry(SEARCH_TIMEOUT_MS)
             ?: return Filled.Error("没找到${platform.label}的搜索入口")
-        if (!driver.click(searchEntry)) return Filled.Error("搜索框点不开")
+        if (!driver.click(searchEntry)) {
+            val rect = driver.bounds(searchEntry)
+            if (rect == null) return Filled.Error("搜索入口点不开")
+            driver.tap(rect.exactCenterX(), rect.exactCenterY())
+        }
 
-        // 3) 在搜索框里填联系人名字（只认上半屏的输入框）
         val searchBox = findSearchBox(3_000)
             ?: return Filled.Error("搜索框没弹出来")
         if (!driver.fillText(searchBox, to)) {
@@ -231,7 +301,7 @@ class ImAutomator(
         // 4) 点开联系人：完全同名优先，且排除「搜索 xxx」这类网络搜索行
         val searchBottom = driver.bounds(searchBox)?.bottom ?: 0
         val contact = findContact(to, searchBottom)
-            ?: return Filled.Error("搜索结果里没有叫「$to」的联系人")
+            ?: return Filled.Error("搜索结果里没有叫「$to」的联系人", Fail.CONTACT)
         val matched = runCatching { contact.text?.toString()?.trim().orEmpty() }
             .getOrDefault("")
             .ifEmpty { to }
@@ -248,24 +318,44 @@ class ImAutomator(
      *
      * `ACTION_SET_TEXT` 被自定义输入框忽略时（微信部分版本会这样），
      * 改走剪贴板粘贴——两条路都失败才报错，而不是直接掉到分享页。
+     *
+     * **最后一定要读回来**：写进去和真写进去是两件事。读不到就不敢说「填好了」，
+     * 更不能说「已发送」——那正是用户反馈的「没发出去还说发了」。
      */
     private fun fillContent(inputBox: AccessibilityNodeInfo, matched: String, content: String): Filled {
+        // 上一轮填过、用户没发的话，这里会累加成「我晚点到我晚点到」，先清空
+        if (driver.actualText(inputBox).trim().isNotEmpty()) {
+            driver.fillText(inputBox, "")
+            Thread.sleep(150)
+        }
+
         var filled = driver.fillText(inputBox, content)
         if (!filled) {
             driver.click(inputBox)
             Thread.sleep(350)
             filled = driver.fillText(inputBox, content)
         }
-        if (!filled) return Filled.Error("字填不进去")
+        if (!filled) return Filled.Error("字填不进去", Fail.FILL)
 
-        Thread.sleep(250)
-        // 用 actualText 而不是 node.text：空框时后者返回的是 hint，会比出「不一样」再写一遍
-        val actual = driver.actualText(inputBox)
-        if (actual.isNotBlank() && actual.trim() != content.trim()) {
-            driver.fillText(inputBox, content)
-            Thread.sleep(250)
+        // 读回来核对：读到就核对，读不到就不敢说自己填好了
+        repeat(4) { attempt ->
+            Thread.sleep(200)
+            val now = driver.actualText(inputBox).trim()
+            if (now == content.trim()) return Filled.Ok(matched, inputBox, verified = true)
+            if (now.isNotEmpty() && now != content.trim() && attempt >= 1) {
+                // 内容不对：再写一遍，别把上一次的残留留在框里
+                driver.fillText(inputBox, content)
+            }
         }
-        return Filled.Ok(matched, inputBox)
+
+        val now = driver.actualText(inputBox).trim()
+        return if (now.isEmpty()) {
+            Filled.Ok(matched, inputBox, verified = false)
+        } else if (now == content.trim()) {
+            Filled.Ok(matched, inputBox, verified = true)
+        } else {
+            Filled.Error("输入框里是「$now」，和要发的不一样", Fail.FILL)
+        }
     }
 
     // ------------------------------------------------------------------ 页面判定
@@ -306,11 +396,17 @@ class ImAutomator(
         // 跑到别的应用了就别再折腾
         if (driver.currentPackage() != platform.packageName) return null
 
-        // 退回搜索页，重新搜一遍再点
-        driver.back()
-        Thread.sleep(500)
-        val box = findSearchBox(1_500) ?: return null
-        driver.setText(box, to)
+        // 退回搜索页重搜。
+        // 注意：**首页上不能按返回**——那一下会把整个应用退掉，后面就成「没跳转」了。
+        if (!atHome()) {
+            driver.back()
+            Thread.sleep(500)
+            if (driver.currentPackage() != platform.packageName) return null
+        }
+        val entry = searchEntry(1_200) ?: return null
+        if (!driver.click(entry)) tapOrClick(entry)
+        val box = findSearchBox(2_000) ?: return null
+        driver.fillText(box, to)
         Thread.sleep(1_000)
         tapOrClick(findContact(to, driver.bounds(box)?.bottom ?: 0) ?: return null)
         return waitChatInput(2_500)
@@ -321,6 +417,28 @@ class ImAutomator(
         val rect = driver.bounds(node)
         if (rect != null) driver.tap(rect.exactCenterX(), rect.exactCenterY())
         else driver.click(node)
+    }
+
+    /**
+     * 现在是不是已经停在「和 [to] 的聊天页」。
+     *
+     * 判据：底部有聊天输入框、顶上有一条文字刚好是这个名字的标题。
+     * 两个都要有——群里也可能出现同名，光看标题会误判；只有输入框又不知道是谁。
+     *
+     * 有了这条，第二次发消息就不用「返回 → 首页 → 再点一次」：
+     * 那条路上任何一步没人接，用户看到的都是「没跳转」。
+     */
+    private fun currentChatMatches(to: String): Boolean {
+        if (driver.currentPackage().isNullOrEmpty()) return false
+        waitChatInput(800) ?: return false
+        val screen = driver.screenHeight()
+        if (screen <= 0) return false
+        val titleLimit = screen * TITLE_FRACTION
+        return driver.findAll { node ->
+            node.isVisibleToUser &&
+                node.text?.toString()?.trim() == to &&
+                (driver.bounds(node)?.centerY() ?: Int.MAX_VALUE) < titleLimit
+        }.isNotEmpty()
     }
 
     /**
@@ -434,15 +552,37 @@ class ImAutomator(
      */
     private fun backToHome(platform: ImPlatform) {
         if (atHome()) return
+
+        /*
+         * 先按底部 tab（微信 / 消息），不要一上来就按返回。
+         *
+         * 返回键在「我」这种 tab 页上不是回列表，而是**把整个应用退掉**——
+         * 用户看到的就是「第二次没跳转」。tab 一直在底部，点它比猜返回栈稳。
+         */
+        val screen = driver.screenHeight()
+        if (screen > 0) {
+            val labels = if (platform == ImPlatform.QQ) listOf("消息") else listOf("微信")
+            for (label in labels) {
+                val tab = driver.findAll { node ->
+                    node.isVisibleToUser &&
+                        node.text?.toString()?.trim() == label &&
+                        (driver.bounds(node)?.centerY() ?: 0) > screen * TAB_FRACTION
+                }.firstOrNull()
+                if (tab != null) {
+                    tapOrClick(tab)
+                    Thread.sleep(600)
+                    if (atHome()) return
+                }
+            }
+        }
+
+        // 再按返回：只在「页面上确实有输入框」（聊天页/搜索页）时按，避免退出应用
         repeat(2) {
             if (driver.currentPackage() != platform.packageName) return
+            if (driver.findEditable(0) == null) return
             driver.back()
             Thread.sleep(500)
             if (atHome()) return
-        }
-        if (driver.currentPackage() != platform.packageName) {
-            launch(platform)
-            waitForApp(platform, 4_000)
         }
     }
 
@@ -465,27 +605,43 @@ class ImAutomator(
      * 只在**没开无障碍**或自动填字失败时用。不需要任何权限，也不怕对方改版，
      * 代价是最后一步要人点——反正发送键本来也留给用户。
      */
-    private fun openShare(platform: ImPlatform, content: String): Boolean = runCatching {
-        val base = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, content)
-            // 部分 QQ 版本读 subject，两个都塞一份，保险
-            putExtra(Intent.EXTRA_SUBJECT, content)
-        }
-        val targeted = Intent(base).apply {
-            setPackage(platform.packageName)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        val intent = if (targeted.resolveActivity(context.packageManager) != null) {
-            targeted
-        } else {
-            Intent.createChooser(base, "发送给").apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    private fun openShare(platform: ImPlatform, content: String): Boolean {
+        val started = runCatching {
+            val base = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, content)
+                // 部分 QQ 版本读 subject，两个都塞一份，保险
+                putExtra(Intent.EXTRA_SUBJECT, content)
             }
-        }
-        context.startActivity(intent)
-        true
-    }.getOrDefault(false)
+            val targeted = Intent(base).apply {
+                setPackage(platform.packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            val intent = if (targeted.resolveActivity(context.packageManager) != null) {
+                targeted
+            } else {
+                Intent.createChooser(base, "发送给").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
+
+        if (!started) return false
+
+        // 没有读屏能力就只能相信系统；有的话一定要看见界面真的换了再算成功。
+        // 后台被系统拦住时 startActivity 不会报错，界面却没动——那时说「已经带过去了」就是骗人。
+        if (!driver.available()) return true
+        val deadline = System.currentTimeMillis() + SHARE_TIMEOUT_MS
+        do {
+            val pkg = driver.currentPackage()
+            if (pkg != null && pkg != context.packageName) return true
+            Thread.sleep(250)
+        } while (System.currentTimeMillis() < deadline)
+        Log.w(TAG, "openShare: 分享页没起来（后台启动可能被系统拦了）")
+        return false
+    }
 
     // ------------------------------------------------------------------ 内部
 
@@ -525,5 +681,16 @@ class ImAutomator(
 
         /** 点完联系人后，等聊天页出现的时间 */
         const val CHAT_ENTER_TIMEOUT_MS = 3_000L
+
+        /** 分享页起来的等待时间：超过了就当没跳过去 */
+        const val SHARE_TIMEOUT_MS = 3_000L
+
+        /** 聊天页标题只在屏幕最上面这一条里找（占全屏高度的比例） */
+        const val TITLE_FRACTION = 0.16f
+
+        /** 底部 tab 栏的位置（占全屏高度的比例） */
+        const val TAB_FRACTION = 0.78f
+
+        private const val TAG = "ImFlow"
     }
 }

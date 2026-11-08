@@ -69,6 +69,43 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_WAKE_BEEP, true)
         set(value) = prefs.edit().putBoolean(KEY_WAKE_BEEP, value).apply()
 
+    // ---------------------------------------------------------------- 讯飞离线唤醒
+
+    /**
+     * 唤醒引擎：`system`（系统语音识别循环）或 `ifly`（讯飞 AIUI 离线唤醒）。
+     *
+     * 默认 system：讯飞那套必须先在开放平台建应用、拿三件套、训练唤醒词，
+     * 一装上就默认走它只会得到「什么都叫不醒」。用户配好了再切过来。
+     */
+    var wakeEngine: String
+        get() = prefs.getString(KEY_WAKE_ENGINE, ENGINE_SYSTEM).orEmpty().ifEmpty { ENGINE_SYSTEM }
+        set(value) = prefs.edit().putString(KEY_WAKE_ENGINE, value).apply()
+
+    var iflyAppId: String
+        get() = prefs.getString(KEY_IFLY_APPID, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_IFLY_APPID, value.trim()).apply()
+
+    var iflyApiKey: String
+        get() = prefs.getString(KEY_IFLY_KEY, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_IFLY_KEY, value.trim()).apply()
+
+    var iflyApiSecret: String
+        get() = prefs.getString(KEY_IFLY_SECRET, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_IFLY_SECRET, value.trim()).apply()
+
+    /**
+     * 唤醒阈值，范围 0~3000，**越小越灵敏**。
+     *
+     * 讯飞默认 1450：安静室内可以往下压到 1100，嘈杂环境抬到 1800~2100。
+     */
+    var iflyThreshold: Int
+        get() = prefs.getInt(KEY_IFLY_THRESHOLD, 1450)
+        set(value) = prefs.edit().putInt(KEY_IFLY_THRESHOLD, value.coerceIn(0, 3000)).apply()
+
+    /** 三件套填全了才能尝试启讯飞引擎 */
+    fun iflyReady(): Boolean =
+        iflyAppId.isNotEmpty() && iflyApiKey.isNotEmpty() && iflyApiSecret.isNotEmpty()
+
     // ---------------------------------------------------------------- 对话风格
 
     /** 回答详细程度：0 简洁 / 1 标准 / 2 详细 */
@@ -210,6 +247,11 @@ class AppSettings(context: Context) {
         private const val KEY_WAKE = "wake_enabled"
         private const val KEY_WAKE_SENS = "wake_sensitivity"
         private const val KEY_WAKE_BEEP = "wake_beep"
+        private const val KEY_WAKE_ENGINE = "wake_engine"
+        private const val KEY_IFLY_APPID = "ifly_appid"
+        private const val KEY_IFLY_KEY = "ifly_key"
+        private const val KEY_IFLY_SECRET = "ifly_secret"
+        private const val KEY_IFLY_THRESHOLD = "ifly_threshold"
         private const val KEY_STYLE = "reply_style"
         private const val KEY_FOLLOW_UP = "proactive_follow_up"
         private const val KEY_MODE = "assistant_mode"
@@ -227,6 +269,10 @@ class AppSettings(context: Context) {
 
         /** 默认界面语言：中文 */
         const val LANGUAGE_ZH = "zh"
+
+        /** 唤醒引擎：系统识别 / 讯飞离线 */
+        const val ENGINE_SYSTEM = "system"
+        const val ENGINE_IFLY = "ifly"
 
         /**
          * 只读语言标签。

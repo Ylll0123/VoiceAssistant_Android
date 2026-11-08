@@ -207,6 +207,45 @@
                 android:layout_height="wrap_content" />
         </LinearLayout>
 
+        <!-- 唤醒引擎：系统识别 / 讯飞离线唤醒 -->
+        <LinearLayout
+            android:id="@+id/rowWakeEngine"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/bg_card"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="14dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/settings_wake_engine"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/tvWakeEngineValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp" />
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="6dp"
+                android:contentDescription="@string/settings_wake_engine"
+                android:rotation="-90"
+                android:src="@drawable/ic_chevron_down"
+                app:tint="@color/text_secondary" />
+        </LinearLayout>
+
         <!-- 后台保活引导：国产 ROM 会把常驻服务掐掉，表现就是「叫不醒」 -->
         <LinearLayout
             android:id="@+id/rowBattery"

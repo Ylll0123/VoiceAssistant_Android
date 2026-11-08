@@ -177,6 +177,23 @@ object WakeConfig {
     @Volatile
     var beepEnabled: Boolean = true
 
+    /**
+     * 现在实际在跑的引擎：`system` 或 `ifly`。
+     *
+     * 用户选的是「想用哪个」，这里是「真在跑哪个」——两者可能不一样：
+     * 讯飞引擎鉴权失败时会自动退回系统识别，状态必须如实反映，
+     * 否则又是一个「开关亮着、其实没在听」。
+     */
+    @Volatile
+    var engine: String = "system"
+
+    /**
+     * 没按用户选的引擎跑时，把原因留在这里（给 `kws/status` 用）。
+     * 例：`这个 appid 没开通「离线唤醒」（11209）…`
+     */
+    @Volatile
+    var engineNote: String = ""
+
     /** 最近一次命中的时间戳，界面据此显示「刚被叫醒」 */
     @Volatile
     var lastWakeAt: Long = 0L

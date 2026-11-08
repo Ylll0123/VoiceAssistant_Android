@@ -37,6 +37,7 @@ class SettingsFragment : Fragment() {
     private lateinit var switchWake: MaterialSwitch
     private lateinit var switchWakeBeep: MaterialSwitch
     private lateinit var tvWakeSensValue: TextView
+    private lateinit var tvWakeEngineValue: TextView
     private lateinit var tvLanguageValue: TextView
     private lateinit var tvModelValue: TextView
     private lateinit var tvAccount: TextView
@@ -59,6 +60,7 @@ class SettingsFragment : Fragment() {
         switchWake = view.findViewById(R.id.switchWake)
         switchWakeBeep = view.findViewById(R.id.switchWakeBeep)
         tvWakeSensValue = view.findViewById(R.id.tvWakeSensitivityValue)
+        tvWakeEngineValue = view.findViewById(R.id.tvWakeEngineValue)
         tvLanguageValue = view.findViewById(R.id.tvLanguageValue)
         tvModelValue = view.findViewById(R.id.tvModelValue)
         tvAccount = view.findViewById(R.id.tvAccount)
@@ -135,9 +137,114 @@ class SettingsFragment : Fragment() {
             if (checked != host.isWakeBeep()) host.setWakeBeep(checked)
         }
 
+        tvWakeEngineValue.text = engineLabel()
+        requireView().findViewById<View>(R.id.rowWakeEngine).setOnClickListener {
+            showEnginePicker()
+        }
+
         requireView().findViewById<View>(R.id.rowBattery).setOnClickListener {
             host.openBatterySettings()
         }
+    }
+
+    // ------------------------------------------------------------------ 唤醒引擎
+
+    private fun engineLabel(): String =
+        if (host.wakeEngine() == AppSettings.ENGINE_IFLY) {
+            getString(R.string.settings_wake_engine_ifly)
+        } else {
+            getString(R.string.settings_wake_engine_system)
+        }
+
+    /**
+     * 选引擎。
+     *
+     * 讯飞那条路要三件套，所以选它时**直接接着弹配置**——
+     * 让用户先选完引擎、再自己去找配置入口，是最容易被放弃的流程。
+     */
+    private fun showEnginePicker() {
+        val labels = arrayOf(
+            getString(R.string.settings_wake_engine_system),
+            getString(R.string.settings_wake_engine_ifly)
+        )
+        val current = if (host.wakeEngine() == AppSettings.ENGINE_IFLY) 1 else 0
+        requireContext().appDialog()
+            .setTitle(R.string.settings_wake_engine)
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                dialog.dismiss()
+                if (which == 0) {
+                    host.setWakeEngine(AppSettings.ENGINE_SYSTEM)
+                    tvWakeEngineValue.text = engineLabel()
+                } else {
+                    showIflyEditor()
+                }
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .showWhite()
+    }
+
+    /** 讯飞三件套 + 阈值。用代码搭界面，跟「AI 模型」那页同一套做法。 */
+    private fun showIflyEditor() {
+        val context = requireContext()
+        val pad = dp(20)
+
+        fun field(value: String, hint: String, secret: Boolean = false): EditText =
+            EditText(context).apply {
+                setText(value)
+                this.hint = hint
+                setSingleLine()
+                textSize = 14f
+                inputType = if (secret) {
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                } else {
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                }
+            }
+
+        val inputAppId = field(host.iflyAppId(), getString(R.string.settings_ifly_appid_hint))
+        val inputKey = field(host.iflyApiKey(), getString(R.string.settings_ifly_key_hint), true)
+        val inputSecret = field(
+            host.iflyApiSecret(),
+            getString(R.string.settings_ifly_secret_hint),
+            true
+        )
+        val inputThreshold = field(
+            host.iflyThreshold().toString(),
+            getString(R.string.settings_ifly_threshold_hint)
+        ).apply { inputType = InputType.TYPE_CLASS_NUMBER }
+
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(inputAppId)
+            addView(inputKey)
+            addView(inputSecret)
+            addView(inputThreshold)
+        }
+
+        context.appDialog()
+            .setTitle(R.string.settings_ifly_title)
+            .setMessage(R.string.settings_ifly_hint)
+            .setView(container)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.action_save) { _, _ ->
+                val appId = inputAppId.text.toString().trim()
+                val key = inputKey.text.toString().trim()
+                val secret = inputSecret.text.toString().trim()
+                val threshold = inputThreshold.text.toString().trim().toIntOrNull() ?: 1450
+
+                if (appId.isEmpty() || key.isEmpty() || secret.isEmpty()) {
+                    // 缺一项都起不来：与其留一个看似配好的空壳，不如明确退回系统识别
+                    toast(getString(R.string.settings_ifly_need_all))
+                    host.setWakeEngine(AppSettings.ENGINE_SYSTEM)
+                } else {
+                    host.saveIflyConfig(appId, key, secret, threshold)
+                    host.setWakeEngine(AppSettings.ENGINE_IFLY)
+                    toast(getString(R.string.settings_ifly_saved))
+                }
+                tvWakeEngineValue.text = engineLabel()
+            }
+            .showWhite()
     }
 
     private fun showSensitivityPicker() {
@@ -414,6 +521,7 @@ class SettingsFragment : Fragment() {
         switchWake.isChecked = host.isWakeEnabled()
         tvWakeSensValue.text = sensitivityLabel(host.wakeSensitivity())
         switchWakeBeep.isChecked = host.isWakeBeep()
+        tvWakeEngineValue.text = engineLabel()
         tvAccount.text = AccountStore(requireContext()).currentUser.orEmpty()
         tvVersion.text = getString(R.string.settings_version, appVersionName())
         tvLanguageValue.text = languageLabel(host.appSettings().language)

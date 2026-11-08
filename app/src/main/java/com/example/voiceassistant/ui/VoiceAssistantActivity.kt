@@ -1125,6 +1125,44 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         applyWakeTuning()
     }
 
+    // ------------------------------------------------------------------ 讯飞离线唤醒
+
+    fun wakeEngine(): String = settings.wakeEngine
+
+    /**
+     * 换唤醒引擎。正在监听就**重启一次**服务——
+     * 引擎是在 onStartCommand 里选的，不重启等于没改。
+     */
+    fun setWakeEngine(engine: String) {
+        settings.wakeEngine = engine
+        restartWakeIfRunning()
+    }
+
+    fun iflyAppId(): String = settings.iflyAppId
+    fun iflyApiKey(): String = settings.iflyApiKey
+    fun iflyApiSecret(): String = settings.iflyApiSecret
+    fun iflyThreshold(): Int = settings.iflyThreshold
+
+    fun saveIflyConfig(appId: String, key: String, secret: String, threshold: Int) {
+        settings.iflyAppId = appId
+        settings.iflyApiKey = key
+        settings.iflyApiSecret = secret
+        settings.iflyThreshold = threshold
+        restartWakeIfRunning()
+    }
+
+    private fun restartWakeIfRunning() {
+        if (!settings.wakeEnabled) return
+        bus.call("kws/stop")
+        // 停服务是异步的，立刻再起会和 onDestroy 抢麦克风，留一格
+        main.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            val reply = bus.call("kws/start")
+            if (!reply.ok) settings.wakeEnabled = false
+            toast(reply.speech)
+        }, 450)
+    }
+
     private fun wakeSensitivityLabel(level: Int): String = when (level) {
         0 -> getString(R.string.settings_wake_sens_low)
         2 -> getString(R.string.settings_wake_sens_high)

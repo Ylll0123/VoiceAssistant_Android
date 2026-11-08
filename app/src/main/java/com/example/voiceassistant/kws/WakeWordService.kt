@@ -22,6 +22,7 @@ import android.util.Log
 import com.example.voiceassistant.R
 import com.example.voiceassistant.bus.AssistantBus
 import com.example.voiceassistant.bus.Event
+import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.network.NetworkState
 import com.example.voiceassistant.ui.VoiceAssistantActivity
 
@@ -75,6 +76,12 @@ class WakeWordService : Service() {
     /** 会话窗口结束时间；> now 表示现在不用听唤醒词 */
     private var sessionUntil = 0L
 
+    /** 讯飞离线唤醒引擎；没启用时为 null */
+    private var ifly: IflyWakeEngine? = null
+
+    /** 现在跑的是不是讯飞引擎（决定麦克风归谁、循环要不要转） */
+    private var engineIsIfly = false
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -87,12 +94,13 @@ class WakeWordService : Service() {
          * 「设置显示高灵敏、实际按默认在跑」这种查不出来的错位。
          */
         runCatching {
-            val saved = com.example.voiceassistant.data.AppSettings(this)
-            WakeConfig.sensitivity = com.example.voiceassistant.kws.WakeWord
-                .sensitivityOfLevel(saved.wakeSensitivity)
+            val saved = readSettings() ?: return@runCatching
+            WakeConfig.sensitivity = WakeWord.sensitivityOfLevel(saved.wakeSensitivity)
             WakeConfig.beepEnabled = saved.wakeBeep
         }
     }
+
+    private fun readSettings(): AppSettings? = runCatching { AppSettings(this) }.getOrNull()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         /*
@@ -105,13 +113,28 @@ class WakeWordService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+
+        val saved = readSettings()
+        paused = false
+        WakeConfig.enabled = true
+
+        // 用户选了讯飞离线唤醒，并且三件套填全了：走那条路
+        if (saved != null && saved.wakeEngine == AppSettings.ENGINE_IFLY) {
+            if (startIfly()) return START_STICKY
+            WakeConfig.engineNote = if (saved.iflyReady()) {
+                "讯飞引擎没起来，先退回系统识别"
+            } else {
+                "讯飞的 appid / apiKey / apiSecret 没填全，先用系统识别"
+            }
+            Log.w(TAG, WakeConfig.engineNote)
+        }
+
+        WakeConfig.engine = AppSettings.ENGINE_SYSTEM
         if (!ensureRecognizer()) {
             WakeConfig.enabled = false
             stopSelf()
             return START_NOT_STICKY
         }
-        WakeConfig.enabled = true
-        paused = false
         scheduleLoop(0)
         return START_STICKY
     }
@@ -122,10 +145,87 @@ class WakeWordService : Service() {
         WakeConfig.enabled = false
         instance = null
         main.removeCallbacksAndMessages(null)
+        runCatching { ifly?.release() }
+        ifly = null
+        engineIsIfly = false
         runCatching { recognizer?.destroy() }
         recognizer = null
         listening = false
         super.onDestroy()
+    }
+
+    // ------------------------------------------------------------------ 讯飞离线唤醒
+
+    /**
+     * 启讯飞引擎。成功返回 true；失败时上层自动退回系统识别。
+     *
+     * 注意 `start()` 只代表**引擎对象建好了**：鉴权是异步的，
+     * 结果在 [iflyEvents] 的 `onError` 里回来（11209 / 11210 这类）。
+     */
+    private fun startIfly(): Boolean {
+        if (ifly != null) return true
+        val engine = IflyWakeEngine(applicationContext, iflyEvents)
+        if (!engine.start()) {
+            engine.release()
+            return false
+        }
+        ifly = engine
+        engineIsIfly = true
+        WakeConfig.engine = AppSettings.ENGINE_IFLY
+        WakeConfig.engineNote = ""
+        Log.i(TAG, "讯飞离线唤醒已启动")
+        return true
+    }
+
+    private val iflyEvents = object : IflyWakeEngine.Listener {
+
+        override fun onWake(score: Int) {
+            main.post {
+                if (!engineIsIfly) return@post
+                Log.i(TAG, "讯飞唤醒命中，score=$score")
+                onWake(WakeConfig.wakeWord)
+            }
+        }
+
+        override fun onError(code: Int, message: String) {
+            main.post {
+                lastError = code
+                lastErrorAt = System.currentTimeMillis()
+                Log.w(TAG, "讯飞唤醒错误 $code：$message")
+                if (IflyWakeEngine.isFatal(code)) {
+                    // 鉴权/授权/缺少资源：代码救不了，退回系统识别，别让开关空转
+                    fallBackToSystem(message)
+                } else {
+                    WakeConfig.engineNote = message
+                }
+            }
+        }
+
+        override fun onReady() {
+            main.post {
+                if (engineIsIfly) WakeConfig.engineNote = ""
+            }
+        }
+    }
+
+    /** 讯飞这条路走不通：拆掉它，接着跑系统识别 */
+    private fun fallBackToSystem(note: String) {
+        if (!engineIsIfly) return
+        Log.w(TAG, "讯飞唤醒不可用，退回系统识别：$note")
+        engineIsIfly = false
+        WakeConfig.engine = AppSettings.ENGINE_SYSTEM
+        WakeConfig.engineNote = note
+        runCatching { ifly?.release() }
+        ifly = null
+
+        if (!ensureRecognizer()) {
+            Log.w(TAG, "系统识别也起不来，唤醒停止")
+            WakeConfig.enabled = false
+            stopSelf()
+            return
+        }
+        paused = false
+        scheduleLoop(0)
     }
 
     // ------------------------------------------------------------------ 对外控制
@@ -133,6 +233,10 @@ class WakeWordService : Service() {
     /** 让位给真正的语音输入：暂停监听 */
     fun pause() {
         paused = true
+        if (engineIsIfly) {
+            ifly?.pause()
+            return
+        }
         stopListening()
         main.removeCallbacks(loop)
     }
@@ -147,6 +251,10 @@ class WakeWordService : Service() {
         if (!WakeConfig.enabled) return
         if (!paused) return
         paused = false
+        if (engineIsIfly) {
+            ifly?.resume()
+            return
+        }
         // 留 400ms：上一轮 cancel 之后系统还没把麦克风还回来，
         // 立刻 startListening 十有八九是 ERROR_RECOGNIZER_BUSY
         scheduleLoop(RESUME_DELAY_MS)
@@ -161,6 +269,8 @@ class WakeWordService : Service() {
 
     private val loop: Runnable = Runnable {
         if (!WakeConfig.enabled) return@Runnable
+        // 讯飞引擎自己在听，不要再用系统识别抢麦克风
+        if (engineIsIfly) return@Runnable
 
         /*
          * 暂停时**不要退出循环**，而是隔一秒再看。
@@ -393,8 +503,17 @@ class WakeWordService : Service() {
         }
 
         // 麦克风让给对话链路，窗口结束后自己回来
-        main.removeCallbacks(loop)
-        main.postDelayed(loop, WakeConfig.sessionMs + 500)
+        if (engineIsIfly) {
+            WakeConfig.lastHeard = "（讯飞离线唤醒命中）"
+            WakeConfig.lastHeardAt = now
+            ifly?.pause()
+            main.postDelayed({
+                if (engineIsIfly && !paused) ifly?.resume()
+            }, WakeConfig.sessionMs + 500)
+        } else {
+            main.removeCallbacks(loop)
+            main.postDelayed(loop, WakeConfig.sessionMs + 500)
+        }
     }
 
     /** 界面不在时，用一条通知告诉用户「我听见了」 */

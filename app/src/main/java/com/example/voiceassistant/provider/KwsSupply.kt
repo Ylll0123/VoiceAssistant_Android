@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import com.example.voiceassistant.bus.BusArgs
 import com.example.voiceassistant.bus.BusReply
 import com.example.voiceassistant.bus.Supply
+import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.kws.WakeConfig
 import com.example.voiceassistant.kws.WakeWord
 import com.example.voiceassistant.kws.WakeWordService
@@ -48,9 +49,16 @@ class KwsSupply(private val context: Context) {
             ) {
                 return BusReply.fail("没有录音权限，叫不醒我。先去系统设置里给一下。")
             }
-            // 有些机型（尤其精简 ROM）根本没有语音识别服务，起服务也白起。
-            // 这里先判掉，免得开关亮着、实际上什么都听不到。
-            if (!runCatching { SpeechRecognizer.isRecognitionAvailable(app) }.getOrDefault(false)) {
+            /*
+             * 走讯飞离线唤醒时**不要求系统识别服务**：
+             * 那条链路自己是「录音 → VAD → 唤醒」，和手机有没有识别服务没关系。
+             * 以前一刀切地判系统识别，装了讯飞的机器也会被这句话挡在门外。
+             */
+            val settings = AppSettings(app)
+            val wantIfly = settings.wakeEngine == AppSettings.ENGINE_IFLY && settings.iflyReady()
+            if (!wantIfly &&
+                !runCatching { SpeechRecognizer.isRecognitionAvailable(app) }.getOrDefault(false)
+            ) {
                 return BusReply.fail("这台设备没有可用的语音识别服务，唤醒词用不了。")
             }
             args.str("wake_word")?.let { WakeConfig.wakeWord = it.trim() }
@@ -104,6 +112,20 @@ class KwsSupply(private val context: Context) {
             points += if (WakeConfig.enabled) "监听开关是开的" else "监听开关是关的"
             points += if (WakeWordService.instance != null) "监听服务在跑" else "监听服务没起来"
 
+            /*
+             * 先说清「现在到底跑的是哪套引擎」。
+             *
+             * 用户可能选了讯飞、但鉴权失败自动退回了系统识别——不说这件事，
+             * 他看到的现象和「选了系统识别」完全一样，就会以为设置没生效。
+             */
+            points += if (WakeConfig.engine == AppSettings.ENGINE_IFLY) {
+                "引擎是讯飞离线唤醒"
+            } else {
+                "引擎是系统语音识别"
+            }
+            val engineNote = WakeConfig.engineNote.trim()
+            if (engineNote.isNotEmpty()) points += "引擎备注：$engineNote"
+
             val hasMic = ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
             points += if (hasMic) "有录音权限" else "没有录音权限"
@@ -130,6 +152,12 @@ class KwsSupply(private val context: Context) {
             val error = WakeWordService.lastError
             val suggestion = when {
                 !hasMic -> "去系统设置里给它录音权限，再把开关关一下重开。"
+
+                WakeConfig.engine == AppSettings.ENGINE_IFLY ->
+                    "讯飞离线唤醒在跑：叫「${WakeConfig.wakeWord}」就行。" +
+                        "叫不醒就去设置里把阈值往下调（数值越小越灵敏，1450 是默认）。" +
+                        "第一次启动要联网做一次鉴权。"
+
                 !hasEngine -> "这台手机没有语音识别服务，唤醒词用不了，只能点麦克风说话。"
                 !WakeConfig.enabled -> "把设置里的「语音唤醒」打开。"
                 WakeWordService.instance == null ->

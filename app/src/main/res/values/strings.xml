@@ -150,4 +150,16 @@
     <string name="settings_wake_beep">叫醒时响一声</string>
     <string name="settings_battery">后台保活设置</string>
     <string name="settings_battery_failed">打不开电池优化设置，去系统设置里手动找一下。</string>
+    <!-- 讯飞离线唤醒 -->
+    <string name="settings_wake_engine">唤醒引擎</string>
+    <string name="settings_wake_engine_system">系统识别（免配置）</string>
+    <string name="settings_wake_engine_ifly">讯飞离线唤醒</string>
+    <string name="settings_ifly_title">讯飞离线唤醒</string>
+    <string name="settings_ifly_hint">在讯飞开放平台建好应用，到「离线唤醒」里拿 AppID / APIKey / APISecret。唤醒词必须和资源包配套，换词要重新训练。阈值 0~3000，越小越灵敏（默认 1450）。</string>
+    <string name="settings_ifly_appid_hint">AppID</string>
+    <string name="settings_ifly_key_hint">APIKey</string>
+    <string name="settings_ifly_secret_hint">APISecret</string>
+    <string name="settings_ifly_threshold_hint">唤醒阈值（默认 1450，越小越灵敏）</string>
+    <string name="settings_ifly_need_all">三项都要填，少一项讯飞唤醒起不来。</string>
+    <string name="settings_ifly_saved">讯飞配置已保存，正在重启唤醒服务。</string>
 </resources>

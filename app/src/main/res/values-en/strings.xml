@@ -148,4 +148,15 @@
     <string name="settings_wake_beep">Beep when woken</string>
     <string name="settings_battery">Keep-alive settings</string>
     <string name="settings_battery_failed">Cannot open battery settings. Please find it in system settings.</string>
+    <string name="settings_wake_engine">Wake engine</string>
+    <string name="settings_wake_engine_system">System recognition</string>
+    <string name="settings_wake_engine_ifly">iFlytek offline wake</string>
+    <string name="settings_ifly_title">iFlytek offline wake</string>
+    <string name="settings_ifly_hint">Create an app on the iFlytek console and take AppID / APIKey / APISecret from the offline wake service. The wake word must match the resource bundle. Threshold 0–3000: lower is more sensitive (default 1450).</string>
+    <string name="settings_ifly_appid_hint">AppID</string>
+    <string name="settings_ifly_key_hint">APIKey</string>
+    <string name="settings_ifly_secret_hint">APISecret</string>
+    <string name="settings_ifly_threshold_hint">Threshold (default 1450, lower = more sensitive)</string>
+    <string name="settings_ifly_need_all">All three fields are required.</string>
+    <string name="settings_ifly_saved">Saved. Restarting the wake service.</string>
 </resources>
