@@ -128,8 +128,6 @@
     <string name="settings_speak_desc">回答时念出来，关掉就只看文字</string>
     <string name="settings_wake">语音唤醒</string>
     <string name="settings_access">自动发消息权限</string>
-    <string name="settings_msg_auto">发送前免确认</string>
-    <string name="settings_msg_auto_on_toast">好，以后说完就直接发出去。</string>
     <string name="settings_access_failed">打不开无障碍设置，到系统设置里找一下「无障碍」</string>
 
     <!-- 唤醒词 -->
@@ -143,23 +141,13 @@
     <string name="accessibility_description">把「给谁发什么」这类语音指令变成实际操作：打开微信/QQ、搜索联系人、把内容填进聊天框；节点点不动时会派发一次轻点手势。你确认之后才会点发送，不会在后台静默发送。没连上无障碍时改用系统分享，由你自己选联系人并点发送。</string>
 
     <!-- 悬浮助手（其他应用上面那只「我在听」） -->
-    <string name="float_notification_channel">悬浮助手</string>
-    <string name="float_notification_title">悬浮助手开着</string>
-    <string name="float_notification_text">点小圆球随时说话</string>
-    <string name="float_listen">我在听</string>
-    <string name="float_idle_hint">说一句吧，比如「给妈妈发微信」。</string>
-    <string name="float_no_mic">没有录音权限，去设置里给它一个吧。</string>
-    <string name="float_thinking">我想想…</string>
-    <string name="float_failed">这句没处理成功，再说一遍试试。</string>
-    <string name="float_busy">正在发送，等它发完。</string>
-    <string name="float_reading_contacts">正在看%1$s里的会话…</string>
-    <string name="float_ask_recipient">要发给谁？说名字，或者「第几个」。</string>
-    <string name="float_ask_content">发给%1$s，说什么？</string>
-    <string name="float_send_to">发给</string>
-    <string name="float_send">发送</string>
-    <string name="float_confirm">发给%1$s，确认吗？</string>
-    <string name="float_running">正在打开%1$s发送…</string>
-    <string name="float_setting_title">悬浮助手</string>
-    <string name="float_setting_summary">在微信、QQ 或任何应用上面点一下小圆球就能说话，不用切回来</string>
-    <string name="float_permission_needed">还差「显示在其他应用上层」权限，去系统设置里给它打开。</string>
+    <!-- 唤醒调参：灵敏度 / 提示音 / 保活 -->
+    <string name="settings_wake_sensitivity">唤醒灵敏度</string>
+    <string name="settings_wake_sens_low">低</string>
+    <string name="settings_wake_sens_mid">中</string>
+    <string name="settings_wake_sens_high">高</string>
+    <string name="settings_wake_sensitivity_set">灵敏度已设为「%1$s」。</string>
+    <string name="settings_wake_beep">叫醒时响一声</string>
+    <string name="settings_battery">后台保活设置</string>
+    <string name="settings_battery_failed">打不开电池优化设置，去系统设置里手动找一下。</string>
 </resources>

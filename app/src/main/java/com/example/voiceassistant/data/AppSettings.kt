@@ -52,36 +52,22 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_WAKE, false)
         set(value) = prefs.edit().putBoolean(KEY_WAKE, value).apply()
 
-    // ---------------------------------------------------------------- 自动发消息
-
     /**
-     * 发消息前是否跳过「确认吗？」这一问。
+     * 唤醒灵敏度档位：0 低 / 1 中 / 2 高。
      *
-     * 默认关：发消息是唯一会动到别人的操作，说错发错收不回来，
-     * 所以默认先复述一遍、等用户说「确认」。
+     * 存**档位**而不是 0-100 的数字：内部换算法（严格匹配的门槛、循环节奏）
+     * 以后可能调整，老用户存的档位不该因此变味。
      *
-     * 打开之后，用户说「给妈妈发微信说我晚点到」就直接发出去，
-     * 全程不需要再说话、也不需要点任何按钮——这是用户显式授权的结果，
-     * 不是默认行为。
+     * 默认中：既能叫醒，又不至于把电视里的声音当成唤醒词。
      */
-    var msgAutoSend: Boolean
-        get() = prefs.getBoolean(KEY_MSG_AUTO_SEND, false)
-        set(value) = prefs.edit().putBoolean(KEY_MSG_AUTO_SEND, value).apply()
+    var wakeSensitivity: Int
+        get() = prefs.getInt(KEY_WAKE_SENS, 1)
+        set(value) = prefs.edit().putInt(KEY_WAKE_SENS, value.coerceIn(0, 2)).apply()
 
-    // ---------------------------------------------------------------- 悬浮助手
-
-    /**
-     * 是否常驻悬浮球。
-     *
-     * 默认关：它占麦克风、也占一层悬浮窗，用户没要求就不该开着。
-     * 落盘之后重进应用能接回来——和唤醒同一个道理。
-     *
-     * 注意这个值只表示「用户想开」，真正能不能画还要看
-     * `Settings.canDrawOverlays()`；两者都成立才会真的起服务。
-     */
-    var floatEnabled: Boolean
-        get() = prefs.getBoolean(KEY_FLOAT, false)
-        set(value) = prefs.edit().putBoolean(KEY_FLOAT, value).apply()
+    /** 叫醒后响一声。默认开——不看屏幕也知道叫上了 */
+    var wakeBeep: Boolean
+        get() = prefs.getBoolean(KEY_WAKE_BEEP, true)
+        set(value) = prefs.edit().putBoolean(KEY_WAKE_BEEP, value).apply()
 
     // ---------------------------------------------------------------- 对话风格
 
@@ -222,8 +208,8 @@ class AppSettings(context: Context) {
         private const val KEY_CONTINUOUS = "continuous"
         private const val KEY_TTS_ENGINE = "tts_engine"
         private const val KEY_WAKE = "wake_enabled"
-        private const val KEY_MSG_AUTO_SEND = "msg_auto_send"
-        private const val KEY_FLOAT = "float_enabled"
+        private const val KEY_WAKE_SENS = "wake_sensitivity"
+        private const val KEY_WAKE_BEEP = "wake_beep"
         private const val KEY_STYLE = "reply_style"
         private const val KEY_FOLLOW_UP = "proactive_follow_up"
         private const val KEY_MODE = "assistant_mode"

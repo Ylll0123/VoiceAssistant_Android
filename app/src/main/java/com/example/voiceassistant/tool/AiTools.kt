@@ -181,18 +181,12 @@ class AiTools(private val bus: ServiceBus) {
     }}}},
   {"type":"function","function":{
     "name":"msg_send_text",
-    "description":"给联系人发微信/QQ 消息。调用后只会准备好内容并复述一遍，不会打开应用、也不会发出去；用户说「确认」之后再调 msg_confirm_send，那时会自动进入聊天页、填字、点发送并校验结果。找不到同名联系人会失败，这时别自己换人，也不要改成发给别人。",
+    "description":"把消息送到微信/QQ 的聊天框。调用后会打开对应应用、进入和这个人的聊天页、把内容填进输入框，然后停下来——**发送键留给用户自己点**，程序不点。回话时要说「已经给你填好了，点一下发送」，绝不能说「已经发出去了」。找不到同名联系人会失败，这时别自己换人，也不要改成发给别人。",
     "parameters":{"type":"object","properties":{
       "platform":{"type":"string","enum":["wechat","qq"],"description":"用户说 QQ/企鹅 就必须填 qq，说微信/不指定才用 wechat。别漏填"},
       "to":{"type":"string","description":"联系人的名字，要和通讯录里一致"},
       "content":{"type":"string","description":"要发的话"}
     },"required":["to","content"]}}},
-  {"type":"function","function":{
-    "name":"msg_confirm_send",
-    "description":"确认并真正发送刚才准备好的那条消息：自动进入聊天页、填字、点发送，并确认消息真的发出去了。只有用户明确说「确认 / 发吧」时才调。",
-    "parameters":{"type":"object","properties":{
-      "trace_id":{"type":"string","description":"msg_send_text 返回的编号，不知道就别填"}
-    }}}},
   {"type":"function","function":{
     "name":"msg_query_can_send",
     "description":"诊断发消息能力：应用装没装、无障碍连没连上、系统分享通路能不能用。用户问「为什么发不出去」「能发微信吗」「检查一下发消息」时调用，把原因原样转述给用户。",

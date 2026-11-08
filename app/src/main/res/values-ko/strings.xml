@@ -130,8 +130,6 @@
     <string name="settings_speak_desc">답변을 읽어 줍니다. 끄면 텍스트만 표시</string>
     <string name="settings_wake">호출어</string>
     <string name="settings_access">메시지 자동 전송</string>
-    <string name="settings_msg_auto">확인 없이 전송</string>
-    <string name="settings_msg_auto_on_toast">알겠습니다. 이제 말한 내용을 바로 전송합니다.</string>
     <string name="settings_access_failed">접근성 설정을 열 수 없습니다. 시스템 설정에서 열어 주세요</string>
 
     <string name="wake_channel_name">호출어</string>
@@ -142,23 +140,12 @@
     <string name="accessibility_label">HardlySeek 음성 조작</string>
     <string name="accessibility_description">“누구에게 무엇을 보낼지” 같은 음성 명령을 실제 동작으로 바꿉니다: 위챗/QQ를 열고, 연락처를 검색하고, 내용을 입력합니다. 직접 누를 수 없는 요소는 좌표 탭을 사용할 수 있습니다. 전송은 확인 후에만 합니다. 서비스를 사용할 수 없으면 시스템 공유를 이용하며, 연락처 선택과 전송은 직접 하게 됩니다.</string>
 
-    <string name="float_notification_channel">플로팅 어시스턴트</string>
-    <string name="float_notification_title">플로팅 어시스턴트 실행 중</string>
-    <string name="float_notification_text">점을 눌러 언제든 말하세요</string>
-    <string name="float_listen">듣고 있어요</string>
-    <string name="float_idle_hint">말해 보세요. “엄마에게 위챗 보내줘”처럼요.</string>
-    <string name="float_no_mic">마이크 권한이 없습니다. 설정에서 허용해 주세요.</string>
-    <string name="float_thinking">생각 중…</string>
-    <string name="float_failed">처리하지 못했어요. 다시 말해 주세요.</string>
-    <string name="float_busy">전송 중입니다. 끝날 때까지 기다려 주세요.</string>
-    <string name="float_reading_contacts">%1$s의 대화 목록을 읽는 중…</string>
-    <string name="float_ask_recipient">누구에게 보낼까요? 이름이나 “3번”이라고 말하세요.</string>
-    <string name="float_ask_content">%1$s에게 뭐라고 할까요?</string>
-    <string name="float_send_to">받는 사람</string>
-    <string name="float_send">보내기</string>
-    <string name="float_confirm">%1$s에게 보낼까요? 확인해 주세요.</string>
-    <string name="float_running">%1$s을(를) 열어 전송 중…</string>
-    <string name="float_setting_title">플로팅 어시스턴트</string>
-    <string name="float_setting_summary">위챗, QQ 등 어떤 앱 위에서든 점을 눌러 말할 수 있습니다</string>
-    <string name="float_permission_needed">“다른 앱 위에 표시” 권한이 필요합니다. 시스템 설정에서 켜 주세요.</string>
+    <string name="settings_wake_sensitivity">호출 감도</string>
+    <string name="settings_wake_sens_low">낮음</string>
+    <string name="settings_wake_sens_mid">보통</string>
+    <string name="settings_wake_sens_high">높음</string>
+    <string name="settings_wake_sensitivity_set">감도를 「%1$s」로 설정했습니다.</string>
+    <string name="settings_wake_beep">호출 시 알림음</string>
+    <string name="settings_battery">백그라운드 유지 설정</string>
+    <string name="settings_battery_failed">배터리 설정을 열 수 없습니다. 시스템 설정에서 직접 찾아 주세요.</string>
 </resources>

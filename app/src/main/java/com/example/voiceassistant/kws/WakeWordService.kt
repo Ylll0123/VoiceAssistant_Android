@@ -8,6 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -77,6 +79,19 @@ class WakeWordService : Service() {
         super.onCreate()
         instance = this
         createChannel()
+        /*
+         * 从设置里把灵敏度 / 提示音读回来。
+         *
+         * WakeConfig 是纯内存单例，进程重建后是默认值；
+         * 而用户明明在设置里调过——不在这里回灌，就会出现
+         * 「设置显示高灵敏、实际按默认在跑」这种查不出来的错位。
+         */
+        runCatching {
+            val saved = com.example.voiceassistant.data.AppSettings(this)
+            WakeConfig.sensitivity = com.example.voiceassistant.kws.WakeWord
+                .sensitivityOfLevel(saved.wakeSensitivity)
+            WakeConfig.beepEnabled = saved.wakeBeep
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -202,10 +217,10 @@ class WakeWordService : Service() {
             ) {
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             }
-            // 短句：1 秒静音就收尾，否则循环一轮要等很久
+            // 短句：静音多久收尾，跟着灵敏度走（高灵敏更快收口，循环更密）
             putExtra(
                 RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                900L
+                WakeWord.silenceMs(WakeConfig.sensitivity)
             )
         }
         listening = true
@@ -280,12 +295,31 @@ class WakeWordService : Service() {
                 ?.filter { it.isNotEmpty() }
                 .orEmpty()
 
-            val hit = candidates.firstOrNull { WakeWord.matches(it, WakeConfig.wakeWord, WakeConfig.strict) }
+            /*
+             * 「最近听到什么」比任何参数都重要：
+             * - 这里一直是空 → 引擎根本没拿到人声（权限 / 中文包 / 麦克风被占）；
+             * - 有内容但没命中 → 唤醒词或灵敏度的问题，方向完全不同。
+             * 之前排查「叫不醒」全靠猜，就是因为这一行没打出来。
+             */
+            if (candidates.isNotEmpty()) {
+                WakeConfig.lastHeard = candidates.first()
+                WakeConfig.lastHeardAt = System.currentTimeMillis()
+            }
+
+            val strict = WakeConfig.strict
+            val hit = candidates.firstOrNull { WakeWord.matches(it, WakeConfig.wakeWord, strict) }
             if (hit != null) {
-                Log.i(TAG, "听到唤醒词：$hit")
+                Log.i(TAG, "听到唤醒词：$hit（候选 ${candidates.joinToString("/")}）")
                 onWake(hit)
             } else {
-                scheduleLoop(QUIET_RETRY_MS)
+                if (candidates.isNotEmpty()) {
+                    Log.i(
+                        TAG,
+                        "听到「${candidates.first()}」，不是唤醒词「${WakeConfig.wakeWord}」" +
+                            "（${if (strict) "严格" else "宽松"}匹配，灵敏度 ${WakeConfig.sensitivity}）"
+                    )
+                }
+                scheduleLoop(WakeWord.quietRetryMs(WakeConfig.sensitivity))
             }
         }
     }
@@ -324,11 +358,27 @@ class WakeWordService : Service() {
         }
     }
 
+    /**
+     * 应答提示音。
+     *
+     * 用 [ToneGenerator] 而不是 MediaPlayer：不占音频焦点、不需要资源文件、
+     * 100ms 就结束，不会在打断用户正在听的音乐上留下痕迹。
+     */
+    private fun beep() {
+        if (!WakeConfig.beepEnabled) return
+        runCatching {
+            val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70)
+            tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
+            main.postDelayed({ runCatching { tone.release() } }, 400)
+        }
+    }
+
     /** 命中唤醒词：进入会话窗口、通知界面、暂停自己 */
     private fun onWake(heard: String) {
         val now = System.currentTimeMillis()
         sessionUntil = now + WakeConfig.sessionMs
         WakeConfig.lastWakeAt = now
+        beep()
 
         if (WakeConfig.uiAlive) {
             AssistantBus.publish(WakeDetected(WakeConfig.wakeWord, now))

@@ -218,61 +218,6 @@ class ImDriver {
     }
 
     /**
-     * 把当前屏幕上的文字连位置一起读出来。
-     *
-     * 会话列表没有 id 可依，只有「一段文字 + 它在哪儿」。
-     * 交给 [ImContacts.pick] 用几何规则筛，筛法能单测，读屏这层不用管业务。
-     */
-    fun textItems(): List<ImContacts.Item> = findAll { node ->
-        node.isVisibleToUser && !node.text.isNullOrBlank()
-    }.mapNotNull { node ->
-        val rect = android.graphics.Rect()
-        runCatching { node.getBoundsInScreen(rect) }
-        if (rect.isEmpty) return@mapNotNull null
-        ImContacts.Item(
-            text = node.text?.toString().orEmpty(),
-            left = rect.left,
-            right = rect.right,
-            top = rect.top,
-            bottom = rect.bottom,
-            clickable = node.isClickable,
-            editable = isEditable(node)
-        )
-    }
-
-    /** 屏幕宽度（px）；判断「名字在左半屏」用 */
-    fun screenWidth(): Int = runCatching {
-        android.content.res.Resources.getSystem().displayMetrics.widthPixels
-    }.getOrDefault(0)
-
-    /**
-     * 找锚点右侧、同一行、可点击的节点。
-     *
-     * 微信/QQ 的发送键在部分版本里是**没有文字的圆形图标**，
-     * 按「发送」两个字根本找不到。但它们的位置很固定：就在输入框右边。
-     * 这里用几何关系兜底——宽不超过输入框，避免把整行列表当成按钮。
-     */
-    fun findRightOf(anchor: AccessibilityNodeInfo?, timeoutMs: Long = 0): AccessibilityNodeInfo? {
-        if (anchor == null) return null
-        val rect = android.graphics.Rect()
-        runCatching { anchor.getBoundsInScreen(rect) }
-        if (rect.isEmpty) return null
-
-        return findCustom(timeoutMs) { node ->
-            if (!node.isVisibleToUser || !node.isClickable) {
-                false
-            } else {
-                val bounds = android.graphics.Rect()
-                runCatching { node.getBoundsInScreen(bounds) }
-                !bounds.isEmpty &&
-                    bounds.centerY() in (rect.top - 40)..(rect.bottom + 40) &&
-                    bounds.left >= rect.right - 40 &&
-                    bounds.width() <= rect.width()
-            }
-        }
-    }
-
-    /**
      * 点一下。
      *
      * 有些节点自己不可点（可点在父布局上），所以失败时沿着 parent 往上找一层；
@@ -339,10 +284,37 @@ class ImDriver {
         return paste(node, text) && holdsText(node, text)
     }
 
+    /**
+     * 输入框里**真正的文字**。
+     *
+     * 空框时 `AccessibilityNodeInfo.text` 返回的是 **hint**（`getIterableTextForAccessibility`
+     * 在正文为空时退回提示语）。直接拿它比对，就会出现两种连环错：
+     * 1. 明明填进去了，读到「发消息」≠ 内容 → 判成失败；
+     * 2. 接着走粘贴兜底，选中长度按 hint 算，把内容拼成「我晚点到到」。
+     *
+     * 所以这里先把 hint 剔掉，再读之前 `refresh()` 一次拿最新的值。
+     */
+    fun actualText(node: AccessibilityNodeInfo?): String {
+        if (node == null) return ""
+        runCatching { node.refresh() }
+        val text = runCatching { node.text?.toString().orEmpty() }.getOrDefault("")
+        val hint = runCatching { node.hintText?.toString().orEmpty() }.getOrDefault("")
+        return if (hint.isNotEmpty() && text.trim() == hint.trim()) "" else text
+    }
+
+    /**
+     * 输入框里是不是真的有这段字。
+     *
+     * 读不到任何内容时（少数自定义控件把文字挂在子节点上）以「不报错」为准，
+     * 免得好好的功能被误判成失败。但**读到 hint 说明框是空的**，那必须算失败。
+     */
     private fun holdsText(node: AccessibilityNodeInfo, text: String): Boolean {
-        val now = runCatching { node.text?.toString().orEmpty() }.getOrDefault("")
-        // 有的控件把文字挂在子节点上，读不到内容时以「不报错」为准
-        return now.isEmpty() || now.trim() == text.trim() || now.contains(text.trim())
+        val now = actualText(node)
+        val want = text.trim()
+        if (now.isNotEmpty()) return now.trim() == want || now.contains(want)
+        // 空串：要么真没填上，要么根本读不到——后者不能再纠缠
+        val hint = runCatching { node.hintText?.toString().orEmpty() }.getOrDefault("")
+        return hint.isEmpty()
     }
 
     /** 剪贴板粘贴填字（`ACTION_SET_TEXT` 被忽略时的兜底） */
@@ -356,29 +328,17 @@ class ImDriver {
                 android.content.ClipData.newPlainText("hardlyseek", text)
             )
             node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            // 选中长度必须按**真实内容**算：拿 hint 的长度会把已有文字截断一半
             val select = Bundle().apply {
                 putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
                 putInt(
                     AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT,
-                    node.text?.length ?: 0
+                    actualText(node).length
                 )
             }
             node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, select)
             node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         }.getOrDefault(false)
-    }
-
-    /**
-     * 让输入框自己「回车」。
-     *
-     * 微信 / QQ 的发送键在键盘上是同一个位置，`ACTION_IME_ENTER` 等于按下它。
-     * 比找那个没有文字的圆形按钮稳——按钮的 id 每版都改，键盘的语义不会。
-     */
-    fun imeEnter(node: AccessibilityNodeInfo?): Boolean {
-        if (node == null || android.os.Build.VERSION.SDK_INT < 30) return false
-        // 常量挂在 AccessibilityAction 上（ACTION_IME_ENTER 本身没有顶层 int 常量）
-        val action = AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id
-        return runCatching { node.performAction(action) }.getOrDefault(false)
     }
 
     /** 模拟返回键 */

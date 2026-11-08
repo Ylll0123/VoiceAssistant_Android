@@ -35,8 +35,8 @@ class SettingsFragment : Fragment() {
     private lateinit var toggleStyle: MaterialButtonToggleGroup
     private lateinit var switchSpeak: MaterialSwitch
     private lateinit var switchWake: MaterialSwitch
-    private lateinit var switchMsgAuto: MaterialSwitch
-    private lateinit var switchFloat: MaterialSwitch
+    private lateinit var switchWakeBeep: MaterialSwitch
+    private lateinit var tvWakeSensValue: TextView
     private lateinit var tvLanguageValue: TextView
     private lateinit var tvModelValue: TextView
     private lateinit var tvAccount: TextView
@@ -57,8 +57,8 @@ class SettingsFragment : Fragment() {
         toggleStyle = view.findViewById(R.id.toggleStyle)
         switchSpeak = view.findViewById(R.id.switchSpeak)
         switchWake = view.findViewById(R.id.switchWake)
-        switchMsgAuto = view.findViewById(R.id.switchMsgAuto)
-        switchFloat = view.findViewById(R.id.switchFloat)
+        switchWakeBeep = view.findViewById(R.id.switchWakeBeep)
+        tvWakeSensValue = view.findViewById(R.id.tvWakeSensitivityValue)
         tvLanguageValue = view.findViewById(R.id.tvLanguageValue)
         tvModelValue = view.findViewById(R.id.tvModelValue)
         tvAccount = view.findViewById(R.id.tvAccount)
@@ -67,8 +67,7 @@ class SettingsFragment : Fragment() {
         bindStyle()
         bindSpeak()
         bindWake()
-        bindMsgAuto()
-        bindFloat()
+        bindWakeTuning()
         bindAccessibility()
         bindLanguage()
         bindModel()
@@ -119,39 +118,55 @@ class SettingsFragment : Fragment() {
     }
 
     /**
-     * 悬浮助手开关。
+     * 唤醒调参：灵敏度三档、应答提示音、后台保活引导。
      *
-     * 和唤醒开关同一个套路：改完**按宿主回报的真实状态回弹**。
-     * 没给悬浮窗权限时 [VoiceAssistantActivity.setFloatEnabled] 会把落盘值改回 false，
-     * 开关要跟着弹回来，不能停在「开」上骗人。
+     * 这三项解决的是同一个问题：**开关亮着，却怎么叫都不应**。
+     * 叫不醒无非三层——听得见但没匹配上（灵敏度）、叫醒了却没反馈（提示音）、
+     * 或者服务被系统掐了（电池优化）。把三层都给用户一个入口，别让他只能干瞪眼。
      */
-    private fun bindFloat() {
-        switchFloat.isChecked = host.isFloatEnabled()
-        switchFloat.setOnCheckedChangeListener { _, checked ->
-            if (checked == host.isFloatEnabled()) return@setOnCheckedChangeListener
-            host.setFloatEnabled(checked)
-            switchFloat.isChecked = host.isFloatEnabled()
-            switchFloat.jumpDrawablesToCurrentState()
+    private fun bindWakeTuning() {
+        tvWakeSensValue.text = sensitivityLabel(host.wakeSensitivity())
+        requireView().findViewById<View>(R.id.rowWakeSensitivity).setOnClickListener {
+            showSensitivityPicker()
+        }
+
+        switchWakeBeep.isChecked = host.isWakeBeep()
+        switchWakeBeep.setOnCheckedChangeListener { _, checked ->
+            if (checked != host.isWakeBeep()) host.setWakeBeep(checked)
+        }
+
+        requireView().findViewById<View>(R.id.rowBattery).setOnClickListener {
+            host.openBatterySettings()
         }
     }
 
-    /** 无障碍设置入口：自动发消息要靠它，得让用户能自己找得到 */
+    private fun showSensitivityPicker() {
+        val labels = arrayOf(
+            getString(R.string.settings_wake_sens_low),
+            getString(R.string.settings_wake_sens_mid),
+            getString(R.string.settings_wake_sens_high)
+        )
+        requireContext().appDialog()
+            .setTitle(R.string.settings_wake_sensitivity)
+            .setSingleChoiceItems(labels, host.wakeSensitivity()) { dialog, which ->
+                dialog.dismiss()
+                host.setWakeSensitivity(which)
+                tvWakeSensValue.text = sensitivityLabel(which)
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .showWhite()
+    }
+
+    private fun sensitivityLabel(level: Int): String = when (level) {
+        0 -> getString(R.string.settings_wake_sens_low)
+        2 -> getString(R.string.settings_wake_sens_high)
+        else -> getString(R.string.settings_wake_sens_mid)
+    }
+
+    /** 无障碍设置入口：自动填字要靠它，得让用户能自己找得到 */
     private fun bindAccessibility() {
         requireView().findViewById<View>(R.id.rowAccessibility).setOnClickListener {
             host.openAccessibilitySettings()
-        }
-    }
-
-    /**
-     * 发送前免确认。
-     *
-     * 默认关。打开后「给妈妈发微信说我晚点到」这一句就直接发出去，
-     * 不再问「确认吗」——属于用户明确授权，不是偷偷改的默认行为。
-     */
-    private fun bindMsgAuto() {
-        switchMsgAuto.isChecked = host.isMsgAutoSend()
-        switchMsgAuto.setOnCheckedChangeListener { _, checked ->
-            if (checked != host.isMsgAutoSend()) host.setMsgAutoSend(checked)
         }
     }
 
@@ -397,8 +412,8 @@ class SettingsFragment : Fragment() {
         updateModelRow()
         // 唤醒可能被系统掐掉（后台限制 / 用户撤了麦克风权限），回来时以真实状态为准
         switchWake.isChecked = host.isWakeEnabled()
-        switchMsgAuto.isChecked = host.isMsgAutoSend()
-        switchFloat.isChecked = host.isFloatEnabled()
+        tvWakeSensValue.text = sensitivityLabel(host.wakeSensitivity())
+        switchWakeBeep.isChecked = host.isWakeBeep()
         tvAccount.text = AccountStore(requireContext()).currentUser.orEmpty()
         tvVersion.text = getString(R.string.settings_version, appVersionName())
         tvLanguageValue.text = languageLabel(host.appSettings().language)

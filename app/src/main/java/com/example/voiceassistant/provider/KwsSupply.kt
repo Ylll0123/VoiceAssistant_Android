@@ -112,6 +112,21 @@ class KwsSupply(private val context: Context) {
                 .getOrDefault(false)
             points += if (hasEngine) "系统识别服务可用" else "系统没有语音识别服务"
 
+            /*
+             * 「最近听到什么」是排查叫不醒的关键分叉：
+             * 一直没内容 = 引擎没拿到人声（权限 / 中文包 / 麦克风被占）；
+             * 有内容但没命中 = 唤醒词或灵敏度的问题。两者给的建议完全不同。
+             */
+            val heard = WakeConfig.lastHeard.trim()
+            val heardAgo = if (WakeConfig.lastHeardAt <= 0) -1
+            else ((System.currentTimeMillis() - WakeConfig.lastHeardAt) / 1000).toInt()
+            points += if (heard.isEmpty()) {
+                "还没听到过任何声音"
+            } else {
+                "最近听到「$heard」" + if (heardAgo in 0..600) "（${heardAgo}秒前）" else "（有点久了）"
+            }
+            points += "灵敏度 ${WakeConfig.sensitivity}（${if (WakeConfig.strict) "严格" else "宽松"}匹配）"
+
             val error = WakeWordService.lastError
             val suggestion = when {
                 !hasMic -> "去系统设置里给它录音权限，再把开关关一下重开。"
@@ -127,6 +142,12 @@ class KwsSupply(private val context: Context) {
                     "识别需要联网，现在网络不通（错误码 $error）。"
 
                 error == 9 -> "录音权限被系统收回了，重新给一次。"
+
+                // 听到了但没命中：不是权限问题，往上调灵敏度最快
+                heard.isNotEmpty() ->
+                    "能听到声音但没认成唤醒词。把设置里的「唤醒灵敏度」调到高，" +
+                        "或者把唤醒词换成四个字、声调起伏大一点的（比如「小豆同学」）。"
+
                 else -> "开着就能叫「${WakeConfig.wakeWord}」，说完整一点更稳。"
             }
             return BusReply.ok(points.joinToString("，") + "。$suggestion")

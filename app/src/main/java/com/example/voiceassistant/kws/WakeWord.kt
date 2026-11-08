@@ -55,6 +55,44 @@ object WakeWord {
         listOf(wakeWord, "小豆", "小豆小").forEach { text = text.replace(it, "") }
         return text.trim('，', ',', '。', ' ', '！', '!')
     }
+
+    /**
+     * 一轮识别之间的间隔（毫秒）。
+     *
+     * 这里没有「唤醒得分」可调：系统识别只给文字，不给置信度。
+     * 能做的是把**循环的松紧**交给灵敏度——高灵敏时错误立刻重开，
+     * 低灵敏时宁可多歇一会儿，少听几句也就少误唤醒。
+     *
+     * 纯函数，单测钉住：节奏变了用户是有感觉的。
+     */
+    fun quietRetryMs(sensitivity: Int): Long = when {
+        sensitivity >= HIGH -> 350L
+        sensitivity >= LOW -> 700L
+        else -> 1_100L
+    }
+
+    /** 说完多久算「说完了」。越小越灵敏，但可能把一句话切断 */
+    fun silenceMs(sensitivity: Int): Long = when {
+        sensitivity >= HIGH -> 700L
+        sensitivity >= LOW -> 900L
+        else -> 1_100L
+    }
+
+    /**
+     * 设置页三档 → 内部灵敏度数值。
+     *
+     * 0 低灵敏（必须说全唤醒词）/ 1 中（默认）/ 2 高灵敏（容易叫醒，也容易误唤醒）。
+     * 存的是**档位**而不是数字：以后调档位对应关系，老用户的选择不会突然变味。
+     */
+    fun sensitivityOfLevel(level: Int): Int = when (level) {
+        0 -> 20
+        2 -> 85
+        else -> 55
+    }
+
+    /** 三档的门槛：≥HIGH 算高灵敏，<LOW 算低灵敏 */
+    const val HIGH = 70
+    const val LOW = 30
 }
 
 /**
@@ -97,9 +135,17 @@ object WakeConfig {
     @Volatile
     var sessionMs: Long = WakeWord.DEFAULT_SESSION_MS
 
-    /** 灵敏度：0-100，越高越容易被叫醒，也越容易误唤醒 */
+    /**
+     * 灵敏度：0-100，越高越容易被叫醒，也越容易误唤醒。
+     *
+     * 这个数字不是「模型打分阈值」——我们用的是系统识别，拿不到分数。
+     * 它决定的是**匹配规则和循环节奏**：
+     * - 低（≤30）：必须完整说出唤醒词，每轮之间歇久一点；
+     * - 中（31-69）：允许只说前两个字，节奏正常（默认）；
+     * - 高（≥70）：允许只说前两个字，而且一旦「听到人说话」就立刻重开一轮，不等静音超时。
+     */
     @Volatile
-    var sensitivity: Int = 60
+    var sensitivity: Int = 55
 
     /**
      * 严格匹配 = 必须完整说出唤醒词。
@@ -111,8 +157,25 @@ object WakeConfig {
      */
     val strict: Boolean get() = sensitivity < 30
 
+    /**
+     * 最近一次**听到**的内容（不管有没有命中唤醒词）。
+     *
+     * 这是排查「叫不醒」最关键的一行：如果这里一直没更新，说明引擎连人声都没拿到
+     * （权限 / 中文包 / 麦克风被别的应用占着）；如果有内容但没命中，
+     * 那是唤醒词或灵敏度的问题，方向完全不同。
+     */
+    @Volatile
+    var lastHeard: String = ""
+
+    @Volatile
+    var lastHeardAt: Long = 0L
+
     @Volatile
     var enabled: Boolean = false
+
+    /** 叫醒后是否应一声（短提示音）。默认开：不看屏幕也知道叫上了 */
+    @Volatile
+    var beepEnabled: Boolean = true
 
     /** 最近一次命中的时间戳，界面据此显示「刚被叫醒」 */
     @Volatile
