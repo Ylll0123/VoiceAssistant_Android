@@ -15,29 +15,22 @@ import com.example.voiceassistant.data.AccountStore
 import com.example.voiceassistant.data.AppSettings
 import com.example.voiceassistant.handler.llm.CloudLlmHandler
 import com.example.voiceassistant.reminder.Reminders
+import com.example.voiceassistant.service.TtsManager
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.materialswitch.MaterialSwitch
 
 /**
- * 设置页：只留最常用的几项。
+ * 设置页：**只留真正会变的东西**。
  *
- * 回答方式、语音播报、语言、清空对话、账号、恢复默认——一屏放得下。
- * 对话页顶栏只剩菜单和设置两个图标，所以「播报开关」挪到这里，
- * 「连续对话」直接取消（v4.0 起改成按住说话，不再自动收音）。
+ * 语音播报、语言、账号、关于——一屏放得下。
  *
- * 大模型也不在这里摆「开关」：默认就接的是 GLM-4-Flash-250414（免费），
- * 用户没必要先理解什么叫「接入」。只在「关于」里留一行模型名，
- * 点开才填 Key、换服务商——那是维护入口，不是日常选项。
+ * 回答方式、语音唤醒、灵敏度、提示音、唤醒引擎、后台保活、无障碍入口全部删掉了：
+ * 它们要么已经固定成默认行为（回答方式），要么整块功能不存在了（唤醒），
+ * 要么本来就该由「用的时候再提示」来解决（无障碍）。留着只是让人多点几下。
  */
 class SettingsFragment : Fragment() {
 
-    private lateinit var toggleStyle: MaterialButtonToggleGroup
     private lateinit var switchSpeak: MaterialSwitch
-    private lateinit var switchWake: MaterialSwitch
-    private lateinit var switchWakeBeep: MaterialSwitch
-    private lateinit var tvWakeSensValue: TextView
-    private lateinit var tvWakeEngineValue: TextView
     private lateinit var tvLanguageValue: TextView
     private lateinit var tvModelValue: TextView
     private lateinit var tvAccount: TextView
@@ -55,226 +48,63 @@ class SettingsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        toggleStyle = view.findViewById(R.id.toggleStyle)
         switchSpeak = view.findViewById(R.id.switchSpeak)
-        switchWake = view.findViewById(R.id.switchWake)
-        switchWakeBeep = view.findViewById(R.id.switchWakeBeep)
-        tvWakeSensValue = view.findViewById(R.id.tvWakeSensitivityValue)
-        tvWakeEngineValue = view.findViewById(R.id.tvWakeEngineValue)
         tvLanguageValue = view.findViewById(R.id.tvLanguageValue)
         tvModelValue = view.findViewById(R.id.tvModelValue)
         tvAccount = view.findViewById(R.id.tvAccount)
         tvVersion = view.findViewById(R.id.tvVersion)
 
-        bindStyle()
         bindSpeak()
-        bindWake()
-        bindWakeTuning()
-        bindAccessibility()
         bindLanguage()
         bindModel()
         bindActions()
         refresh()
     }
 
-    // ------------------------------------------------------------------ 回答方式
-
-    private fun bindStyle() {
-        // 老版本有「标准」一档，现在只有两档：标准按「详细」处理，不让用户看到空选
-        toggleStyle.check(
-            if (host.replyStyle == 0) R.id.btnStyleConcise else R.id.btnStyleDetailed
-        )
-        toggleStyle.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (!isChecked) return@addOnButtonCheckedListener
-            val style = if (checkedId == R.id.btnStyleConcise) 0 else 2
-            if (host.replyStyle != style) host.setReplyStyle(style)
-        }
-    }
-
     // ------------------------------------------------------------------ 播报
 
+    /**
+     * 播报开关。
+     *
+     * 打开时当场念一句：这个开关最怕「打开了却没声音」，用户还不知道问题出在哪。
+     * 念不出来就按真实原因给一句能落地的引导（音量 / 语音包 / 没引擎）。
+     */
     private fun bindSpeak() {
         switchSpeak.isChecked = host.speakEnabled
         switchSpeak.setOnCheckedChangeListener { _, checked ->
-            if (checked != host.speakEnabled) host.setSpeakEnabled(checked)
+            if (checked == host.speakEnabled) return@setOnCheckedChangeListener
+            host.setSpeakEnabled(checked)
+            if (!checked) return@setOnCheckedChangeListener
+
+            host.tts.preview(getString(R.string.speech_preview))
+            switchSpeak.postDelayed({ explainSpeechProblem() }, SPEAK_PREVIEW_MS)
         }
     }
 
-    // ------------------------------------------------------------------ 唤醒词
+    /** 试听没出声时，把原因说清楚并给一个「去处理」的按钮 */
+    private fun explainSpeechProblem() {
+        val problem = host.tts.status
+        if (problem == TtsManager.Status.READY || !isAdded) return
 
-    /**
-     * 常驻唤醒开关。
-     *
-     * 开关状态回来时按 [VoiceAssistantActivity.isWakeEnabled] 重读一次：
-     * 服务起不来（没录音权限、系统限制后台麦克风）时那边会把落盘值改回去，
-     * 这里要跟着弹回来，不能停在「开」的位置上。
-     */
-    private fun bindWake() {
-        switchWake.isChecked = host.isWakeEnabled()
-        switchWake.setOnCheckedChangeListener { _, checked ->
-            if (checked == host.isWakeEnabled()) return@setOnCheckedChangeListener
-            host.setWakeEnabled(checked)
-            switchWake.isChecked = host.isWakeEnabled()
-            switchWake.jumpDrawablesToCurrentState()
-        }
-    }
-
-    /**
-     * 唤醒调参：灵敏度三档、应答提示音、后台保活引导。
-     *
-     * 这三项解决的是同一个问题：**开关亮着，却怎么叫都不应**。
-     * 叫不醒无非三层——听得见但没匹配上（灵敏度）、叫醒了却没反馈（提示音）、
-     * 或者服务被系统掐了（电池优化）。把三层都给用户一个入口，别让他只能干瞪眼。
-     */
-    private fun bindWakeTuning() {
-        tvWakeSensValue.text = sensitivityLabel(host.wakeSensitivity())
-        requireView().findViewById<View>(R.id.rowWakeSensitivity).setOnClickListener {
-            showSensitivityPicker()
+        val message = when (problem) {
+            TtsManager.Status.MUTED -> getString(R.string.speech_muted)
+            TtsManager.Status.NO_CHINESE -> getString(R.string.speech_no_chinese)
+            else -> getString(R.string.speech_no_engine)
         }
 
-        switchWakeBeep.isChecked = host.isWakeBeep()
-        switchWakeBeep.setOnCheckedChangeListener { _, checked ->
-            if (checked != host.isWakeBeep()) host.setWakeBeep(checked)
-        }
-
-        tvWakeEngineValue.text = engineLabel()
-        requireView().findViewById<View>(R.id.rowWakeEngine).setOnClickListener {
-            showEnginePicker()
-        }
-
-        requireView().findViewById<View>(R.id.rowBattery).setOnClickListener {
-            host.openBatterySettings()
-        }
-    }
-
-    // ------------------------------------------------------------------ 唤醒引擎
-
-    private fun engineLabel(): String =
-        if (host.wakeEngine() == AppSettings.ENGINE_IFLY) {
-            getString(R.string.settings_wake_engine_ifly)
-        } else {
-            getString(R.string.settings_wake_engine_system)
-        }
-
-    /**
-     * 选引擎。
-     *
-     * 讯飞那条路要三件套，所以选它时**直接接着弹配置**——
-     * 让用户先选完引擎、再自己去找配置入口，是最容易被放弃的流程。
-     */
-    private fun showEnginePicker() {
-        val labels = arrayOf(
-            getString(R.string.settings_wake_engine_system),
-            getString(R.string.settings_wake_engine_ifly)
-        )
-        val current = if (host.wakeEngine() == AppSettings.ENGINE_IFLY) 1 else 0
         requireContext().appDialog()
-            .setTitle(R.string.settings_wake_engine)
-            .setSingleChoiceItems(labels, current) { dialog, which ->
-                dialog.dismiss()
-                if (which == 0) {
-                    host.setWakeEngine(AppSettings.ENGINE_SYSTEM)
-                    tvWakeEngineValue.text = engineLabel()
-                } else {
-                    showIflyEditor()
+            .setTitle(R.string.speech_problem_title)
+            .setMessage(message)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.speech_problem_fix) { _, _ ->
+                if (problem == TtsManager.Status.MUTED) {
+                    host.tts.raiseMediaVolume()
+                    toast(getString(R.string.speech_volume_raised))
+                } else if (!host.tts.openSystemSettings()) {
+                    toast(getString(R.string.speech_settings_failed))
                 }
             }
-            .setNegativeButton(R.string.action_cancel, null)
             .showWhite()
-    }
-
-    /** 讯飞三件套 + 阈值。用代码搭界面，跟「AI 模型」那页同一套做法。 */
-    private fun showIflyEditor() {
-        val context = requireContext()
-        val pad = dp(20)
-
-        fun field(value: String, hint: String, secret: Boolean = false): EditText =
-            EditText(context).apply {
-                setText(value)
-                this.hint = hint
-                setSingleLine()
-                textSize = 14f
-                inputType = if (secret) {
-                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                } else {
-                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                }
-            }
-
-        val inputAppId = field(host.iflyAppId(), getString(R.string.settings_ifly_appid_hint))
-        val inputKey = field(host.iflyApiKey(), getString(R.string.settings_ifly_key_hint), true)
-        val inputSecret = field(
-            host.iflyApiSecret(),
-            getString(R.string.settings_ifly_secret_hint),
-            true
-        )
-        val inputThreshold = field(
-            host.iflyThreshold().toString(),
-            getString(R.string.settings_ifly_threshold_hint)
-        ).apply { inputType = InputType.TYPE_CLASS_NUMBER }
-
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, 0)
-            addView(inputAppId)
-            addView(inputKey)
-            addView(inputSecret)
-            addView(inputThreshold)
-        }
-
-        context.appDialog()
-            .setTitle(R.string.settings_ifly_title)
-            .setMessage(R.string.settings_ifly_hint)
-            .setView(container)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.action_save) { _, _ ->
-                val appId = inputAppId.text.toString().trim()
-                val key = inputKey.text.toString().trim()
-                val secret = inputSecret.text.toString().trim()
-                val threshold = inputThreshold.text.toString().trim().toIntOrNull() ?: 1450
-
-                if (appId.isEmpty() || key.isEmpty() || secret.isEmpty()) {
-                    // 缺一项都起不来：与其留一个看似配好的空壳，不如明确退回系统识别
-                    toast(getString(R.string.settings_ifly_need_all))
-                    host.setWakeEngine(AppSettings.ENGINE_SYSTEM)
-                } else {
-                    host.saveIflyConfig(appId, key, secret, threshold)
-                    host.setWakeEngine(AppSettings.ENGINE_IFLY)
-                    toast(getString(R.string.settings_ifly_saved))
-                }
-                tvWakeEngineValue.text = engineLabel()
-            }
-            .showWhite()
-    }
-
-    private fun showSensitivityPicker() {
-        val labels = arrayOf(
-            getString(R.string.settings_wake_sens_low),
-            getString(R.string.settings_wake_sens_mid),
-            getString(R.string.settings_wake_sens_high)
-        )
-        requireContext().appDialog()
-            .setTitle(R.string.settings_wake_sensitivity)
-            .setSingleChoiceItems(labels, host.wakeSensitivity()) { dialog, which ->
-                dialog.dismiss()
-                host.setWakeSensitivity(which)
-                tvWakeSensValue.text = sensitivityLabel(which)
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .showWhite()
-    }
-
-    private fun sensitivityLabel(level: Int): String = when (level) {
-        0 -> getString(R.string.settings_wake_sens_low)
-        2 -> getString(R.string.settings_wake_sens_high)
-        else -> getString(R.string.settings_wake_sens_mid)
-    }
-
-    /** 无障碍设置入口：自动填字要靠它，得让用户能自己找得到 */
-    private fun bindAccessibility() {
-        requireView().findViewById<View>(R.id.rowAccessibility).setOnClickListener {
-            host.openAccessibilitySettings()
-        }
     }
 
     // ------------------------------------------------------------------ 语言
@@ -323,13 +153,6 @@ class SettingsFragment : Fragment() {
 
     // ------------------------------------------------------------------ 模型
 
-    /**
-     * 「关于」里那一行模型入口。
-     *
-     * 设置页不再摆「接入大模型」开关：默认就接的是 GLM-4-Flash-250414。
-     * 这一行只显示当前模型名，没填 Key 时补一句「待填 Key」——
-     * GLM 免费但仍然要一个 Key，不说清楚会让人以为已经能用了。
-     */
     private fun bindModel() {
         requireView().findViewById<View>(R.id.rowModel).setOnClickListener {
             showCloudEditor()
@@ -487,10 +310,7 @@ class SettingsFragment : Fragment() {
             .setPositiveButton(R.string.action_ok) { _, _ ->
                 // 先记下当前语言：reset 会把偏好清空，之后就读不出来了
                 val previous = host.appSettings().language
-                // 先恢复开关，再恢复语言（改语言会重建界面，放最后才不会被吞掉）
                 host.resetSettings()
-                bindStyle()
-                bindModel()
                 refresh()
                 toast(getString(R.string.settings_reset_done))
                 if (previous != AppSettings.LANGUAGE_ZH) {
@@ -517,11 +337,7 @@ class SettingsFragment : Fragment() {
 
     private fun refresh() {
         updateModelRow()
-        // 唤醒可能被系统掐掉（后台限制 / 用户撤了麦克风权限），回来时以真实状态为准
-        switchWake.isChecked = host.isWakeEnabled()
-        tvWakeSensValue.text = sensitivityLabel(host.wakeSensitivity())
-        switchWakeBeep.isChecked = host.isWakeBeep()
-        tvWakeEngineValue.text = engineLabel()
+        switchSpeak.isChecked = host.speakEnabled
         tvAccount.text = AccountStore(requireContext()).currentUser.orEmpty()
         tvVersion.text = getString(R.string.settings_version, appVersionName())
         tvLanguageValue.text = languageLabel(host.appSettings().language)
@@ -544,4 +360,9 @@ class SettingsFragment : Fragment() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private companion object {
+        /** 试听这句话最长也就两秒，留点余量再问「到底出声没有」 */
+        const val SPEAK_PREVIEW_MS = 2_600L
+    }
 }

@@ -8,6 +8,7 @@ import com.example.voiceassistant.nlu.TimeParse
 import com.example.voiceassistant.nlu.TimeWords
 import com.example.voiceassistant.reminder.Reminder
 import com.example.voiceassistant.reminder.Reminders
+import com.example.voiceassistant.service.SystemAlarm
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -36,26 +37,36 @@ class ScheduleSupply(
     private fun addAlarm(): Supply = object : Supply {
         override val name = "schedule/add_alarm"
         override val summary =
-            "定闹钟 / 提醒。参数 content 是做什么，at 是触发时间（yyyy-MM-dd HH:mm），" +
-                "或者用 minutes 表示「多少分钟后」。用户没说时间就别调，先问清几点。"
+            "定闹钟 / 提醒 / 计时。参数 content 是做什么，at 是触发时间（yyyy-MM-dd HH:mm），" +
+                "或者用 minutes 表示「多少分钟后」。会直接设手机自带的闹钟（到点由系统响铃），" +
+                "用户没说时间就先问清几点。"
 
         override fun invoke(args: BusArgs): BusReply {
             val content = args.str("content")?.take(60)?.ifBlank { "提醒" } ?: "提醒"
 
-            // 两种给法：绝对时间 or 相对分钟数
-            val at: Long = when {
-                args.str("at") != null -> {
-                    val parsed = TimeParse.epoch(args.str("at"), now())
-                        ?: return BusReply.fail("时间没看懂，需要 yyyy-MM-dd HH:mm 这样的格式，请再说一次几点。")
-                    parsed
+            // ① 固定时长：交给系统「计时器」，比我们自己的倒计时可靠
+            val minutes = args.num("minutes")
+            if (minutes != null) {
+                if (minutes <= 0) return BusReply.fail("计时时长要大于零。")
+                val seconds = (minutes * 60).toInt()
+                if (SystemAlarm.setTimer(app, seconds, content)) {
+                    return BusReply.ok(
+                        "计时器已经开好了：${durationText(seconds)}后响，标签是「$content」。"
+                    )
                 }
-                args.num("minutes") != null -> {
-                    val minutes = args.num("minutes")!!
-                    if (minutes <= 0) return BusReply.fail("计时时长要大于零。")
-                    System.currentTimeMillis() + (minutes * 60_000).toLong()
-                }
-                else -> return BusReply.fail("没说几点提醒，先问清时间再建。")
+                return fallbackReminder(
+                    content,
+                    System.currentTimeMillis() + (minutes * 60_000).toLong(),
+                    Reminder.Repeat.NONE,
+                    "系统计时器用不了"
+                )
             }
+
+            // ② 绝对时间
+            val at: Long = args.str("at")?.let { raw ->
+                TimeParse.epoch(raw, now())
+                    ?: return BusReply.fail("时间没看懂，需要 yyyy-MM-dd HH:mm 这样的格式，请再说一次几点。")
+            } ?: return BusReply.fail("没说几点提醒，先问清时间再建。")
 
             // 时间已经过去：不硬建（会立刻响，像 bug），让调用方确认
             if (at <= System.currentTimeMillis() - 60_000) {
@@ -67,17 +78,71 @@ class ScheduleSupply(
                 "weekly" -> Reminder.Repeat.WEEKLY
                 else -> Reminder.Repeat.NONE
             }
-            val saved = Reminders.center(app).create(content, at, repeat)
-            val suffix = when (repeat) {
-                Reminder.Repeat.DAILY -> "，每天"
-                Reminder.Repeat.WEEKLY -> "，每周"
-                else -> ""
+
+            // ③ 先试系统闹钟：到点响不依赖我们的进程活不活
+            val days = weekDaysFor(at, repeat)
+            if (SystemAlarm.setAlarm(app, at, content, days)) {
+                val clock = SystemAlarm.clockAppName(app)
+                val repeatText = when (repeat) {
+                    Reminder.Repeat.DAILY -> "，每天这个点"
+                    Reminder.Repeat.WEEKLY -> "，每周这个点"
+                    else -> ""
+                }
+                return BusReply.ok(
+                    "已经在「$clock」里设好 ${TimeParse.format(at)} 的闹钟$repeatText，标签是「$content」。" +
+                        "到点系统会自己响，我这边不用一直开着。"
+                )
             }
-            return BusReply.ok(
-                "已建好：$content，${TimeParse.format(saved.triggerAt)}$suffix。",
-                "id" to saved.id.toString()
-            )
+
+            return fallbackReminder(content, at, repeat, "这台手机没法设系统闹钟")
         }
+    }
+
+    /**
+     * 系统闹钟设不上时的退路：仍旧存进提醒中心，由我们自己的 AlarmManager 响。
+     *
+     * 必须说清楚「这条靠我记着」——用户以为和系统闹钟一样稳，结果清理后台就没了，
+     * 那才是真正让人失望的地方。
+     */
+    private fun fallbackReminder(
+        content: String,
+        at: Long,
+        repeat: Reminder.Repeat,
+        why: String
+    ): BusReply {
+        val saved = Reminders.center(app).create(content, at, repeat)
+        val suffix = when (repeat) {
+            Reminder.Repeat.DAILY -> "，每天"
+            Reminder.Repeat.WEEKLY -> "，每周"
+            else -> ""
+        }
+        return BusReply.ok(
+            "$why，已经记在我这边：$content，${TimeParse.format(saved.triggerAt)}$suffix。" +
+                "别把应用从后台清掉，否则可能不响。",
+            "id" to saved.id.toString()
+        )
+    }
+
+    /** 重复规则翻成系统闹钟要的星期列表 */
+    private fun weekDaysFor(at: Long, repeat: Reminder.Repeat): List<Int> {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = at }
+        val day = cal.get(java.util.Calendar.DAY_OF_WEEK)
+        return when (repeat) {
+            Reminder.Repeat.DAILY -> (1..7).toList()
+            Reminder.Repeat.WEEKLY -> listOf(day)
+            Reminder.Repeat.NONE -> emptyList()
+        }
+    }
+
+    private fun durationText(seconds: Int): String {
+        val h = seconds / 3600
+        val m = (seconds % 3600) / 60
+        val s = seconds % 60
+        return buildList {
+            if (h > 0) add("$h 小时")
+            if (m > 0) add("$m 分钟")
+            if (s > 0 && h == 0) add("$s 秒")
+        }.joinToString("").ifEmpty { "$seconds 秒" }
     }
 
     private fun addTodo(): Supply = object : Supply {
@@ -177,7 +242,10 @@ class ScheduleSupply(
 
             val hits = pending.filter { it.content.contains(keyword, ignoreCase = true) }
             return when {
-                hits.isEmpty() -> BusReply.fail("没找到包含「$keyword」的提醒。")
+                hits.isEmpty() -> BusReply.fail(
+                    "我这边没有包含「$keyword」的提醒。如果刚才那个闹钟设在系统时钟里，" +
+                        "得去「${SystemAlarm.clockAppName(app)}」里关。"
+                )
                 hits.size == 1 -> {
                     center.cancel(hits.first().id)
                     BusReply.ok("已取消：${hits.first().content}。")

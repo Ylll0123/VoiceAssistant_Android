@@ -80,8 +80,12 @@ class ImAutomator(
 ) {
 
     sealed class Outcome {
-        data class Done(val message: String) : Outcome()
-        data class Failed(val message: String) : Outcome()
+        /**
+         * @param needsAccess 这次是因为「没开无障碍」才降级的——界面据此问一句要不要去开。
+         *   设置页里那一行已经删了，权限引导改成用到时才出现。
+         */
+        data class Done(val message: String, val needsAccess: Boolean = false) : Outcome()
+        data class Failed(val message: String, val needsAccess: Boolean = false) : Outcome()
     }
 
     /**
@@ -169,10 +173,14 @@ class ImAutomator(
             return if (openShare(platform, content)) {
                 Outcome.Done(
                     "已经把内容带到${platform.label}了，选一下「$to」再点发送就好。" +
-                        "（$blocked，开了权限我就能自己找人、自己填字。）"
+                        "（$blocked，开了权限我就能自己找人、自己填字。）",
+                    needsAccess = true
                 )
             } else {
-                Outcome.Failed("$blocked，${platform.label}的分享页也打不开，只能手动发了。")
+                Outcome.Failed(
+                    "$blocked，${platform.label}的分享页也打不开，只能手动发了。",
+                    needsAccess = true
+                )
             }
         }
 

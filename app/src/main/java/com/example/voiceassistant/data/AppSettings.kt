@@ -7,10 +7,9 @@ import com.example.voiceassistant.handler.llm.CloudLlmHandler
 /**
  * 应用设置的本地持久化（SharedPreferences，零新增依赖）。
  *
- * 之前设置页里改完语速，下次打开又回到 1.0，就是因为没有这一层。
- * 现在所有开关和滑块都会立刻写盘，启动时 [com.example.voiceassistant.ui.VoiceAssistantActivity] 再整体灌回引擎和语音控制器。
- *
- * 「待学习问题」也放在这里：它最多 40 条短文本，没必要单独建表。
+ * 只留真正会变的几项：出声、语音引擎、对话模式、界面语言、云端模型配置。
+ * 回答方式、唤醒词那一整套已经删掉——固定成默认行为，不再让用户选，
+ * 少一个开关就少一处「设了没反应」。
  */
 class AppSettings(context: Context) {
 
@@ -24,99 +23,17 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_SPEAK, true)
         set(value) = prefs.edit().putBoolean(KEY_SPEAK, value).apply()
 
-    /** 连续对话：播完自动再开麦克风 */
-    var continuousMode: Boolean
-        get() = prefs.getBoolean(KEY_CONTINUOUS, true)
-        set(value) = prefs.edit().putBoolean(KEY_CONTINUOUS, value).apply()
-
     /**
      * 指定的语音合成引擎包名；空串表示用系统默认。
      *
-     * 有些手机自带的 TTS 引擎会忽略语速设置（滑了没反应），
-     * 换成 Google 语音服务后语速就正常了——设置页里可以直接切换。
+     * 有些手机自带的 TTS 引擎念不了中文，[com.example.voiceassistant.service.TtsManager]
+     * 会自己去找一台能念的，这一项只是「用户手动指定过」时的偏好。
      */
     var ttsEngine: String
         get() = prefs.getString(KEY_TTS_ENGINE, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_TTS_ENGINE, value).apply()
 
-    // ---------------------------------------------------------------- 语音唤醒
-
-    /**
-     * 是否常驻监听唤醒词。
-     *
-     * 默认关：系统识别引擎一直跑着明显费电，而且会占着麦克风。
-     * 落盘是为了进程被杀、设备重启之后能把前台服务接回来——
-     * 用户开了就应该一直开着，不能每次重进应用都要再点一次。
-     */
-    var wakeEnabled: Boolean
-        get() = prefs.getBoolean(KEY_WAKE, false)
-        set(value) = prefs.edit().putBoolean(KEY_WAKE, value).apply()
-
-    /**
-     * 唤醒灵敏度档位：0 低 / 1 中 / 2 高。
-     *
-     * 存**档位**而不是 0-100 的数字：内部换算法（严格匹配的门槛、循环节奏）
-     * 以后可能调整，老用户存的档位不该因此变味。
-     *
-     * 默认中：既能叫醒，又不至于把电视里的声音当成唤醒词。
-     */
-    var wakeSensitivity: Int
-        get() = prefs.getInt(KEY_WAKE_SENS, 1)
-        set(value) = prefs.edit().putInt(KEY_WAKE_SENS, value.coerceIn(0, 2)).apply()
-
-    /** 叫醒后响一声。默认开——不看屏幕也知道叫上了 */
-    var wakeBeep: Boolean
-        get() = prefs.getBoolean(KEY_WAKE_BEEP, true)
-        set(value) = prefs.edit().putBoolean(KEY_WAKE_BEEP, value).apply()
-
-    // ---------------------------------------------------------------- 讯飞离线唤醒
-
-    /**
-     * 唤醒引擎：`system`（系统语音识别循环）或 `ifly`（讯飞 AIUI 离线唤醒）。
-     *
-     * 默认 system：讯飞那套必须先在开放平台建应用、拿三件套、训练唤醒词，
-     * 一装上就默认走它只会得到「什么都叫不醒」。用户配好了再切过来。
-     */
-    var wakeEngine: String
-        get() = prefs.getString(KEY_WAKE_ENGINE, ENGINE_SYSTEM).orEmpty().ifEmpty { ENGINE_SYSTEM }
-        set(value) = prefs.edit().putString(KEY_WAKE_ENGINE, value).apply()
-
-    var iflyAppId: String
-        get() = prefs.getString(KEY_IFLY_APPID, "").orEmpty()
-        set(value) = prefs.edit().putString(KEY_IFLY_APPID, value.trim()).apply()
-
-    var iflyApiKey: String
-        get() = prefs.getString(KEY_IFLY_KEY, "").orEmpty()
-        set(value) = prefs.edit().putString(KEY_IFLY_KEY, value.trim()).apply()
-
-    var iflyApiSecret: String
-        get() = prefs.getString(KEY_IFLY_SECRET, "").orEmpty()
-        set(value) = prefs.edit().putString(KEY_IFLY_SECRET, value.trim()).apply()
-
-    /**
-     * 唤醒阈值，范围 0~3000，**越小越灵敏**。
-     *
-     * 讯飞默认 1450：安静室内可以往下压到 1100，嘈杂环境抬到 1800~2100。
-     */
-    var iflyThreshold: Int
-        get() = prefs.getInt(KEY_IFLY_THRESHOLD, 1450)
-        set(value) = prefs.edit().putInt(KEY_IFLY_THRESHOLD, value.coerceIn(0, 3000)).apply()
-
-    /** 三件套填全了才能尝试启讯飞引擎 */
-    fun iflyReady(): Boolean =
-        iflyAppId.isNotEmpty() && iflyApiKey.isNotEmpty() && iflyApiSecret.isNotEmpty()
-
-    // ---------------------------------------------------------------- 对话风格
-
-    /** 回答详细程度：0 简洁 / 1 标准 / 2 详细 */
-    var replyStyle: Int
-        get() = prefs.getInt(KEY_STYLE, 1)
-        set(value) = prefs.edit().putInt(KEY_STYLE, value.coerceIn(0, 2)).apply()
-
-    /** 回答完是否主动反问一句，把话头递回去 */
-    var proactiveFollowUp: Boolean
-        get() = prefs.getBoolean(KEY_FOLLOW_UP, true)
-        set(value) = prefs.edit().putBoolean(KEY_FOLLOW_UP, value).apply()
+    // ---------------------------------------------------------------- 对话
 
     /**
      * 对话模式：qa（问答）/ msg（消息）/ study（学习）。
@@ -128,32 +45,13 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_MODE, "qa").orEmpty().ifEmpty { "qa" }
         set(value) = prefs.edit().putString(KEY_MODE, value).apply()
 
-    /**
-     * 是否显示「理解过程」：回答出来之前，先用淡色小字展示本地是怎么拆分、
-     * 识别和归纳这句话的，答案出现时整条移除。
-     *
-     * 关掉后回复更快（少了展示用的停顿），功能完全不受影响。
-     */
-    var showThinking: Boolean
-        get() = prefs.getBoolean(KEY_THINKING, true)
-        set(value) = prefs.edit().putBoolean(KEY_THINKING, value).apply()
-
-    /**
-     * 是否联网查询：实时天气走 Open-Meteo，答不上来的问题查维基百科。
-     * 默认开启，但**联网失败不影响使用**——会退回本地内置内容。
-     */
-    var onlineSearch: Boolean
-        get() = prefs.getBoolean(KEY_ONLINE, true)
-        set(value) = prefs.edit().putBoolean(KEY_ONLINE, value).apply()
-
     // ---------------------------------------------------------------- 界面语言
 
     /**
      * 界面语言标签：zh / en / ja / ko。
      *
-     * 真正生效的是 [androidx.appcompat.app.AppCompatDelegate.setApplicationLocales]，
-     * 这里再存一份是为了「启动时先按它把语言定下来」——
-     * AppCompat 自己的存储是异步同步的，冷启动第一帧可能还没读到。
+     * 语言是在 [com.example.voiceassistant.data.LocaleHelper] 里套 Configuration 实现的，
+     * 这里存一份是为了冷启动第一帧就按它重建 Context。
      */
     var language: String
         get() = prefs.getString(KEY_LANGUAGE, LANGUAGE_ZH).orEmpty()
@@ -242,37 +140,18 @@ class AppSettings(context: Context) {
     companion object {
         private const val PREFS_NAME = "voice_assistant_settings"
         private const val KEY_SPEAK = "speak_enabled"
-        private const val KEY_CONTINUOUS = "continuous"
         private const val KEY_TTS_ENGINE = "tts_engine"
-        private const val KEY_WAKE = "wake_enabled"
-        private const val KEY_WAKE_SENS = "wake_sensitivity"
-        private const val KEY_WAKE_BEEP = "wake_beep"
-        private const val KEY_WAKE_ENGINE = "wake_engine"
-        private const val KEY_IFLY_APPID = "ifly_appid"
-        private const val KEY_IFLY_KEY = "ifly_key"
-        private const val KEY_IFLY_SECRET = "ifly_secret"
-        private const val KEY_IFLY_THRESHOLD = "ifly_threshold"
-        private const val KEY_STYLE = "reply_style"
-        private const val KEY_FOLLOW_UP = "proactive_follow_up"
         private const val KEY_MODE = "assistant_mode"
-        private const val KEY_THINKING = "show_thinking"
-        private const val KEY_ONLINE = "online_search"
-        private const val KEY_CLOUD = "cloud_enabled"
         private const val KEY_LANGUAGE = "language"
+        private const val KEY_CLOUD = "cloud_enabled"
         private const val KEY_CLOUD_MODE = "cloud_mode"
         private const val KEY_CLOUD_URL = "cloud_endpoint"
         private const val KEY_CLOUD_KEY = "cloud_key"
         private const val KEY_CLOUD_MODEL = "cloud_model"
         private const val KEY_CLOUD_PROMPT = "cloud_prompt"
 
-        private const val SEP = "␟"
-
         /** 默认界面语言：中文 */
         const val LANGUAGE_ZH = "zh"
-
-        /** 唤醒引擎：系统识别 / 讯飞离线 */
-        const val ENGINE_SYSTEM = "system"
-        const val ENGINE_IFLY = "ifly"
 
         /**
          * 只读语言标签。

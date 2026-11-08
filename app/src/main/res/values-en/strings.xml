@@ -25,9 +25,6 @@
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
-    <string name="settings_answer_style">Answer style</string>
-    <string name="settings_style_concise">Concise</string>
-    <string name="settings_style_detailed">Detailed</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_title">Choose interface language</string>
     <string name="settings_account">Account</string>
@@ -128,35 +125,21 @@
     <string name="bubble_only_last">Only the latest message can be edited or deleted</string>
     <string name="settings_speak">Read answers aloud</string>
     <string name="settings_speak_desc">Speak replies; turn off for text only</string>
-    <string name="settings_wake">Wake word</string>
-    <string name="settings_access">Auto-send messages</string>
     <string name="settings_access_failed">Couldn\'t open accessibility settings; find it in system settings</string>
 
-    <string name="wake_channel_name">Wake word</string>
-    <string name="wake_notification_title">Wake word listening</string>
-    <string name="wake_notification_text">Say “%1$s” to wake me up</string>
-    <string name="wake_hit_text">I heard you — tap to keep talking</string>
 
     <string name="accessibility_label">HardlySeek voice actions</string>
     <string name="accessibility_description">Turns voice commands like “message someone” into real actions: opens WeChat/QQ, finds the contact, fills in the text, and taps by coordinates when a control cannot be clicked directly. Sending happens only after you confirm. If the service is unavailable, the system share sheet is used and you pick the contact and send manually.</string>
 
-    <string name="settings_wake_sensitivity">Wake sensitivity</string>
-    <string name="settings_wake_sens_low">Low</string>
-    <string name="settings_wake_sens_mid">Medium</string>
-    <string name="settings_wake_sens_high">High</string>
-    <string name="settings_wake_sensitivity_set">Sensitivity set to %1$s.</string>
-    <string name="settings_wake_beep">Beep when woken</string>
-    <string name="settings_battery">Keep-alive settings</string>
-    <string name="settings_battery_failed">Cannot open battery settings. Please find it in system settings.</string>
-    <string name="settings_wake_engine">Wake engine</string>
-    <string name="settings_wake_engine_system">System recognition</string>
-    <string name="settings_wake_engine_ifly">iFlytek offline wake</string>
-    <string name="settings_ifly_title">iFlytek offline wake</string>
-    <string name="settings_ifly_hint">Create an app on the iFlytek console and take AppID / APIKey / APISecret from the offline wake service. The wake word must match the resource bundle. Threshold 0–3000: lower is more sensitive (default 1450).</string>
-    <string name="settings_ifly_appid_hint">AppID</string>
-    <string name="settings_ifly_key_hint">APIKey</string>
-    <string name="settings_ifly_secret_hint">APISecret</string>
-    <string name="settings_ifly_threshold_hint">Threshold (default 1450, lower = more sensitive)</string>
-    <string name="settings_ifly_need_all">All three fields are required.</string>
-    <string name="settings_ifly_saved">Saved. Restarting the wake service.</string>
+    <string name="speech_problem_title">No sound</string>
+    <string name="speech_muted">Media volume is at zero, so you can\'t hear me. Turn the media volume up.</string>
+    <string name="speech_no_chinese">This phone\'s speech engine has no Chinese voice, so Chinese text is silent. Switch the engine or download the Chinese voice data in system settings.</string>
+    <string name="speech_no_engine">No text-to-speech engine is installed. Install one (for example Google Text-to-Speech) and I can speak.</string>
+    <string name="speech_problem_fix">Fix it</string>
+    <string name="speech_preview">Hi, I\'m HardlySeek. You can hear me now.</string>
+    <string name="speech_volume_raised">Media volume turned up</string>
+    <string name="speech_settings_failed">Cannot open speech settings; look for Text-to-speech in system settings</string>
+    <string name="access_prompt_title">Grant the permission?</string>
+    <string name="access_prompt_message">With accessibility I can open WeChat / QQ, find the contact and fill in the text myself. Without it you can still send: the text goes to the share sheet and you pick the contact.</string>
+    <string name="access_prompt_go">Open</string>
 </resources>

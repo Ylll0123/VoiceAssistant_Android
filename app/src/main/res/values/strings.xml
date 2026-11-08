@@ -24,9 +24,6 @@
 
     <!-- 设置页 -->
     <string name="settings_title">设置</string>
-    <string name="settings_answer_style">回答方式</string>
-    <string name="settings_style_concise">精简</string>
-    <string name="settings_style_detailed">详细</string>
     <string name="settings_language">语言</string>
     <string name="settings_language_title">选择界面语言</string>
     <string name="settings_account">账号</string>
@@ -126,40 +123,25 @@
     <string name="bubble_only_last">只能修改或删除最后一条</string>
     <string name="settings_speak">语音播报</string>
     <string name="settings_speak_desc">回答时念出来，关掉就只看文字</string>
-    <string name="settings_wake">语音唤醒</string>
-    <string name="settings_access">自动发消息权限</string>
     <string name="settings_access_failed">打不开无障碍设置，到系统设置里找一下「无障碍」</string>
 
-    <!-- 唤醒词 -->
-    <string name="wake_channel_name">唤醒词</string>
-    <string name="wake_notification_title">唤醒词监听中</string>
-    <string name="wake_notification_text">说「%1$s」就能叫醒我</string>
-    <string name="wake_hit_text">我听见了，点一下回来说话</string>
+    <!-- 播报没声音时的四种真实原因与引导 -->
+    <string name="speech_problem_title">没有声音</string>
+    <string name="speech_muted">手机媒体音量是 0，念出来你也听不见。把媒体音量调大就行。</string>
+    <string name="speech_no_chinese">这台手机的语音引擎没有中文语音包，念中文会完全没声音。到系统设置里换一个引擎，或者下载中文语音包。</string>
+    <string name="speech_no_engine">手机里没有可用的语音合成引擎，装一个（例如「语音合成」或 Google 文字转语音）就能出声。</string>
+    <string name="speech_problem_fix">去处理</string>
+    <string name="speech_preview">你好，我是 HardlySeek，现在可以出声了。</string>
+    <string name="speech_volume_raised">媒体音量已经调大了</string>
+    <string name="speech_settings_failed">打不开语音设置页，到系统设置里找「文字转语音」</string>
+
+    <!-- 发消息缺无障碍权限：用到时才问，不再放设置里 -->
+    <string name="access_prompt_title">要不要开权限</string>
+    <string name="access_prompt_message">开了无障碍权限，我就能自己进微信 / QQ 找人、把话填进聊天框。不开也能用：内容会带到分享页，你自己选人发送。</string>
+    <string name="access_prompt_go">去开启</string>
 
     <!-- 无障碍（发消息自动化）：这段说明会在系统设置里给用户看，必须如实写用途 -->
     <string name="accessibility_label">HardlySeek 语音操作</string>
-    <string name="accessibility_description">把「给谁发什么」这类语音指令变成实际操作：打开微信/QQ、搜索联系人、把内容填进聊天框；节点点不动时会派发一次轻点手势。你确认之后才会点发送，不会在后台静默发送。没连上无障碍时改用系统分享，由你自己选联系人并点发送。</string>
+    <string name="accessibility_description">把「给谁发什么」这类语音指令变成实际操作：打开微信/QQ、搜索联系人、把内容填进聊天框；节点点不动时会派发一次轻点手势。发送键始终留给你自己点，不会在后台静默发送。没连上无障碍时改用系统分享，由你自己选联系人并点发送。</string>
 
-    <!-- 悬浮助手（其他应用上面那只「我在听」） -->
-    <!-- 唤醒调参：灵敏度 / 提示音 / 保活 -->
-    <string name="settings_wake_sensitivity">唤醒灵敏度</string>
-    <string name="settings_wake_sens_low">低</string>
-    <string name="settings_wake_sens_mid">中</string>
-    <string name="settings_wake_sens_high">高</string>
-    <string name="settings_wake_sensitivity_set">灵敏度已设为「%1$s」。</string>
-    <string name="settings_wake_beep">叫醒时响一声</string>
-    <string name="settings_battery">后台保活设置</string>
-    <string name="settings_battery_failed">打不开电池优化设置，去系统设置里手动找一下。</string>
-    <!-- 讯飞离线唤醒 -->
-    <string name="settings_wake_engine">唤醒引擎</string>
-    <string name="settings_wake_engine_system">系统识别（免配置）</string>
-    <string name="settings_wake_engine_ifly">讯飞离线唤醒</string>
-    <string name="settings_ifly_title">讯飞离线唤醒</string>
-    <string name="settings_ifly_hint">在讯飞开放平台建好应用，到「离线唤醒」里拿 AppID / APIKey / APISecret。唤醒词必须和资源包配套，换词要重新训练。阈值 0~3000，越小越灵敏（默认 1450）。</string>
-    <string name="settings_ifly_appid_hint">AppID</string>
-    <string name="settings_ifly_key_hint">APIKey</string>
-    <string name="settings_ifly_secret_hint">APISecret</string>
-    <string name="settings_ifly_threshold_hint">唤醒阈值（默认 1450，越小越灵敏）</string>
-    <string name="settings_ifly_need_all">三项都要填，少一项讯飞唤醒起不来。</string>
-    <string name="settings_ifly_saved">讯飞配置已保存，正在重启唤醒服务。</string>
 </resources>

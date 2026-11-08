@@ -61,10 +61,10 @@ object LocalNlu {
 
         val hit = sendMessage(text)
             ?: messageDiagnostic(text)
-            ?: wakeDiagnostic(text)
             ?: torch(text)
             ?: brightness(text)
             ?: volume(text)
+            ?: music(text)
             ?: radio(text)
             ?: openApp(text, appMatcher)
             ?: clock(text)
@@ -143,28 +143,91 @@ object LocalNlu {
 
         val mentions = text.contains("音量") || text.contains("声音") ||
             text.contains("大声") || text.contains("小声") || text.contains("静音") ||
-            text.contains("免打扰") || text.contains("出声")
+            text.contains("免打扰") || text.contains("出声") ||
+            // 「把铃声调小」里没有「音量」两个字，但确实是调音量
+            text.contains("铃声") || text.contains("来电")
         if (!mentions) return null
+
+        // 哪一路：铃声 / 闹钟 / 媒体。以前一律只动媒体，「把铃声调小」就像没反应
+        val stream = when {
+            text.contains("铃声") || text.contains("来电") -> "ring"
+            text.contains("闹钟") -> "alarm"
+            else -> "music"
+        }
+
         // 「取消静音」必须排在「静音」前面判，否则一个字都还没说完就被当成静音了
         if (text.contains("取消静音") || text.contains("解除静音") ||
             text.contains("取消免打扰") || text.contains("打开声音")
         ) {
-            return Hit("audio/volume_ctrl", BusArgs.of("action" to "unmute"))
+            return Hit("audio/volume_ctrl", BusArgs.of("action" to "unmute", "stream" to stream))
         }
         if (text.contains("静音") || text.contains("免打扰")) {
-            return Hit("audio/volume_ctrl", BusArgs.of("action" to "mute"))
+            return Hit("audio/volume_ctrl", BusArgs.of("action" to "mute", "stream" to stream))
         }
 
-        val percent = PERCENT.find(text)?.groupValues?.get(1)?.toIntOrNull()
-        if (percent != null) {
-            return Hit("audio/volume_ctrl", BusArgs.of("percent" to percent.coerceIn(0, 100).toString()))
+        volumePercent(text)?.let { percent ->
+            return Hit(
+                "audio/volume_ctrl",
+                BusArgs.of("percent" to percent.toString(), "stream" to stream)
+            )
         }
         val action = when {
             text.contains("大") || text.contains("高") -> "up"
             text.contains("小") || text.contains("低") -> "down"
             else -> return null
         }
-        return Hit("audio/volume_ctrl", BusArgs.of("action" to action))
+        return Hit("audio/volume_ctrl", BusArgs.of("action" to action, "stream" to stream))
+    }
+
+    /**
+     * 从一句话里读目标音量。
+     *
+     * 三种写法都要认：`30%`、「音量调到 30」、「调到五十」。
+     * 一开始只认带百分号的，用户说「音量调到 30」就整个掉给大模型——离线时直接失败，
+     * 表现就是「音量设置不好用」。
+     */
+    private fun volumePercent(text: String): Int? {
+        PERCENT.find(text)?.groupValues?.get(1)?.toIntOrNull()?.let {
+            return it.coerceIn(0, 100)
+        }
+        VOLUME_DIGITS.find(text)?.groupValues?.get(1)?.toIntOrNull()?.let {
+            if (it in 0..100) return it
+        }
+        VOLUME_CHINESE.find(text)?.groupValues?.get(1)?.let { raw ->
+            TimeWords.chineseNumber(raw)?.let { if (it in 0..100) return it }
+        }
+        return null
+    }
+
+    /**
+     * 「播放音乐」「暂停」「下一首」。
+     *
+     * 只认带音乐动作的说法，不抢「打开网易云」这类指令（那条走 [openApp]）；
+     * 单独一个「暂停」也不认——它更可能是在说计时器。
+     */
+    private fun music(text: String): Hit? {
+        if (text.length > 18) return null
+
+        val play = listOf(
+            "播放音乐", "放音乐", "放首歌", "放个歌", "来首歌", "来点音乐",
+            "播放歌曲", "听歌", "放点音乐", "开始播放", "播首歌"
+        )
+        if (play.any { text.contains(it) }) {
+            return Hit("audio/music_ctrl", BusArgs.of("action" to "play"))
+        }
+
+        val pause = listOf("暂停音乐", "暂停播放", "别放了", "停止播放", "关掉音乐", "把音乐停")
+        if (pause.any { text.contains(it) }) {
+            return Hit("audio/music_ctrl", BusArgs.of("action" to "pause"))
+        }
+
+        if (listOf("下一首", "下一曲", "切歌", "换一首", "换首歌").any { text.contains(it) }) {
+            return Hit("audio/music_ctrl", BusArgs.of("action" to "next"))
+        }
+        if (listOf("上一首", "上一曲", "前一首").any { text.contains(it) }) {
+            return Hit("audio/music_ctrl", BusArgs.of("action" to "previous"))
+        }
+        return null
     }
 
     /** 「打开 wifi」「关掉蓝牙」 */
@@ -366,22 +429,6 @@ object LocalNlu {
         return Hit("msg/query_can_send", BusArgs.of("platform" to key))
     }
 
-    // ------------------------------------------------------------------ 唤醒诊断
-
-    /**
-     * 「唤醒用不了」「小豆小豆没反应」「怎么开启语音唤醒」。
-     *
-     * 唤醒是唯一只能由用户在设置里手动打开的能力，出问题时没有别的入口能看状态。
-     * 留一条口语入口，问一句就把开关 / 服务 / 权限 / 离线包四层一次说清。
-     * 只认带「唤醒/小豆/叫不醒」且带诊断措辞的句子，不会抢「打开手电筒」这类指令。
-     */
-    private fun wakeDiagnostic(text: String): Hit? {
-        val mentions = text.contains("唤醒") || text.contains("小豆") || text.contains("叫不醒")
-        if (!mentions) return null
-        if (!WAKE_DIAG.containsMatchIn(text)) return null
-        return Hit("kws/status", BusArgs.EMPTY)
-    }
-
     // ------------------------------------------------------------------ 规则表
 
     /**
@@ -400,6 +447,16 @@ object LocalNlu {
     private const val QUICK_CAP = 24
 
     private val PERCENT = Regex("(\\d{1,3})\\s*%")
+
+    /** 「音量调到 30」「声音 80」——不带百分号也要认 */
+    private val VOLUME_DIGITS = Regex(
+        "(?:音量|声音|调到|调成|调至|设为|设成|改到)\\D{0,4}?(\\d{1,3})"
+    )
+
+    /** 「音量调到五十」 */
+    private val VOLUME_CHINESE = Regex(
+        "(?:音量|声音|调到|调成|调至|设为|设成|改到)\\D{0,4}?([零〇一二两三四五六七八九十]{1,3})"
+    )
 
     private val OPEN_APP = Regex("^(?:请|帮我|麻烦)?\\s*(?:打开|启动|运行|进入)\\s*(.{1,10}?)(?:吧|呗|呀|啊)?[。！!]?$")
 
@@ -424,12 +481,6 @@ object LocalNlu {
     private val SEND_DIAG = Regex(
         "为什么|咋发|怎么发不|发不(出|了|上去)|发不了|不能发|没法发|" +
             "能发|可以发|能不能发|检查一下|检查下|自检|诊断|查一下发|看看发"
-    )
-
-    /** 唤醒诊断的措辞；「怎么开启」也算——问怎么开的人，最该先知道现在为什么没开 */
-    private val WAKE_DIAG = Regex(
-        "为什么|咋|怎么|用不了|用不上|不能用|没反应|没动静|叫不醒|叫不动|不灵|" +
-            "检查|查一下|自检|诊断|看看|失败|不行|开启|打开"
     )
 
     /** 「计时 10 分钟」里「计时」后面那截当作名字 */

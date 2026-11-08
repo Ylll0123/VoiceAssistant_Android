@@ -25,9 +25,6 @@
 
     <!-- 설정 -->
     <string name="settings_title">설정</string>
-    <string name="settings_answer_style">답변 방식</string>
-    <string name="settings_style_concise">간단히</string>
-    <string name="settings_style_detailed">자세히</string>
     <string name="settings_language">언어</string>
     <string name="settings_language_title">표시 언어 선택</string>
     <string name="settings_account">계정</string>
@@ -128,35 +125,21 @@
     <string name="bubble_only_last">마지막 메시지만 수정하거나 삭제할 수 있습니다</string>
     <string name="settings_speak">음성 읽기</string>
     <string name="settings_speak_desc">답변을 읽어 줍니다. 끄면 텍스트만 표시</string>
-    <string name="settings_wake">호출어</string>
-    <string name="settings_access">메시지 자동 전송</string>
     <string name="settings_access_failed">접근성 설정을 열 수 없습니다. 시스템 설정에서 열어 주세요</string>
 
-    <string name="wake_channel_name">호출어</string>
-    <string name="wake_notification_title">호출어 대기 중</string>
-    <string name="wake_notification_text">“%1$s”라고 말하면 깨어납니다</string>
-    <string name="wake_hit_text">들었어요. 탭해서 이어서 말하세요</string>
 
     <string name="accessibility_label">HardlySeek 음성 조작</string>
     <string name="accessibility_description">“누구에게 무엇을 보낼지” 같은 음성 명령을 실제 동작으로 바꿉니다: 위챗/QQ를 열고, 연락처를 검색하고, 내용을 입력합니다. 직접 누를 수 없는 요소는 좌표 탭을 사용할 수 있습니다. 전송은 확인 후에만 합니다. 서비스를 사용할 수 없으면 시스템 공유를 이용하며, 연락처 선택과 전송은 직접 하게 됩니다.</string>
 
-    <string name="settings_wake_sensitivity">호출 감도</string>
-    <string name="settings_wake_sens_low">낮음</string>
-    <string name="settings_wake_sens_mid">보통</string>
-    <string name="settings_wake_sens_high">높음</string>
-    <string name="settings_wake_sensitivity_set">감도를 「%1$s」로 설정했습니다.</string>
-    <string name="settings_wake_beep">호출 시 알림음</string>
-    <string name="settings_battery">백그라운드 유지 설정</string>
-    <string name="settings_battery_failed">배터리 설정을 열 수 없습니다. 시스템 설정에서 직접 찾아 주세요.</string>
-    <string name="settings_wake_engine">호출 엔진</string>
-    <string name="settings_wake_engine_system">시스템 인식</string>
-    <string name="settings_wake_engine_ifly">iFlytek 오프라인 호출</string>
-    <string name="settings_ifly_title">iFlytek 오프라인 호출</string>
-    <string name="settings_ifly_hint">iFlytek 콘솔에서 앱을 만들고 오프라인 호출 서비스에서 AppID / APIKey / APISecret 을 받으세요. 호출어는 리소스와 일치해야 합니다. 임계값 0~3000, 작을수록 민감(기본 1450).</string>
-    <string name="settings_ifly_appid_hint">AppID</string>
-    <string name="settings_ifly_key_hint">APIKey</string>
-    <string name="settings_ifly_secret_hint">APISecret</string>
-    <string name="settings_ifly_threshold_hint">임계값(기본 1450, 작을수록 민감)</string>
-    <string name="settings_ifly_need_all">세 항목을 모두 입력해야 합니다.</string>
-    <string name="settings_ifly_saved">저장했습니다. 호출 서비스를 다시 시작합니다.</string>
+    <string name="speech_problem_title">소리가 나지 않습니다</string>
+    <string name="speech_muted">미디어 볼륨이 0이라 들리지 않습니다. 볼륨을 올려 주세요.</string>
+    <string name="speech_no_chinese">이 휴대폰의 음성 엔진에 중국어 음성 데이터가 없어 중국어는 소리가 나지 않습니다. 시스템 설정에서 엔진을 바꾸거나 음성 데이터를 받아 주세요.</string>
+    <string name="speech_no_engine">음성 합성 엔진이 없습니다. 설치하면 읽어 줄 수 있습니다.</string>
+    <string name="speech_problem_fix">해결하기</string>
+    <string name="speech_preview">안녕하세요, HardlySeek 입니다. 이제 소리가 납니다.</string>
+    <string name="speech_volume_raised">미디어 볼륨을 올렸습니다</string>
+    <string name="speech_settings_failed">음성 설정을 열 수 없습니다. 시스템 설정의 \'텍스트 음성 변환\'에서 열어 주세요</string>
+    <string name="access_prompt_title">권한을 허용할까요</string>
+    <string name="access_prompt_message">접근성을 허용하면 위챗 / QQ를 열어 상대를 찾고 내용을 입력할 수 있습니다. 허용하지 않아도 공유 시트로 보낼 수 있습니다.</string>
+    <string name="access_prompt_go">열기</string>
 </resources>

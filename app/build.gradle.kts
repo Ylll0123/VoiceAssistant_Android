@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.voiceassistant"
         minSdk = 28
         targetSdk = 37
-        versionCode = 29
-        versionName = "5.5"
+        versionCode = 30
+        versionName = "5.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -52,20 +52,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    /**
-     * 讯飞的 .so 是给 dlopen 用的（libaiui 会按名字再加载 libvtn_mic1）。
-     * 保留传统打包方式，让它们被解压到 lib 目录里，避免某些 ROM 上直接
-     * 从 APK 里映射时找不到依赖库。
-     */
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
 }
 
 dependencies {
-    implementation(files("libs/AIUI.jar"))
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.constraintlayout)

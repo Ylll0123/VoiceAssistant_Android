@@ -28,12 +28,12 @@
         android:required="false" />
 
     <!--
-        唤醒词：麦克风要常驻，只能是前台服务。
-        FOREGROUND_SERVICE_MICROPHONE 是 Android 14 起的前台服务类型声明，
-        没有它 startForeground 会抛异常（系统不让后台随便占麦克风）。
+        闹钟：系统时钟应用的 SET_ALARM / SET_TIMER 入口挂着这个权限
+        （`com.android.alarm.permission.SET_ALARM`，普通权限、装上就有）。
+        不声明的话 `resolveActivity` 直接返回 null，看得到时钟应用也叫不起来——
+        表现就是「明明有时钟，助手说设不了闹钟」。
     -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
     <!-- 改系统亮度：属于「特殊权限」，要在设置页里由用户手动授予 -->
     <uses-permission
@@ -75,6 +75,18 @@
         -->
         <package android:name="com.tencent.mm" />
         <package android:name="com.tencent.mobileqq" />
+
+        <!-- 闹钟 / 计时直接交给系统时钟应用，Android 11+ 要先声明才解析得到 -->
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_TIMER" />
+        </intent>
+        <!-- 「播放音乐」要先看本机有哪些音乐应用 -->
+        <intent>
+            <action android:name="android.intent.action.MUSIC_PLAYER" />
+        </intent>
     </queries>
 
     <application
@@ -112,16 +124,6 @@
         <receiver
             android:name=".reminder.ReminderReceiver"
             android:exported="false" />
-
-        <!--
-            唤醒词监听：常驻前台服务。
-            foregroundServiceType="microphone" 是 Android 14 的硬要求，
-            同时要在代码里用 FOREGROUND_SERVICE_TYPE_MICROPHONE 调 startForeground。
-        -->
-        <service
-            android:name=".kws.WakeWordService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
 
         <!--
             无障碍服务：发消息自动化的那只手。

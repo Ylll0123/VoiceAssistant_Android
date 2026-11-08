@@ -104,6 +104,35 @@ class LocalNluTest {
         assertEquals("audio/tts_stop", service("闭嘴"))
     }
 
+    @Test
+    fun `音量数字不带百分号也要认`() {
+        // 「调到 30」这种说法以前会掉给大模型，离线时等于没反应
+        assertEquals("audio/volume_ctrl", service("音量调到30"))
+        assertEquals("30", args("音量调到30", "percent"))
+        assertEquals("50", args("声音调到五十", "percent"))
+        assertEquals("80", args("把音量调到80", "percent"))
+    }
+
+    @Test
+    fun `音量要分清媒体铃声闹钟`() {
+        assertEquals("music", args("音量调到30", "stream"))
+        assertEquals("ring", args("把铃声调小", "stream"))
+        assertEquals("ring", args("铃声静音", "stream"))
+        assertEquals("alarm", args("闹钟音量调到80", "stream"))
+    }
+
+    @Test
+    fun `放歌和切歌`() {
+        assertEquals("audio/music_ctrl", service("播放音乐"))
+        assertEquals("play", args("播放音乐", "action"))
+        assertEquals("play", args("放首歌来听", "action"))
+        assertEquals("pause", args("暂停音乐", "action"))
+        assertEquals("next", args("下一首", "action"))
+        assertEquals("previous", args("上一首", "action"))
+        // 单独一个「暂停」不算：更可能是在说计时器
+        assertNull(hit("暂停"))
+    }
+
     // ------------------------------------------------------------ 时间
 
     @Test

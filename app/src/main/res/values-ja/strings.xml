@@ -25,9 +25,6 @@
 
     <!-- 設定 -->
     <string name="settings_title">設定</string>
-    <string name="settings_answer_style">回答の仕方</string>
-    <string name="settings_style_concise">簡潔</string>
-    <string name="settings_style_detailed">詳しく</string>
     <string name="settings_language">言語</string>
     <string name="settings_language_title">表示言語を選択</string>
     <string name="settings_account">アカウント</string>
@@ -128,35 +125,21 @@
     <string name="bubble_only_last">編集・削除できるのは最後の発言だけです</string>
     <string name="settings_speak">読み上げ</string>
     <string name="settings_speak_desc">回答を音声で読み上げます。オフにすると文字だけ</string>
-    <string name="settings_wake">ウェイクワード</string>
-    <string name="settings_access">メッセージ自動送信</string>
     <string name="settings_access_failed">ユーザー補助の設定を開けませんでした。システム設定から開いてください</string>
 
-    <string name="wake_channel_name">ウェイクワード</string>
-    <string name="wake_notification_title">ウェイクワード待機中</string>
-    <string name="wake_notification_text">「%1$s」で呼び出せます</string>
-    <string name="wake_hit_text">聞こえました。タップして話してください</string>
 
     <string name="accessibility_label">HardlySeek 音声操作</string>
     <string name="accessibility_description">「誰に何を送る」といった音声指示を実際の操作に変えます：WeChat / QQ を開き、連絡先を検索し、本文を入力します。操作できない要素には座標タップを使うことがあります。送信は確認後にのみ行います。サービスが使えない場合はシステム共有を使い、連絡先の選択と送信はご自身で行います。</string>
 
-    <string name="settings_wake_sensitivity">ウェイク感度</string>
-    <string name="settings_wake_sens_low">低</string>
-    <string name="settings_wake_sens_mid">中</string>
-    <string name="settings_wake_sens_high">高</string>
-    <string name="settings_wake_sensitivity_set">感度を「%1$s」にしました。</string>
-    <string name="settings_wake_beep">呼びかけに応答音</string>
-    <string name="settings_battery">バックグラウンド維持設定</string>
-    <string name="settings_battery_failed">バッテリー設定を開けませんでした。システム設定から開いてください。</string>
-    <string name="settings_wake_engine">ウェイクエンジン</string>
-    <string name="settings_wake_engine_system">システム認識</string>
-    <string name="settings_wake_engine_ifly">iFlytek オフライン起動</string>
-    <string name="settings_ifly_title">iFlytek オフライン起動</string>
-    <string name="settings_ifly_hint">iFlytek コンソールでアプリを作り、オフライン起動サービスから AppID / APIKey / APISecret を取得してください。起動語はリソースと一致する必要があります。しきい値は 0〜3000、小さいほど敏感（既定 1450）。</string>
-    <string name="settings_ifly_appid_hint">AppID</string>
-    <string name="settings_ifly_key_hint">APIKey</string>
-    <string name="settings_ifly_secret_hint">APISecret</string>
-    <string name="settings_ifly_threshold_hint">しきい値（既定 1450、小さいほど敏感）</string>
-    <string name="settings_ifly_need_all">3 項目すべて入力してください。</string>
-    <string name="settings_ifly_saved">保存しました。起動サービスを再起動します。</string>
+    <string name="speech_problem_title">音が出ません</string>
+    <string name="speech_muted">メディア音量が 0 なので聞こえません。音量を上げてください。</string>
+    <string name="speech_no_chinese">この端末の音声エンジンには中国語の音声データがないため、中国語は無音になります。システム設定でエンジンを変えるか音声データをダウンロードしてください。</string>
+    <string name="speech_no_engine">音声合成エンジンが入っていません。インストールすると読み上げできます。</string>
+    <string name="speech_problem_fix">対処する</string>
+    <string name="speech_preview">こんにちは、HardlySeek です。これで声が出せます。</string>
+    <string name="speech_volume_raised">メディア音量を上げました</string>
+    <string name="speech_settings_failed">音声設定を開けません。システム設定の「テキスト読み上げ」から開いてください</string>
+    <string name="access_prompt_title">権限を許可しますか</string>
+    <string name="access_prompt_message">ユーザー補助を許可すると、WeChat / QQ を開いて相手を探し、本文を入力できます。許可しなくても共有シート経由で送れます。</string>
+    <string name="access_prompt_go">開く</string>
 </resources>

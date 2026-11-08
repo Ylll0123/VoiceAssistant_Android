@@ -64,8 +64,8 @@ class AiTools(private val bus: ServiceBus) {
     /**
      * 工具名 → 服务名。
      *
-     * 只换**第一个**下划线：`kws_set_wake_word` → `kws/set_wake_word`，
-     * 保留动作名里的下划线，不然 `set_wake_word` 会被切成三段。
+     * 只换**第一个**下划线：`msg_query_can_send` → `msg/query_can_send`，
+     * 保留动作名里的下划线，不然动作名会被切成好几段。
      * 具体实现统一放在 [ServiceBus.toServiceName]，两边不会各转一套。
      */
     private fun serviceOf(toolName: String): String = ServiceBus.toServiceName(toolName)
@@ -145,10 +145,17 @@ class AiTools(private val bus: ServiceBus) {
     },"required":["action"]}}},
   {"type":"function","function":{
     "name":"audio_volume_ctrl",
-    "description":"调音量、静音。用户说「大声点」「静音」「音量 30%」时调用。",
+    "description":"调手机音量、静音。用户说「大声点」「静音」「音量 30%」「铃声小一点」时调用。用户没说哪一路就用 music。",
     "parameters":{"type":"object","properties":{
       "action":{"type":"string","enum":["up","down","mute","unmute","current"],"description":"按档调或静音"},
-      "percent":{"type":"number","description":"目标音量 0-100"}
+      "percent":{"type":"number","description":"目标音量 0-100"},
+      "stream":{"type":"string","enum":["music","ring","alarm"],"description":"music 媒体（默认）、ring 铃声、alarm 闹钟音量"}
+    }}}},
+  {"type":"function","function":{
+    "name":"audio_music_ctrl",
+    "description":"放歌。用户说「播放音乐」「放首歌」「暂停」「下一首」「切歌」时调用。会打开手机里的音乐应用并派发播放键；暂停和切歌只对已经在放的音乐生效。",
+    "parameters":{"type":"object","properties":{
+      "action":{"type":"string","enum":["play","pause","next","previous"],"description":"默认 play"}
     }}}},
   {"type":"function","function":{
     "name":"audio_tts_stop",
@@ -192,11 +199,7 @@ class AiTools(private val bus: ServiceBus) {
     "description":"诊断发消息能力：应用装没装、无障碍连没连上、系统分享通路能不能用。用户问「为什么发不出去」「能发微信吗」「检查一下发消息」时调用，把原因原样转述给用户。",
     "parameters":{"type":"object","properties":{
       "platform":{"type":"string","enum":["wechat","qq"],"description":"用户说 QQ/企鹅 就填 qq，否则 wechat"}
-    }}}},
-  {"type":"function","function":{
-    "name":"kws_status",
-    "description":"诊断语音唤醒：监听开关、服务是否在跑、录音权限、系统识别服务、最近一次识别错误码。用户说「唤醒用不了」「叫不醒」「小豆小豆没反应」「检查一下唤醒」时调用。注意：真正打开/关闭唤醒需要用户在设置页操作，这个工具只查不改。",
-    "parameters":{"type":"object","properties":{}}}}
+    }}}}
 ]
 """.trimIndent()
     }

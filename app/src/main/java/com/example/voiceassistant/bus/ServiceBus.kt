@@ -187,7 +187,7 @@ class ServiceBus {
         fun toServiceName(toolName: String): String {
             val index = toolName.indexOf('_')
             if (index <= 0) return toolName
-            // 只换第一个：动作名自己带下划线（set_wake_word），全换会切成四段
+            // 只换第一个：动作名自己带下划线（query_can_send），全换会切成四段
             return toolName.substring(0, index) + "/" + toolName.substring(index + 1)
         }
 

@@ -1,11 +1,13 @@
 package com.example.voiceassistant.provider
 
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import com.example.voiceassistant.bus.BusArgs
 import com.example.voiceassistant.bus.BusReply
 import com.example.voiceassistant.bus.Supply
 import com.example.voiceassistant.service.AudioController
+import com.example.voiceassistant.service.MusicPlayer
 import com.example.voiceassistant.service.TtsManager
 
 /**
@@ -24,13 +26,14 @@ import com.example.voiceassistant.service.TtsManager
 class AudioSupply(
     private val tts: TtsManager?,
     private val audio: AudioController,
+    private val music: MusicPlayer? = null,
     /** 开始一次收音；返回 false 表示当前环境听不了（没权限 / 正在播报） */
     private val startListening: () -> Boolean = { false }
 ) {
 
     private val main = Handler(Looper.getMainLooper())
 
-    val all: List<Supply> = listOf(speak(), stop(), volume(), recognize())
+    val all: List<Supply> = listOf(speak(), stop(), volume(), musicCtrl(), recognize())
 
     // ------------------------------------------------------------------ TTS
 
@@ -59,35 +62,84 @@ class AudioSupply(
 
     // ------------------------------------------------------------------ 音量
 
+    /**
+     * 音量：媒体 / 铃声 / 闹钟三条流分开调。
+     *
+     * 以前一律只动媒体音量，所以「把铃声调小」听起来就是没反应。
+     * 现在还会**读回来核对**：系统没接受（固定音量、被免打扰策略挡住）时，
+     * 如实说「没调成，现在是几成」，而不是回一句「已调好」。
+     */
     private fun volume(): Supply = object : Supply {
         override val name = "audio/volume_ctrl"
         override val summary =
-            "调音量。参数 action：up / down / mute / unmute，或者 percent（0-100）。"
+            "调手机音量。参数 action：up / down / mute / unmute / current，" +
+                "或者 percent（0-100）。参数 stream 指定调哪条：music（媒体，默认）/ ring（铃声）/ alarm（闹钟）。"
 
-        override fun invoke(args: BusArgs): BusReply = when {
-            args.int("percent") != null -> {
-                val percent = args.int("percent")!!.coerceIn(0, 100)
-                audio.setVolumePercent(percent)
-                BusReply.ok("音量调到 $percent% 了。")
+        override fun invoke(args: BusArgs): BusReply {
+            val stream = streamOf(args.str("stream"))
+            val label = streamLabel(stream)
+
+            if (audio.isVolumeFixed()) {
+                return BusReply.fail("这台设备的音量是系统固定的，应用改不了，只能按音量键调。")
             }
-            args.str("action") == "mute" -> {
-                audio.setMuted(true)
-                BusReply.ok("已静音。")
+
+            return when {
+                args.int("percent") != null -> {
+                    val percent = args.int("percent")!!.coerceIn(0, 100)
+                    if (audio.setVolumePercent(percent, stream)) {
+                        // 回读到的百分比才是真的：档位是整数，30% 会落到 26% 那一档
+                        BusReply.ok("${label}调好了，现在 ${audio.volumePercent(stream)}%。")
+                    } else {
+                        BusReply.fail(
+                            "${label}没调成，现在是 ${audio.volumePercent(stream)}%。" +
+                                if (stream == AudioManager.STREAM_RING) {
+                                    "铃声要改的话，可能得允许「勿扰模式」权限。"
+                                } else {
+                                    "可能被系统或其他应用占着。"
+                                }
+                        )
+                    }
+                }
+
+                args.str("action") == "mute" -> {
+                    if (audio.setMuted(true, stream)) BusReply.ok("${label}已静音。")
+                    else BusReply.fail("${label}静音没成功，系统可能不让我改这一路。")
+                }
+
+                args.str("action") == "unmute" -> {
+                    if (audio.setMuted(false, stream)) BusReply.ok("${label}已取消静音。")
+                    else BusReply.fail("${label}取消静音没成功。")
+                }
+
+                args.str("action") == "up" -> {
+                    audio.adjustVolume(true, stream)
+                    BusReply.ok("${label}调大了，现在 ${audio.volumePercent(stream)}%。")
+                }
+
+                args.str("action") == "down" -> {
+                    audio.adjustVolume(false, stream)
+                    BusReply.ok("${label}调小了，现在 ${audio.volumePercent(stream)}%。")
+                }
+
+                args.str("action") == "current" -> BusReply.ok("${label}现在 ${audio.volumePercent(stream)}%。")
+                else -> BusReply.fail("要调大还是调小？")
             }
-            args.str("action") == "unmute" -> {
-                audio.setMuted(false)
-                BusReply.ok("已取消静音。")
-            }
-            args.str("action") == "up" -> {
-                audio.adjustVolume(true)
-                BusReply.ok("音量调大了。")
-            }
-            args.str("action") == "down" -> {
-                audio.adjustVolume(false)
-                BusReply.ok("音量调小了。")
-            }
-            args.str("action") == "current" -> BusReply.ok("现在音量是 ${audio.volumePercent()}%。")
-            else -> BusReply.fail("要调大还是调小？")
+        }
+    }
+
+    // ------------------------------------------------------------------ 音乐
+
+    private fun musicCtrl(): Supply = object : Supply {
+        override val name = "audio/music_ctrl"
+        override val summary =
+            "放歌。参数 action：play（播放 / 打开音乐应用开始放，默认）/ pause（暂停）/ " +
+                "next（下一首）/ previous（上一首）。"
+
+        override fun invoke(args: BusArgs): BusReply {
+            val player = music ?: return BusReply.fail("这台设备没有音乐控制。")
+            val action = MusicPlayer.Action.of(args.str("action")) ?: MusicPlayer.Action.PLAY
+            val outcome = player.handle(action)
+            return if (outcome.ok) BusReply.ok(outcome.message) else BusReply.fail(outcome.message)
         }
     }
 
@@ -95,8 +147,7 @@ class AudioSupply(
 
     private fun recognize(): Supply = object : Supply {
         override val name = "audio/asr_recognize"
-        override val summary = "开始语音识别（打开麦克风听一句）。结果会显示在对话里。"
-
+        override val summary = "开始语音识别（打开麦克风听一句）。结果会直接发给助手。"
         override fun invoke(args: BusArgs): BusReply {
             val started = runCatching { startListening() }.getOrDefault(false)
             return if (started) {
@@ -105,5 +156,17 @@ class AudioSupply(
                 BusReply.fail("现在没法开麦克风，检查一下录音权限。")
             }
         }
+    }
+
+    private fun streamOf(raw: String?): Int = when (raw?.trim()?.lowercase()) {
+        "ring", "ringer", "铃声", "来电" -> AudioManager.STREAM_RING
+        "alarm", "闹钟" -> AudioManager.STREAM_ALARM
+        else -> AudioManager.STREAM_MUSIC
+    }
+
+    private fun streamLabel(stream: Int): String = when (stream) {
+        AudioManager.STREAM_RING -> "铃声"
+        AudioManager.STREAM_ALARM -> "闹钟音量"
+        else -> "媒体音量"
     }
 }

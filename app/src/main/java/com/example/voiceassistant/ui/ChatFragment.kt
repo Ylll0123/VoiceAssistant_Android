@@ -27,7 +27,8 @@ import kotlin.math.abs
  * 不按的时候不会自动收音——这是和以前的「连续对话」最大的区别，
  * 用户不用担心对着手机说别的也被录进去。
  *
- * 松手后识别结果只是**填进输入框**，还要点一下发送：说错了还有机会改。
+ * 松手后识别完**直接发出去**：说错了可以用气泡的长按改，不必为了「再看一眼」
+ * 多按一次发送键。
  *
  * ## 气泡操作
  * 长按自己的气泡弹「修改 / 删除」，而且只对**最后一条**用户消息生效——
@@ -315,12 +316,6 @@ class ChatFragment : Fragment(), ChatSessionView {
         resetListening()
     }
 
-    override fun setInput(text: String) {
-        etInput.setText(text)
-        etInput.setSelection(text.length)
-        focusInput()
-    }
-
     private fun hideKeyboard() {
         val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(root.windowToken, 0)
@@ -378,7 +373,6 @@ class ChatFragment : Fragment(), ChatSessionView {
 interface ChatSessionView {
     fun refresh()
     fun clearInput()
-    fun setInput(text: String)
     fun focusInput()
     fun startEdit(index: Int): Boolean
     fun setListening(active: Boolean, cancel: Boolean)

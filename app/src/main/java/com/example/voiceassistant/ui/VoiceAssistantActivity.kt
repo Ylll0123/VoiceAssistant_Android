@@ -38,15 +38,10 @@ import com.example.voiceassistant.core.CloudLlmBridge
 import com.example.voiceassistant.core.Dispatcher
 import com.example.voiceassistant.core.LlmSwitch
 import com.example.voiceassistant.im.ImAutomator
-import com.example.voiceassistant.kws.WakeConfig
-import com.example.voiceassistant.kws.WakeDetected
-import com.example.voiceassistant.kws.WakeWord
-import com.example.voiceassistant.kws.WakeWordService
 import com.example.voiceassistant.provider.AudioSupply
 import com.example.voiceassistant.provider.ContextSupply
 import com.example.voiceassistant.provider.DeviceSupply
 import com.example.voiceassistant.provider.GenSupply
-import com.example.voiceassistant.provider.KwsSupply
 import com.example.voiceassistant.provider.MsgSupply
 import com.example.voiceassistant.provider.ScheduleSupply
 import com.example.voiceassistant.provider.StudySupply
@@ -69,6 +64,7 @@ import com.example.voiceassistant.service.AndroidAudioController
 import com.example.voiceassistant.service.AndroidDeviceController
 import com.example.voiceassistant.service.AppCatalog
 import com.example.voiceassistant.service.AsrManager
+import com.example.voiceassistant.service.MusicPlayer
 import com.example.voiceassistant.service.TtsManager
 import com.example.voiceassistant.tool.AiTools
 import java.util.concurrent.Executors
@@ -116,9 +112,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     var speakEnabled: Boolean = true
         private set
 
-    var replyStyle: Int = 2
-        private set
-
     private lateinit var ai: AiChat
     private lateinit var aiTools: AiTools
 
@@ -132,7 +125,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private lateinit var dispatcher: Dispatcher
 
     private lateinit var msgSupply: MsgSupply
-    private lateinit var kwsSupply: KwsSupply
 
     /** 单线程：同一时刻只有一个请求在飞，回来按顺序上屏 */
     private val executor = Executors.newSingleThreadExecutor {
@@ -176,20 +168,11 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private val micPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
-                // 唤醒服务在 beginVoice 里已经让过位了，这里同样等麦克风真正释放
-                main.removeCallbacks(voiceStart)
-                main.postDelayed(voiceStart, MIC_HANDOVER_MS)
+                startVoiceInput()
             } else {
                 toast(getString(R.string.error_no_permission))
-                resumeWake()
             }
         }
-
-    /** 延后一点再开麦：等唤醒服务把麦克风交出来 */
-    private val voiceStart = Runnable {
-        if (isFinishing || isDestroyed) return@Runnable
-        startVoiceInput()
-    }
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -244,6 +227,10 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         asr = AsrManager(this).also { it.listener = this }
         tts = TtsManager(this).also { it.listener = this }
         restoreSettings()
+        // 念不出来时先说一次原因，别让用户对着「没有声音」干猜
+        tts.onProblem = { problem ->
+            if (!isFinishing && !isDestroyed) toast(speechProblemText(problem))
+        }
 
         installServices()
 
@@ -267,15 +254,12 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         }
 
         subscribeReminder()
-        subscribeWake()
-        restoreWakeService()
 
         askNotificationPermission()
         main.postDelayed({ cleanInstallerOnce() }, 1200)
 
         if (savedInstanceState == null) {
             handleExternalQuery(intent)
-            handleWakeIntent(intent)
         }
     }
 
@@ -302,7 +286,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 session.messages.filter { !it.isUser }.map { it.text }.takeLast(5)
             }
         )
-        kwsSupply = KwsSupply(this)
 
         bus = ServiceBus().apply {
             registerAll(*ScheduleSupply(this@VoiceAssistantActivity).all.toTypedArray())
@@ -310,7 +293,13 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 *DeviceSupply(this@VoiceAssistantActivity, device) { setWindowBrightness(it) }
                     .all.toTypedArray()
             )
-            registerAll(*AudioSupply(tts, audioCtl) { beginVoiceFromWake() }.all.toTypedArray())
+            registerAll(
+                *AudioSupply(
+                    tts = tts,
+                    audio = audioCtl,
+                    music = MusicPlayer(applicationContext)
+                ) { beginVoiceFromBus() }.all.toTypedArray()
+            )
             registerAll(*ToolSupply(bridge).all.toTypedArray())
             registerAll(*StudySupply(bridge).all.toTypedArray())
             registerAll(*GenSupply(bridge).all.toTypedArray())
@@ -322,7 +311,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 ).all.toTypedArray()
             )
             registerAll(*msgSupply.all.toTypedArray())
-            registerAll(*kwsSupply.all.toTypedArray())
         }
 
         aiTools = AiTools(bus)
@@ -353,55 +341,14 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     }
 
     /**
-     * 被唤醒词叫醒之后开麦。
+     * 模型说「开始听」时开麦（`audio/asr_recognize`）。
      *
-     * 醒来先**不播「我在」**：那样的结果是 TTS 先响、麦克风紧接着打开，
-     * 等于把自己的声音录进识别里。直接进聆听态最干净，用户马上就能说话。
+     * 返回是否真的开始——总线拿这个值决定回「我在听」还是「没法开麦」。
      */
-    private fun beginVoiceFromWake(): Boolean {
-        /*
-         * 离线也照样开麦。
-         *
-         * 以前这里 `if (!NetworkState.isOnline()) return false`：断网时被叫醒等于毫无反应，
-         * 用户看到的就是「叫了没动静」——而离线时本地指令（开关灯、音量、闹钟）本来就能用，
-         * 问答类自然会在下游回一句「现在没联网」，不需要在这里提前拦掉。
-         */
-        main.postDelayed({
-            if (isFinishing || isDestroyed) return@postDelayed
-            beginVoice()
-        }, 400)
+    private fun beginVoiceFromBus(): Boolean {
+        if (!hasMicPermission() || !asr.isAvailable()) return false
+        main.post { if (!isFinishing && !isDestroyed) startVoiceInput() }
         return true
-    }
-
-    /** 唤醒事件：把界面叫到前面来，再开麦 */
-    private fun subscribeWake() {
-        AssistantBus.on<WakeDetected>(owner = this) { event ->
-            if (isFinishing || isDestroyed) return@on
-            WakeConfig.lastWakeAt = event.at
-            if (!isForeground) {
-                startActivity(
-                    Intent(this, VoiceAssistantActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                )
-            }
-            beginVoiceFromWake()
-        }
-    }
-
-    /**
-     * 进程重启后把常驻唤醒接回来。
-     *
-     * 服务是 START_STICKY，被系统杀掉会自己回来；但「用户手动清掉应用」之后
-     * 就不一样了——那时只剩落盘这一位能证明他开过。起不来（比如没给录音权限）
-     * 就把这一位改回去，开关不能一直亮着骗人。
-     */
-    private fun restoreWakeService() {
-        if (!settings.wakeEnabled) return
-        main.postDelayed({
-            if (isFinishing || isDestroyed) return@postDelayed
-            val reply = bus.call("kws/start")
-            if (!reply.ok) settings.wakeEnabled = false
-        }, 800)
     }
 
     /** 外部传入的一句话（「发送到 HardlySeek」/ 自动化测试） */
@@ -409,19 +356,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         super.onNewIntent(intent)
         setIntent(intent)
         handleExternalQuery(intent)
-        handleWakeIntent(intent)
-    }
-
-    /**
-     * 从「我听见了」那条通知点进来：直接开麦，不用再喊一次唤醒词。
-     *
-     * 后台唤醒只能走通知（Android 不允许后台直接拉起界面），
-     * 那就把「拉起来之后立刻能说话」这一步也接上，别让用户白点一次。
-     */
-    private fun handleWakeIntent(intent: Intent?) {
-        if (intent?.getBooleanExtra(WakeConfig.EXTRA_WAKE_OPEN, false) != true) return
-        intent.removeExtra(WakeConfig.EXTRA_WAKE_OPEN)
-        main.postDelayed({ beginVoiceFromWake() }, 700)
     }
 
     private fun handleExternalQuery(intent: Intent?) {
@@ -756,6 +690,8 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 setThinking(null)
                 session.addAssistant(result.reply.speech)
                 if (speakEnabled) tts.speak(result.reply.speech)
+                // 发消息因为没开无障碍而走了分享通路：用到时才问，比藏在设置里有效
+                if (result.reply.data["need_access"] == "true") promptAccessibility()
                 maybeNameConversation()
             }
 
@@ -803,15 +739,13 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         }
     }
 
-    private fun styleHint(): String {
-        val base = if (replyStyle == 0) {
-            "这次回答要短：一两句说到点上，不解释、不列点。"
-        } else {
-            "这次可以多说一点：先给结论，再补一两条理由或做法。"
-        }
-        val followUp = if (settings.proactiveFollowUp) "" else "这次不要反问，说完就停。"
-        return listOf(base, followUp).filter { it.isNotBlank() }.joinToString("\n")
-    }
+    /**
+     * 回答风格固定成默认，不再让用户选。
+     *
+     * 以前这里按设置里的「精简 / 详细」拼一段提示词，现在一律不加额外要求——
+     * 让人设和模型自己决定分寸，比一个藏在设置里的两档开关更稳。
+     */
+    private fun styleHint(): String = ""
 
     /** 离线 / 联网切换时，让界面立刻反映出「现在能不能用」 */
     fun isOnline(): Boolean = online
@@ -871,48 +805,22 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             toast(getString(R.string.status_offline_hint))
             return
         }
-
-        /*
-         * 麦克风是独占的。唤醒服务正在循环的话，识别一启动就会报
-         * ERROR_AUDIO / ERROR_RECOGNIZER_BUSY——用户看到的现象是「按了没反应」。
-         * 所以先让它退出，等系统真正把麦克风还回来再开。
-         */
-        WakeWordService.instance?.pause()
-
         if (!hasMicPermission()) {
             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
-        main.removeCallbacks(voiceStart)
-        main.postDelayed(voiceStart, MIC_HANDOVER_MS)
+        startVoiceInput()
     }
 
     /** 松手：结束收音。cancel=true 表示上滑取消 */
     fun endVoice(cancel: Boolean) {
-        main.removeCallbacks(voiceStart)
-        if (asr.isListening) {
-            if (cancel) {
-                asr.cancel()
-                setThinking(null)
-            } else {
-                asr.stop()
-            }
+        if (!asr.isListening) return
+        if (cancel) {
+            asr.cancel()
+            setThinking(null)
+        } else {
+            asr.stop()
         }
-        // 不管有没有真的在录，都要把麦克风还给唤醒服务，否则它就一直停着
-        resumeWake()
-    }
-
-    /**
-     * 恢复唤醒监听。
-     *
-     * 留 900ms：识别引擎把最终结果吐出来、彻底释放麦克风大概要这么久。
-     * 早于它恢复，两边会互相抢，结果谁都听不清。
-     */
-    private fun resumeWake() {
-        main.postDelayed({
-            if (isFinishing || isDestroyed) return@postDelayed
-            if (WakeConfig.enabled) WakeWordService.instance?.resume()
-        }, WAKE_RESUME_MS)
     }
 
     private fun startVoiceInput() {
@@ -938,23 +846,31 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         chatView?.setListening(false, false)
     }
 
+    /**
+     * 松手后识别完就**直接发**，不用再点一次发送。
+     *
+     * 长按说话本来就是「说完就走」的动作，再让人回去点一下发送键，
+     * 多出来的这一步只会在抬手瞬间丢焦点。说错了还能用气泡的长按改。
+     */
     override fun onFinalResult(text: String, candidates: List<String>) {
         setThinking(null)
         chatView?.setListening(false, false)
-        // 识别结果放进输入框，让用户看一眼再发——长按说话不等于立刻发送
-        chatView?.setInput(text)
-        resumeWake()
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) {
+            toast(getString(R.string.error_empty_input))
+            return
+        }
+        sendText(trimmed)
     }
 
     override fun onError(message: String) {
         setThinking(null)
         chatView?.setListening(false, false)
         toast(message)
-        resumeWake()
     }
 
     override fun onSpeakingFinished() {
-        // 没有「连续对话」了：说完就停，等用户下次开口
+        // 没有「连续对话」：说完就停，等用户下次开口
     }
 
     private fun hasMicPermission(): Boolean = ContextCompat.checkSelfPermission(
@@ -1025,11 +941,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         }
     }
 
-    fun setReplyStyle(style: Int) {
-        replyStyle = style
-        settings.replyStyle = style
-    }
-
     fun setSpeakEnabled(enabled: Boolean) {
         speakEnabled = enabled
         settings.speakEnabled = enabled
@@ -1037,38 +948,36 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         if (!enabled) tts.stop()
     }
 
-    fun toggleSpeak(): Boolean {
-        setSpeakEnabled(!speakEnabled)
-        return speakEnabled
+    /** 一个状态对应的人话，[TtsManager.onProblem] 和设置页共用 */
+    fun speechProblemText(problem: TtsManager.Status): String = when (problem) {
+        TtsManager.Status.MUTED -> getString(R.string.speech_muted)
+        TtsManager.Status.NO_CHINESE -> getString(R.string.speech_no_chinese)
+        TtsManager.Status.NO_ENGINE -> getString(R.string.speech_no_engine)
+        TtsManager.Status.READY -> ""
     }
-
-    // ------------------------------------------------------------------ 唤醒词
-
-    /** 设置页那个开关的当前值：以落盘的为准，免得和服务实际状态错位 */
-    fun isWakeEnabled(): Boolean = settings.wakeEnabled
 
     /**
-     * 开关常驻唤醒。
+     * 「自动发消息权限」：跳到系统的无障碍设置页。
      *
-     * 走的是总线上的 `kws/start` / `kws/stop`，而不是直接起服务——
-     * 大模型也能调同一对服务，两条入口必须落到同一份实现上。
+     * 设置页里那一行删掉了，改成**用到时再提示**——第一次说「发微信给…」发现没权限，
+     * 当场问一句要不要去开，比藏在设置里等人自己找有效得多。
      */
-    fun setWakeEnabled(enabled: Boolean) {
-        // 开之前先落盘：服务起不来时下面会把这一位改回去，开关不会一直亮着骗人
-        settings.wakeEnabled = enabled
-        val reply = bus.call(if (enabled) "kws/start" else "kws/stop")
-        toast(reply.speech)
-        if (!reply.ok) settings.wakeEnabled = false
-    }
-
-    /** 「自动发消息权限」：跳到系统的无障碍设置页，让用户自己勾 */
     fun openAccessibilitySettings() {
         if (!msgSupply.openAccessibilitySettings()) {
             toast(getString(R.string.settings_access_failed))
         }
     }
 
-    /** 清空**当前这条**对话记录（其它记录不受影响） */
+    /** 消息功能缺无障碍权限时的引导 */
+    private fun promptAccessibility() {
+        appDialog()
+            .setTitle(R.string.access_prompt_title)
+            .setMessage(R.string.access_prompt_message)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.access_prompt_go) { _, _ -> openAccessibilitySettings() }
+            .showWhite()
+    }
+
     fun gotoLogin() {
         startActivity(
             Intent(this, LoginActivity::class.java).apply {
@@ -1080,7 +989,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     private fun restoreSettings() {
         speakEnabled = settings.speakEnabled
-        replyStyle = settings.replyStyle
         tts.speakEnabled = speakEnabled
         val engine = settings.ttsEngine
         if (engine.isNotEmpty()) tts.useEngine(engine)
@@ -1089,99 +997,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         // 模式和云端开关都是「上次怎么用，这次还怎么用」
         AssistantMode.switchTo(settings.assistantMode)
         LlmSwitch.set(settings.cloudEnabled)
-
-        // 唤醒灵敏度 / 提示音也回灌一次：WakeConfig 是内存单例，进程重建就没了
-        applyWakeTuning()
-    }
-
-    // ------------------------------------------------------------------ 唤醒调参
-
-    /** 把设置里的档位翻成内部灵敏度，再写进 WakeConfig */
-    private fun applyWakeTuning() {
-        WakeConfig.sensitivity = WakeWord.sensitivityOfLevel(settings.wakeSensitivity)
-        WakeConfig.beepEnabled = settings.wakeBeep
-    }
-
-    /** 设置页「唤醒灵敏度」当前档位：0 低 / 1 中 / 2 高 */
-    fun wakeSensitivity(): Int = settings.wakeSensitivity
-
-    /**
-     * 换灵敏度档位。
-     *
-     * 立刻写进 [WakeConfig] 而不是等下次启动——服务正在跑的时候改，
-     * 下一轮识别就该按新档位来；不然用户调了没反应，只会以为又坏了。
-     */
-    fun setWakeSensitivity(level: Int) {
-        settings.wakeSensitivity = level
-        applyWakeTuning()
-        toast(getString(R.string.settings_wake_sensitivity_set, wakeSensitivityLabel(level)))
-    }
-
-    /** 提示音开关 */
-    fun isWakeBeep(): Boolean = settings.wakeBeep
-
-    fun setWakeBeep(enabled: Boolean) {
-        settings.wakeBeep = enabled
-        applyWakeTuning()
-    }
-
-    // ------------------------------------------------------------------ 讯飞离线唤醒
-
-    fun wakeEngine(): String = settings.wakeEngine
-
-    /**
-     * 换唤醒引擎。正在监听就**重启一次**服务——
-     * 引擎是在 onStartCommand 里选的，不重启等于没改。
-     */
-    fun setWakeEngine(engine: String) {
-        settings.wakeEngine = engine
-        restartWakeIfRunning()
-    }
-
-    fun iflyAppId(): String = settings.iflyAppId
-    fun iflyApiKey(): String = settings.iflyApiKey
-    fun iflyApiSecret(): String = settings.iflyApiSecret
-    fun iflyThreshold(): Int = settings.iflyThreshold
-
-    fun saveIflyConfig(appId: String, key: String, secret: String, threshold: Int) {
-        settings.iflyAppId = appId
-        settings.iflyApiKey = key
-        settings.iflyApiSecret = secret
-        settings.iflyThreshold = threshold
-        restartWakeIfRunning()
-    }
-
-    private fun restartWakeIfRunning() {
-        if (!settings.wakeEnabled) return
-        bus.call("kws/stop")
-        // 停服务是异步的，立刻再起会和 onDestroy 抢麦克风，留一格
-        main.postDelayed({
-            if (isFinishing || isDestroyed) return@postDelayed
-            val reply = bus.call("kws/start")
-            if (!reply.ok) settings.wakeEnabled = false
-            toast(reply.speech)
-        }, 450)
-    }
-
-    private fun wakeSensitivityLabel(level: Int): String = when (level) {
-        0 -> getString(R.string.settings_wake_sens_low)
-        2 -> getString(R.string.settings_wake_sens_high)
-        else -> getString(R.string.settings_wake_sens_mid)
-    }
-
-    /**
-     * 跳到系统的「电池优化」页，让用户把本应用排除掉。
-     *
-     * 用不带包名的入口（`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`）：
-     * 带包名的那个需要 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 权限，
-     * 而它属于敏感权限，为了省一次点击去申请并不划算。
-     */
-    fun openBatterySettings() {
-        val ok = runCatching {
-            startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-            true
-        }.getOrDefault(false)
-        if (!ok) toast(getString(R.string.settings_battery_failed))
     }
 
     // ------------------------------------------------------------------ 其它
@@ -1249,29 +1064,18 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         super.onResume()
         isForeground = true
         if (::session.isInitialized) chatView?.refresh()
+        // 用户可能刚从系统设置里换过语音引擎 / 装了语音包，回来重探一次
+        if (::tts.isInitialized) tts.refreshIfNeeded()
     }
 
     override fun onStart() {
         super.onStart()
         // 只有界面在前台才巡检网络：后台没必要每几秒醒一次
         NetworkState.addListener(networkListener)
-
-        /*
-         * 界面在前台**不再**整体暂停唤醒。
-         *
-         * v5.0 在这里无条件 pause()，结果是「开着 App 怎么叫都没反应」——
-         * 用户测试唤醒时界面恰好就在前台，等于永远测不到。
-         * 现在只在真正开麦的那几百毫秒让位（见 beginVoice）。
-         */
-        WakeConfig.uiAlive = true
-        if (WakeConfig.enabled) WakeWordService.instance?.resume()
     }
 
     override fun onStop() {
         NetworkState.removeListener(networkListener)
-        WakeConfig.uiAlive = false
-        // 人离开界面了，把可能还停着的唤醒循环放回去（beginVoice 之后直接退出会走到这里）
-        if (WakeConfig.enabled) WakeWordService.instance?.resume()
         super.onStop()
     }
 
@@ -1283,7 +1087,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
          * 「打开微信」「打开设置」这类指令会立刻把别的应用拉到前台，本页随即 onPause；
          * 而「已经打开 XX」这句话正排在主线程队列里等着落盘。
          * 一刀清空的结果就是：应用确实打开了，但对话里永远少一句回复。
-         * 延迟任务各自有明确的取消点（voiceStart / resumeWake），不需要在这里统一清。
          */
         if (::asr.isInitialized) asr.cancel()
         /*
@@ -1315,11 +1118,5 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
         /** 抽屉打开时内容区的模糊半径：够糊、又能看清大致轮廓 */
         const val BLUR_RADIUS = 22f
-
-        /** 唤醒服务让出麦克风后，等这么久再开识别（系统释放麦克风不是即时的） */
-        const val MIC_HANDOVER_MS = 300L
-
-        /** 说完话之后隔这么久把麦克风还给唤醒服务 */
-        const val WAKE_RESUME_MS = 900L
     }
 }

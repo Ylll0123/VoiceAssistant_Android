@@ -44,10 +44,9 @@ class AiToolsTest {
                 "schedule_add_alarm", "schedule_add_todo", "schedule_query", "schedule_cancel",
                 "device_flashlight", "device_brightness", "device_open_app", "device_battery",
                 "device_wifi_ctrl", "device_bluetooth_ctrl",
-                "audio_volume_ctrl", "audio_tts_stop",
+                "audio_volume_ctrl", "audio_music_ctrl", "audio_tts_stop",
                 "tool_calc", "tool_time", "tool_translate", "tool_weather",
-                "msg_send_text", "msg_query_can_send",
-                "kws_status"
+                "msg_send_text", "msg_query_can_send"
             ),
             toolNames()
         )
@@ -88,7 +87,7 @@ class AiToolsTest {
     fun `名字只换第一个下划线`() {
         assertEquals("device/flashlight", ServiceBus.toServiceName("device_flashlight"))
         // 动作名自带下划线，剩下的不能被切开
-        assertEquals("kws/set_wake_word", ServiceBus.toServiceName("kws_set_wake_word"))
+        assertEquals("msg/query_can_send", ServiceBus.toServiceName("msg_query_can_send"))
         assertEquals("schedule/add_alarm", ServiceBus.toServiceName("schedule_add_alarm"))
         // 没有下划线就原样返回
         assertEquals("nonsense", ServiceBus.toServiceName("nonsense"))

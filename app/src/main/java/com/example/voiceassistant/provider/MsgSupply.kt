@@ -44,8 +44,14 @@ class MsgSupply(
             val content = args.str("content") ?: return BusReply.fail("要发什么？")
 
             return when (val outcome = automator.deliver(platform, to, content)) {
-                is ImAutomator.Outcome.Done -> BusReply.ok(outcome.message)
-                is ImAutomator.Outcome.Failed -> BusReply.fail(outcome.message)
+                is ImAutomator.Outcome.Done -> BusReply.ok(
+                    outcome.message,
+                    "need_access" to outcome.needsAccess.toString()
+                )
+                is ImAutomator.Outcome.Failed -> BusReply.fail(
+                    outcome.message,
+                    "need_access" to outcome.needsAccess.toString()
+                )
             }
         }
     }
