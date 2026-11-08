@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import android.content.res.ColorStateList
 import android.graphics.RenderEffect
@@ -41,6 +43,7 @@ import com.example.voiceassistant.im.ImAutomator
 import com.example.voiceassistant.kws.WakeConfig
 import com.example.voiceassistant.kws.WakeDetected
 import com.example.voiceassistant.kws.WakeWordService
+import com.example.voiceassistant.overlay.FloatAssistant
 import com.example.voiceassistant.provider.AudioSupply
 import com.example.voiceassistant.provider.ContextSupply
 import com.example.voiceassistant.provider.DeviceSupply
@@ -268,6 +271,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         subscribeReminder()
         subscribeWake()
         restoreWakeService()
+        restoreFloatAssistant()
 
         askNotificationPermission()
         main.postDelayed({ cleanInstallerOnce() }, 1200)
@@ -1081,6 +1085,62 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     fun setMsgAutoSend(enabled: Boolean) {
         settings.msgAutoSend = enabled
         if (enabled) toast(getString(R.string.settings_msg_auto_on_toast))
+    }
+
+    // ------------------------------------------------------------------ 悬浮助手
+
+    /** 设置页那个开关的当前值（落盘值，不代表悬浮窗权限已经给了） */
+    fun isFloatEnabled(): Boolean = settings.floatEnabled
+
+    /**
+     * 开关悬浮助手。
+     *
+     * 顺序有讲究：**先要悬浮窗权限，再起服务**。
+     * 反过来做的话，服务会 `addView` 失败然后静默停掉，
+     * 用户看到开关亮着、却怎么都找不到那个小圆球。
+     *
+     * 权限没给时把开关弹回关的位置，并直接把用户送到系统那一页——
+     * 只弹一句「请去开权限」而不给路，等于让人自己去翻三级菜单。
+     */
+    fun setFloatEnabled(enabled: Boolean) {
+        if (!enabled) {
+            settings.floatEnabled = false
+            FloatAssistant.stop(this)
+            return
+        }
+        if (!FloatAssistant.canDraw(this)) {
+            settings.floatEnabled = false
+            toast(getString(R.string.float_permission_needed))
+            runCatching {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+            return
+        }
+        settings.floatEnabled = true
+        FloatAssistant.start(this)
+    }
+
+    /**
+     * 冷启动时把悬浮球接回来。
+     *
+     * 只在**权限还在**时真的起服务：用户可能在系统设置里把悬浮窗权限收回了，
+     * 那时候还硬起，服务会画不出东西，开关状态就成了假的。
+     */
+    private fun restoreFloatAssistant() {
+        if (!settings.floatEnabled) return
+        if (!FloatAssistant.canDraw(this)) {
+            settings.floatEnabled = false
+            return
+        }
+        main.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            FloatAssistant.start(this)
+        }, 900)
     }
 
     /** 清空**当前这条**对话记录（其它记录不受影响） */

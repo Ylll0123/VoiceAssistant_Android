@@ -61,10 +61,17 @@ class MsgSupply(
                             is ImAutomator.Outcome.Done -> BusReply.ok(done.message)
                             is ImAutomator.Outcome.Failed -> BusReply.fail(done.message)
                             is ImAutomator.Outcome.NeedConfirm ->
-                                BusReply.confirm(outcome.preview, outcome.traceId, "to" to to)
+                                BusReply.confirm(
+                                    outcome.preview, outcome.traceId,
+                                    "to" to to, "content" to content
+                                )
                         }
                     } else {
-                        BusReply.confirm(outcome.preview, outcome.traceId, "to" to to)
+                        // content 一起带回去：悬浮助手拿它铺确认卡，不用再让用户复述一遍
+                        BusReply.confirm(
+                            outcome.preview, outcome.traceId,
+                            "to" to to, "content" to content
+                        )
                     }
                 }
 

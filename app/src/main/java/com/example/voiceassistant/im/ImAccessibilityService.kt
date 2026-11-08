@@ -194,8 +194,7 @@ class ImDriver {
         service.dispatchGesture(gesture, null, null)
     }.getOrDefault(false)
 
-    /** 自定义条件查找（带重试） */
-    fun findCustom(timeoutMs: Long, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+    /** 自定义条件查找（带重试） */    fun findCustom(timeoutMs: Long, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
         val deadline = System.currentTimeMillis() + timeoutMs
         do {
             root()?.let { root ->
@@ -217,6 +216,34 @@ class ImDriver {
         val root = root() ?: return emptyList()
         return walk(root).filter(predicate)
     }
+
+    /**
+     * 把当前屏幕上的文字连位置一起读出来。
+     *
+     * 会话列表没有 id 可依，只有「一段文字 + 它在哪儿」。
+     * 交给 [ImContacts.pick] 用几何规则筛，筛法能单测，读屏这层不用管业务。
+     */
+    fun textItems(): List<ImContacts.Item> = findAll { node ->
+        node.isVisibleToUser && !node.text.isNullOrBlank()
+    }.mapNotNull { node ->
+        val rect = android.graphics.Rect()
+        runCatching { node.getBoundsInScreen(rect) }
+        if (rect.isEmpty) return@mapNotNull null
+        ImContacts.Item(
+            text = node.text?.toString().orEmpty(),
+            left = rect.left,
+            right = rect.right,
+            top = rect.top,
+            bottom = rect.bottom,
+            clickable = node.isClickable,
+            editable = isEditable(node)
+        )
+    }
+
+    /** 屏幕宽度（px）；判断「名字在左半屏」用 */
+    fun screenWidth(): Int = runCatching {
+        android.content.res.Resources.getSystem().displayMetrics.widthPixels
+    }.getOrDefault(0)
 
     /**
      * 找锚点右侧、同一行、可点击的节点。
@@ -294,6 +321,64 @@ class ImDriver {
             }
             node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         }.getOrDefault(false)
+    }
+
+    /**
+     * 填字：先 SET_TEXT，不行再走剪贴板粘贴。
+     *
+     * 微信 / QQ 的输入框是**自定义控件**，部分版本会忽略 `ACTION_SET_TEXT`
+     * （返回 true 但框里没字，或者直接返回 false）。这时候以前就只剩一条路：
+     * 放弃自动发送、降级到分享。而粘贴两条老 API 通常还能用：
+     * 焦点 + 全选 + `ACTION_PASTE`，走的是输入法自身的粘贴能力。
+     *
+     * @return 里面是不是真的有这段字
+     */
+    fun fillText(node: AccessibilityNodeInfo?, text: String): Boolean {
+        if (node == null || text.isEmpty()) return false
+        if (setText(node, text) && holdsText(node, text)) return true
+        return paste(node, text) && holdsText(node, text)
+    }
+
+    private fun holdsText(node: AccessibilityNodeInfo, text: String): Boolean {
+        val now = runCatching { node.text?.toString().orEmpty() }.getOrDefault("")
+        // 有的控件把文字挂在子节点上，读不到内容时以「不报错」为准
+        return now.isEmpty() || now.trim() == text.trim() || now.contains(text.trim())
+    }
+
+    /** 剪贴板粘贴填字（`ACTION_SET_TEXT` 被忽略时的兜底） */
+    fun paste(node: AccessibilityNodeInfo?, text: String): Boolean {
+        if (node == null) return false
+        val ctx = ImAccessibilityService.instance ?: return false
+        return runCatching {
+            val manager = ctx.getSystemService(Context.CLIPBOARD_SERVICE)
+                as? android.content.ClipboardManager ?: return false
+            manager.setPrimaryClip(
+                android.content.ClipData.newPlainText("hardlyseek", text)
+            )
+            node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            val select = Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+                putInt(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT,
+                    node.text?.length ?: 0
+                )
+            }
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, select)
+            node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        }.getOrDefault(false)
+    }
+
+    /**
+     * 让输入框自己「回车」。
+     *
+     * 微信 / QQ 的发送键在键盘上是同一个位置，`ACTION_IME_ENTER` 等于按下它。
+     * 比找那个没有文字的圆形按钮稳——按钮的 id 每版都改，键盘的语义不会。
+     */
+    fun imeEnter(node: AccessibilityNodeInfo?): Boolean {
+        if (node == null || android.os.Build.VERSION.SDK_INT < 30) return false
+        // 常量挂在 AccessibilityAction 上（ACTION_IME_ENTER 本身没有顶层 int 常量）
+        val action = AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id
+        return runCatching { node.performAction(action) }.getOrDefault(false)
     }
 
     /** 模拟返回键 */

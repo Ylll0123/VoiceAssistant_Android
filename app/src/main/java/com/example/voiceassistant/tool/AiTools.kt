@@ -31,6 +31,14 @@ class AiTools(private val bus: ServiceBus) {
     /** 一次工具调用（从模型响应里解析出来的） */
     data class Call(val id: String, val name: String, val arguments: String)
 
+    /**
+     * 用户这一轮的**原话**。
+     *
+     * 只用来给模型偷懒的参数兜底：模型漏填 `platform` 时按原话补，
+     * 说得不对时按原话改（见 [PlatformHint]）。空串表示没有上下文可用。
+     */
+    var userText: String = ""
+
     /** 工具清单（OpenAI function calling 的 `tools` 字段） */
     val schema: String get() = SCHEMA
 
@@ -46,7 +54,9 @@ class AiTools(private val bus: ServiceBus) {
         val service = serviceOf(call.name)
         if (!bus.has(service)) return "没有这个工具：${call.name}"
 
-        val args = BusArgs.from(JsonArgs.flatMap(call.arguments))
+        // 先拿用户原话校对平台：模型漏填「说 QQ 却发微信」就是这里补回来的
+        val raw = PlatformHint.fill(call.name, JsonArgs.flatMap(call.arguments), userText)
+        val args = BusArgs.from(raw)
         val reply = bus.call(service, args)
         return reply.speech
     }
@@ -173,7 +183,7 @@ class AiTools(private val bus: ServiceBus) {
     "name":"msg_send_text",
     "description":"给联系人发微信/QQ 消息。调用后只会准备好内容并复述一遍，不会打开应用、也不会发出去；用户说「确认」之后再调 msg_confirm_send，那时会自动进入聊天页、填字、点发送并校验结果。找不到同名联系人会失败，这时别自己换人，也不要改成发给别人。",
     "parameters":{"type":"object","properties":{
-      "platform":{"type":"string","enum":["wechat","qq"],"description":"默认 wechat"},
+      "platform":{"type":"string","enum":["wechat","qq"],"description":"用户说 QQ/企鹅 就必须填 qq，说微信/不指定才用 wechat。别漏填"},
       "to":{"type":"string","description":"联系人的名字，要和通讯录里一致"},
       "content":{"type":"string","description":"要发的话"}
     },"required":["to","content"]}}},
@@ -187,7 +197,7 @@ class AiTools(private val bus: ServiceBus) {
     "name":"msg_query_can_send",
     "description":"诊断发消息能力：应用装没装、无障碍连没连上、系统分享通路能不能用。用户问「为什么发不出去」「能发微信吗」「检查一下发消息」时调用，把原因原样转述给用户。",
     "parameters":{"type":"object","properties":{
-      "platform":{"type":"string","enum":["wechat","qq"],"description":"默认 wechat"}
+      "platform":{"type":"string","enum":["wechat","qq"],"description":"用户说 QQ/企鹅 就填 qq，否则 wechat"}
     }}}},
   {"type":"function","function":{
     "name":"kws_status",

@@ -35,6 +35,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
+    <!--
+        悬浮助手：在微信/QQ 上面画那只小圆球。
+        属于「特殊权限」，装完要在应用里引导用户去系统设置手动打开，
+        代码里用 Settings.canDrawOverlays 判断，不能假定已授权。
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <!-- 改系统亮度：属于「特殊权限」，要在设置页里由用户手动授予 -->
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"
@@ -140,6 +147,15 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!--
+            悬浮助手：任何应用上面都能叫出来的那只「我在听」。
+            和 WakeWordService 一样占麦克风，所以也是 microphone 类型的前台服务。
+        -->
+        <service
+            android:name=".overlay.FloatAssistant"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- 开机 / 覆盖安装后把还没到点的提醒重排（AlarmManager 的登记会丢） -->
         <receiver

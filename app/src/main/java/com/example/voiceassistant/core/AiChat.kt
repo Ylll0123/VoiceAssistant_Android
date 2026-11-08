@@ -73,6 +73,9 @@ class AiChat(
 
         val used = mutableListOf<String>()
 
+        // 工具执行时要用「用户原话」校对参数（见 PlatformHint），这里先把原话挂上
+        tools.userText = input
+
         repeat(maxRounds) { round ->
             val body = buildBody(cfg.model, messages, cfg.maxTokens, tools.schema)
             val (raw, code) = runCatching {

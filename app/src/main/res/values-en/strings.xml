@@ -141,4 +141,24 @@
 
     <string name="accessibility_label">HardlySeek voice actions</string>
     <string name="accessibility_description">Turns voice commands like “message someone” into real actions: opens WeChat/QQ, finds the contact, fills in the text, and taps by coordinates when a control cannot be clicked directly. Sending happens only after you confirm. If the service is unavailable, the system share sheet is used and you pick the contact and send manually.</string>
+
+    <string name="float_notification_channel">Floating assistant</string>
+    <string name="float_notification_title">Floating assistant is on</string>
+    <string name="float_notification_text">Tap the dot to talk anytime</string>
+    <string name="float_listen">Listening</string>
+    <string name="float_idle_hint">Go ahead — try “message Mom on WeChat”.</string>
+    <string name="float_no_mic">No microphone permission. Grant it in Settings.</string>
+    <string name="float_thinking">Thinking…</string>
+    <string name="float_failed">That did not work. Try again.</string>
+    <string name="float_busy">Sending now, wait for it to finish.</string>
+    <string name="float_reading_contacts">Reading chats in %1$s…</string>
+    <string name="float_ask_recipient">Who is it for? Say a name or “number 3”.</string>
+    <string name="float_ask_content">To %1$s — what should I say?</string>
+    <string name="float_send_to">To</string>
+    <string name="float_send">Send</string>
+    <string name="float_confirm">Send to %1$s? Confirm.</string>
+    <string name="float_running">Opening %1$s and sending…</string>
+    <string name="float_setting_title">Floating assistant</string>
+    <string name="float_setting_summary">Tap the dot on top of WeChat, QQ or any app to talk without switching back</string>
+    <string name="float_permission_needed">“Display over other apps” permission is still missing. Enable it in system settings.</string>
 </resources>

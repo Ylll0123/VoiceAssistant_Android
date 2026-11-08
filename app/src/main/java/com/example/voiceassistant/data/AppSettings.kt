@@ -68,6 +68,21 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_MSG_AUTO_SEND, false)
         set(value) = prefs.edit().putBoolean(KEY_MSG_AUTO_SEND, value).apply()
 
+    // ---------------------------------------------------------------- 悬浮助手
+
+    /**
+     * 是否常驻悬浮球。
+     *
+     * 默认关：它占麦克风、也占一层悬浮窗，用户没要求就不该开着。
+     * 落盘之后重进应用能接回来——和唤醒同一个道理。
+     *
+     * 注意这个值只表示「用户想开」，真正能不能画还要看
+     * `Settings.canDrawOverlays()`；两者都成立才会真的起服务。
+     */
+    var floatEnabled: Boolean
+        get() = prefs.getBoolean(KEY_FLOAT, false)
+        set(value) = prefs.edit().putBoolean(KEY_FLOAT, value).apply()
+
     // ---------------------------------------------------------------- 对话风格
 
     /** 回答详细程度：0 简洁 / 1 标准 / 2 详细 */
@@ -208,6 +223,7 @@ class AppSettings(context: Context) {
         private const val KEY_TTS_ENGINE = "tts_engine"
         private const val KEY_WAKE = "wake_enabled"
         private const val KEY_MSG_AUTO_SEND = "msg_auto_send"
+        private const val KEY_FLOAT = "float_enabled"
         private const val KEY_STYLE = "reply_style"
         private const val KEY_FOLLOW_UP = "proactive_follow_up"
         private const val KEY_MODE = "assistant_mode"

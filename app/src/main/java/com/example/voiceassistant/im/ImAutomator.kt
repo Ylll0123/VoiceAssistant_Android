@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
+import com.example.voiceassistant.overlay.FloatAssistant
 import java.util.concurrent.atomic.AtomicInteger
 
 /** 能自动发消息的平台 */
@@ -202,24 +203,43 @@ class ImAutomator(
             return Outcome.Failed("等太久了，这条过期了，重新说一遍吧。")
         }
 
+        val result = runSend(item.platform, item.to, item.content)
+        item.sent = true
+        pending.remove(traceId)
+        return result
+    }
+
+    /**
+     * 直接发，不问「确认吗」。
+     *
+     * 只给**悬浮助手**用：那边已经把「发给谁、发什么」摆在卡片上、用户亲手点了「发送」，
+     * 确认动作已经发生过一次，再问一遍就变成两次确认。
+     *
+     * **会阻塞**，必须在后台线程调用。
+     */
+    fun sendNow(platform: ImPlatform, to: String, content: String): Outcome {
+        if (!platform.installed(context)) return Outcome.Failed("手机里没装${platform.label}。")
+        if (to.isBlank()) return Outcome.Failed("要发给谁？")
+        if (content.isBlank()) return Outcome.Failed("要发什么？")
+        return runSend(platform, to, content)
+    }
+
+    /** 真正的执行：全自动 → 失败降级分享 */
+    private fun runSend(platform: ImPlatform, to: String, content: String): Outcome {
         val blocked = autoBlocked()
         if (blocked == null) {
-            when (val sent = sendAutomatically(item.platform, item.to, item.content)) {
+            when (val sent = sendAutomatically(platform, to, content)) {
                 is Sent.Ok -> {
-                    item.sent = true
-                    pending.remove(traceId)
-                    // 发送完成后自己跳回来，用户不用手动切
-                    backToApp()
+                    // 发送完成后自己跳回来，用户不用手动切（悬浮窗模式下不抢焦点）
+                    if (!FloatAssistant.isRunning) backToApp()
                     return Outcome.Done("已经发给「${sent.matched}」了。")
                 }
 
                 is Sent.Error -> {
                     // 全自动没成：能分享就把内容带过去，至少不让用户白说一遍
-                    if (openShare(item.platform, item.content)) {
-                        item.sent = true
-                        pending.remove(traceId)
+                    if (openShare(platform, content)) {
                         return Outcome.Done(
-                            "自动发送没走通（${sent.reason}），已经把内容带到${item.platform.label}了，" +
+                            "自动发送没走通（${sent.reason}），已经把内容带到${platform.label}了，" +
                                 "点一下发送就好。"
                         )
                     }
@@ -228,16 +248,51 @@ class ImAutomator(
             }
         }
 
-        return if (openShare(item.platform, item.content)) {
-            item.sent = true
-            pending.remove(traceId)
+        return if (openShare(platform, content)) {
             Outcome.Done(
-                "已经把内容带到${item.platform.label}了，选一下「${item.to}」再点发送就好。" +
+                "已经把内容带到${platform.label}了，选一下「$to」再点发送就好。" +
                     "（$blocked，开了权限我就能自己发。）"
             )
         } else {
-            Outcome.Failed("$blocked，${item.platform.label}的分享页也打不开，只能手动发了。")
+            Outcome.Failed("$blocked，${platform.label}的分享页也打不开，只能手动发了。")
         }
+    }
+
+    // ------------------------------------------------------------------ 会话列表（悬浮助手用）
+
+    /**
+     * 打开应用并停在首页。
+     *
+     * 悬浮助手要列「最近聊过谁」，就必须先把对方应用拉到前台——
+     * 好在这时候用户看到的正是他想发消息的那个应用，不是被硬拽走的。
+     */
+    fun openHome(platform: ImPlatform): Boolean {
+        if (!platform.installed(context)) return false
+        if (driver.currentPackage() == platform.packageName) {
+            backToHome(platform)
+        } else {
+            if (!launch(platform)) return false
+            if (!waitForApp(platform, LAUNCH_TIMEOUT_MS)) return false
+            backToHome(platform)
+        }
+        return driver.currentPackage() == platform.packageName
+    }
+
+    /**
+     * 读当前屏幕上的会话名（要求已经停在首页）。读不到返回空表。
+     *
+     * 判据全在 [ImContacts.pick] 里，是纯函数，单测钉着。
+     */
+    fun conversationsOnScreen(limit: Int = 6): List<String> {
+        if (driver.currentPackage() == null) return emptyList()
+        val searchBottom = searchEntry(0)?.let { driver.bounds(it)?.bottom } ?: 0
+        return ImContacts.pick(
+            items = driver.textItems(),
+            screenWidth = driver.screenWidth(),
+            screenHeight = driver.screenHeight(),
+            searchBottom = searchBottom,
+            limit = limit
+        )
     }
 
     /** 放弃这次待确认（用户说「算了」） */
@@ -274,20 +329,37 @@ class ImAutomator(
             }
             filled as Filled.Ok
 
-            val button = findSendButton(filled.input)
-            if (button == null) {
-                lastError = "没找到发送按钮，界面可能改版了"
-                return@repeat
-            }
-            if (!driver.click(button)) {
-                lastError = "发送按钮点不动"
-                return@repeat
-            }
-            if (awaitSent(content)) return Sent.Ok(filled.matched)
+            // 三条路，按可靠性从高到低；前一条没看到气泡就试下一条
+            if (pressSend(filled.input) && awaitSent(content)) return Sent.Ok(filled.matched)
             lastError = "点了发送但没看到消息出去"
         }
         return Sent.Error(lastError)
     }
+
+    /**
+     * 点发送：按钮 → 键盘回车 → 按坐标点输入框右边。
+     *
+     * 之所以要三条：微信/QQ 的发送键在不同版本里分别是
+     * 「有文字的按钮」「没文字的圆圈」「键盘上的回车键」，光认一种必翻车。
+     * 每条都只**点一次**，点完由调用方看气泡有没有出来，不会重复发。
+     */
+    private fun pressSend(input: AccessibilityNodeInfo?): Boolean {
+        val button = findSendButton(input)
+        if (button != null && driver.click(button)) return true
+        if (driver.imeEnter(input)) return true
+
+        // 最后按坐标点：输入框右侧 30dp，同一行
+        val rect = driver.bounds(input)
+        if (rect != null) {
+            val x = rect.right + 30f * density()
+            val y = rect.exactCenterY()
+            if (x < driver.screenWidth() - 4) return driver.tap(x, y)
+        }
+        return false
+    }
+
+    private fun density(): Float =
+        context.resources.displayMetrics.density.coerceAtLeast(1f)
 
     /**
      * 打开 → 搜人 → 进聊天 → 填字。停在**发送前**。
@@ -312,23 +384,39 @@ class ImAutomator(
         // 1) 先回到首页：搜索入口只在首页。用户上次可能停在某个聊天里
         backToHome(platform)
 
+        // 2) 首页上直接点会话进聊天。
+        //    比「搜索 → 等联想 → 点第一条」少两次跳页，也避开搜索框那个坑：
+        //    命中和用户说的名字一模一样的会话行才走这条快路，否则老老实实搜。
+        val homeBottom = searchEntry(0)?.let { driver.bounds(it)?.bottom } ?: 0
+        if (homeBottom > 0) {
+            val exact = driver.findCustom(0) { node ->
+                !node.isEditable && node.isVisibleToUser &&
+                    node.text?.toString()?.trim() == to &&
+                    (driver.bounds(node)?.top ?: 0) >= homeBottom - 8
+            }
+            if (exact != null && enterChat(platform, to, exact) != null) {
+                val chatInput = waitChatInput(1_200) ?: return Filled.Error("没进到聊天页")
+                return fillContent(chatInput, to, content)
+            }
+        }
+
         val searchEntry = searchEntry(SEARCH_TIMEOUT_MS)
             ?: return Filled.Error("没找到${platform.label}的搜索入口")
         if (!driver.click(searchEntry)) return Filled.Error("搜索框点不开")
 
-        // 2) 在搜索框里填联系人名字（只认上半屏的输入框）
+        // 3) 在搜索框里填联系人名字（只认上半屏的输入框）
         val searchBox = findSearchBox(3_000)
             ?: return Filled.Error("搜索框没弹出来")
-        if (!driver.setText(searchBox, to)) {
+        if (!driver.fillText(searchBox, to)) {
             driver.click(searchBox)
             Thread.sleep(300)
-            if (!driver.setText(searchBox, to)) {
+            if (!driver.fillText(searchBox, to)) {
                 return Filled.Error("联系人名字填不进搜索框")
             }
         }
         Thread.sleep(1_100)
 
-        // 3) 点开联系人：完全同名优先，且排除「搜索 xxx」这类网络搜索行
+        // 4) 点开联系人：完全同名优先，且排除「搜索 xxx」这类网络搜索行
         val searchBottom = driver.bounds(searchBox)?.bottom ?: 0
         val contact = findContact(to, searchBottom)
             ?: return Filled.Error("搜索结果里没有叫「$to」的联系人")
@@ -336,26 +424,34 @@ class ImAutomator(
             .getOrDefault("")
             .ifEmpty { to }
 
-        // 4) 必须真的进到聊天页，才允许写字
+        // 5) 必须真的进到聊天页，才允许写字
         val inputBox = enterChat(platform, to, contact)
             ?: return Filled.Error("点了「$matched」，但一直没进到聊天页（还停在搜索页）")
 
-        // 5) 填字
-        var filled = driver.setText(inputBox, content)
+        return fillContent(inputBox, matched, content)
+    }
+
+    /**
+     * 把内容写进聊天输入框。
+     *
+     * `ACTION_SET_TEXT` 被自定义输入框忽略时（微信部分版本会这样），
+     * 改走剪贴板粘贴——两条路都失败才报错，而不是直接掉到分享页。
+     */
+    private fun fillContent(inputBox: AccessibilityNodeInfo, matched: String, content: String): Filled {
+        var filled = driver.fillText(inputBox, content)
         if (!filled) {
             driver.click(inputBox)
             Thread.sleep(350)
-            filled = driver.setText(inputBox, content)
+            filled = driver.fillText(inputBox, content)
         }
         if (!filled) return Filled.Error("字填不进去")
 
         Thread.sleep(250)
         val actual = runCatching { inputBox.text?.toString().orEmpty() }.getOrDefault("")
         if (actual.isNotBlank() && actual.trim() != content.trim()) {
-            driver.setText(inputBox, content)
+            driver.fillText(inputBox, content)
             Thread.sleep(250)
         }
-
         return Filled.Ok(matched, inputBox)
     }
 
