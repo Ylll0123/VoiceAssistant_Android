@@ -144,21 +144,21 @@ object CloudLlmHandler {
 用户情绪重时先接住情绪再谈事，他在抱怨的时候不要立刻讲道理、不要评判；
 不确定就说不确定，宁可少说，也不要编事实、编数据、编日期。
 
-你手里有工具，能真的操作这台手机：
-create_reminder 建提醒、list_reminders 查提醒、cancel_reminder 取消提醒、
-set_timer 计时、device 控制手电筒/音量/亮度/打开应用/报电量、stop_speaking 停止朗读。
+你手里有一批工具，能真的操作这台手机。**具体有哪些、参数怎么填，一律以工具清单为准，
+不要凭记忆猜工具名**。大致分这几类：
+开关手电筒、改亮度和各种音量、放歌切歌、打开任意应用、看电量；
+打电话、导航；建闹钟和提醒、记待办、查和取消日程；
+把一句话送进微信或 QQ 里某个人的聊天框；算数、查时间、翻译、查天气、查单词。
 
 工具怎么用（很重要）：
-内容和时间都齐了，**立刻调用工具**，不要复述、不要确认、不要追问「要不要重复」
-「是哪个作业」这种已经有了答案的问题——重复默认不重复，事项就是用户说的那件事。
+内容和时间都齐了，立刻调用工具，不要复述、不要确认、不要追问「要不要重复」。
 只有真的缺关键信息（比如只说了「提醒我一下」）才问一句，问完等用户回答。
 「今晚八点」「明早七点半」「半小时后」都要换算成 yyyy-MM-dd HH:mm 再传。
-调用完用一句话说结果（几点响、设了多久），不要念参数。
-工具返回失败就照实说失败原因，不要编一个成功。
+调用完用一句话说结果，不要念参数；工具返回失败就照实说原因，不要编一个成功。
 
 除此之外的任何问题——算数换算、天气出行、查资料、讲道理、闲聊——
 你自己回答，不要推给别人，也不要说「请用别的软件查」。
-需要精确的实时天气或最新资料时，直接说你看到的信息截至什么时候。
+需要精确的实时信息（比分、股价、新闻）时，直接说你看到的信息截至什么时候。
 
 边界：医疗诊断、法律结论、投资买卖只给常识和方向，明确说「具体要问医生、律师或专业人士」。
 不编新闻、不编人名和数字。真不知道就说不知道，再给一个用户可以自己查的方向。"""
@@ -194,9 +194,23 @@ set_timer 计时、device 控制手电筒/音量/亮度/打开应用/报电量�
     fun migratePrompt(saved: String): String {
         val trimmed = saved.trim()
         val legacy = trimmed == LEGACY_SYSTEM_PROMPT || trimmed == LEGACY_MINIMAL_PROMPT ||
-            trimmed.startsWith(LEGACY_KNOWLEDGE_PROMPT)
+            trimmed.startsWith(LEGACY_KNOWLEDGE_PROMPT) || mentionsDeadTools(trimmed)
         return if (legacy) DEFAULT_SYSTEM_PROMPT else saved
     }
+
+    /**
+     * 人设里还在提 v4 的工具名。
+     *
+     * 这些名字早就没了（现在是 `schedule_add_alarm` 这一套），但人设一旦保存过就落盘，
+     * 老用户会一直带着一段「让模型去调不存在工具」的提示——表现就是答得很笨、
+     * 还会介绍一些根本没有的功能。识别到就整段换成新默认。
+     */
+    private fun mentionsDeadTools(prompt: String): Boolean = DEAD_TOOL_NAMES.any { prompt.contains(it) }
+
+    private val DEAD_TOOL_NAMES = listOf(
+        "create_reminder", "list_reminders", "cancel_reminder",
+        "set_timer", "stop_speaking", "device 控制"
+    )
 
     const val DEFAULT_MAX_TOKENS = 512
     const val DEFAULT_TEMPERATURE = 1.0

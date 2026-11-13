@@ -45,8 +45,19 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_MODE, "qa").orEmpty().ifEmpty { "qa" }
         set(value) = prefs.edit().putString(KEY_MODE, value).apply()
 
-    // ---------------------------------------------------------------- 界面语言
+    // ---------------------------------------------------------------- 消息
 
+    /**
+     * 上一次真正用来发消息的平台（`wechat` / `qq`）。
+     *
+     * 用户说「发给老王」不指定平台时，以前一律按微信走——常用 QQ 的人每次都被带错应用。
+     * 记住上一次用过的那个，默认沿用它；用户明确说了「QQ / 微信」时仍以原话为准。
+     */
+    var lastImPlatform: String
+        get() = prefs.getString(KEY_IM_PLATFORM, "").orEmpty().ifEmpty { "wechat" }
+        set(value) = prefs.edit().putString(KEY_IM_PLATFORM, value).apply()
+
+    // ---------------------------------------------------------------- 界面语言
     /**
      * 界面语言标签：zh / en / ja / ko。
      *
@@ -142,6 +153,7 @@ class AppSettings(context: Context) {
         private const val KEY_SPEAK = "speak_enabled"
         private const val KEY_TTS_ENGINE = "tts_engine"
         private const val KEY_MODE = "assistant_mode"
+        private const val KEY_IM_PLATFORM = "last_im_platform"
         private const val KEY_LANGUAGE = "language"
         private const val KEY_CLOUD = "cloud_enabled"
         private const val KEY_CLOUD_MODE = "cloud_mode"

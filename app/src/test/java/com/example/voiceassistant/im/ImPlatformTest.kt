@@ -31,9 +31,11 @@ class ImPlatformTest {
     }
 
     @Test
-    fun `没给平台默认微信 不支持的返回 null`() {
-        assertEquals(ImPlatform.WECHAT, ImPlatform.of(null))
-        assertEquals(ImPlatform.WECHAT, ImPlatform.of(""))
+    fun `没说平台和说错平台都返回 null`() {
+        // 空 = 用户没提，交给「上次用过的那个」；不能在这里悄悄当成微信
+        assertNull(ImPlatform.of(null))
+        assertNull(ImPlatform.of(""))
+        assertNull(ImPlatform.of("   "))
         assertNull(ImPlatform.of("telegram"))
         assertNull(ImPlatform.of("短信"))
     }

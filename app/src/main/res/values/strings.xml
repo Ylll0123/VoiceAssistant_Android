@@ -123,7 +123,6 @@
     <string name="bubble_only_last">只能修改或删除最后一条</string>
     <string name="settings_speak">语音播报</string>
     <string name="settings_speak_desc">回答时念出来，关掉就只看文字</string>
-    <string name="settings_access_failed">打不开无障碍设置，到系统设置里找一下「无障碍」</string>
 
     <!-- 播报没声音时的四种真实原因与引导 -->
     <string name="speech_problem_title">没有声音</string>
@@ -135,10 +134,6 @@
     <string name="speech_volume_raised">媒体音量已经调大了</string>
     <string name="speech_settings_failed">打不开语音设置页，到系统设置里找「文字转语音」</string>
 
-    <!-- 发消息缺无障碍权限：用到时才问，不再放设置里 -->
-    <string name="access_prompt_title">要不要开权限</string>
-    <string name="access_prompt_message">开了无障碍权限，我就能自己进微信 / QQ 找人、把话填进聊天框。不开也能用：内容会带到分享页，你自己选人发送。</string>
-    <string name="access_prompt_go">去开启</string>
 
     <!-- 无障碍（发消息自动化）：这段说明会在系统设置里给用户看，必须如实写用途 -->
     <string name="accessibility_label">HardlySeek 语音操作</string>
@@ -149,4 +144,6 @@
     <string name="phone_perm_message">打电话要用到通讯录（把「妈妈」翻成号码）和拨号权限。不开也能用：把号码说给我，我帮你填进拨号盘。</string>
     <string name="phone_perm_granted">权限开好了，再说一次就行。</string>
     <string name="phone_perm_denied">没给权限也没关系，说号码我一样能帮你填进拨号盘。</string>
+    <string name="phone_perm_title">打电话要用权限</string>
+    <string name="phone_perm_go">去开启</string>
 </resources>

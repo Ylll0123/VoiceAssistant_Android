@@ -159,16 +159,28 @@ class CloudLlmHandlerTest {
     // ------------------------------------------------------------ 人设
 
     @Test
-    fun `默认人设是 TTS 友好且讲清了工具有哪些`() {
+    fun `默认人设是 TTS 友好且只讲现有的能力`() {
         val prompt = CloudLlmHandler.DEFAULT_SYSTEM_PROMPT
         assertTrue("仍须禁止 Markdown（会被 TTS 原样念出）：$prompt", prompt.contains("Markdown"))
         assertTrue("要说明回答会被朗读：$prompt", prompt.contains("朗读") || prompt.contains("短句"))
-        // v4.0 的分工：能力全交给模型，所以人设必须点明工具名，否则它会回答「做不到」
-        listOf("create_reminder", "list_reminders", "cancel_reminder", "set_timer", "device")
-            .forEach { key ->
-                assertTrue("人设里应写明工具「$key」：$prompt", prompt.contains(key))
-            }
+        // 工具名以 SCHEMA 为准，人设里不能硬编码——写死就会和总线脱节
+        assertTrue("要交代「以工具清单为准」：$prompt", prompt.contains("工具清单"))
+        listOf("打电话", "导航", "微信", "音量", "手电筒").forEach { key ->
+            assertTrue("人设里应提到现有能力「$key」：$prompt", prompt.contains(key))
+        }
         assertTrue("人设每轮都要发送，不能无限长，当前 ${prompt.length} 字：$prompt", prompt.length <= 2000)
+    }
+
+    @Test
+    fun `还写着旧工具名的人设要迁移掉`() {
+        val stale = "你是助手。create_reminder 建提醒，set_timer 计时，stop_speaking 停止朗读。"
+        assertEquals(
+            CloudLlmHandler.DEFAULT_SYSTEM_PROMPT,
+            CloudLlmHandler.migratePrompt(stale)
+        )
+        // 用户自己写的人设不该被碰
+        val mine = "你是我的私人助理，回答尽量简短。"
+        assertEquals(mine, CloudLlmHandler.migratePrompt(mine))
     }
 
     @Test

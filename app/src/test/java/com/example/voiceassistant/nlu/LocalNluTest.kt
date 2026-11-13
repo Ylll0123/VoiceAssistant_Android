@@ -214,6 +214,24 @@ class LocalNluTest {
         assertNull(service("跟我说说这个字怎么读"))
     }
 
+    @Test
+    fun `发出去的内容可以是问句`() {
+        // 「问」后面那句就是要发出去的原文，不能被当成要回答的问题
+        assertEquals("msg/send_text", service("给妈妈发微信问她吃饭了吗"))
+        assertEquals("吃饭了吗", args("给妈妈发微信问她吃饭了吗", "content"))
+        assertEquals("你吃饭了吗", args("跟妈妈说一声你吃饭了吗", "content"))
+        // 「问一下」也要剥掉
+        assertEquals("明天几点到", args("发微信给老王问一下明天几点到", "content"))
+    }
+
+    @Test
+    fun `没说平台时不硬填微信`() {
+        // 留空，由服务沿用上一次用过的应用——常用 QQ 的人才不会被带到微信
+        assertNull(args("发消息给老王说明天见", "platform"))
+        assertEquals("wechat", args("发微信给老王说明天见", "platform"))
+        assertEquals("qq", args("发QQ给老王说明天见", "platform"))
+    }
+
     // ------------------------------------------------------------ 打电话与导航
 
     @Test

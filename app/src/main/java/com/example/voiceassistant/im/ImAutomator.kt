@@ -31,10 +31,14 @@ enum class ImPlatform(val key: String, val packageName: String, val label: Strin
         /**
          * 平台别名：本地 NLU、大模型、界面传过来的写法都得认。
          * 以前只认 wechat/qq/wx，模型写「微信」「腾讯QQ」就直接被判成「不支持」。
+         *
+         * **空值返回 null，不返回微信**：以前这里默认 WECHAT，结果「用户没说平台」
+         * 和「用户说了微信」变成同一件事，常用 QQ 的人每次都被带到微信。
+         * 现在「没说」交给调用方决定（`AppSettings.lastImPlatform` 记着上次用的那个）。
          */
         fun of(raw: String?): ImPlatform? {
             val key = raw?.trim()?.lowercase().orEmpty()
-            if (key.isEmpty()) return WECHAT
+            if (key.isEmpty()) return null
             if (QQ_KEYS.any { key.contains(it) }) return QQ
             if (WECHAT_KEYS.any { key.contains(it) }) return WECHAT
             return null
@@ -76,16 +80,45 @@ enum class ImPlatform(val key: String, val packageName: String, val label: Strin
  */
 class ImAutomator(
     private val context: Context,
-    private val driver: ImDriver = ImDriver()
+    private val driver: ImDriver = ImDriver(),
+    /**
+     * 把内容放进剪贴板。
+     *
+     * 这是**唯一一定成功**的通道：不管无障碍在不在、系统让不让跳转，
+     * 文字都能先到用户手边。分享页没起来时，回话就靠它兜住。
+     */
+    private val clipboard: (String) -> Boolean = { text ->
+        runCatching {
+            val manager = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                as? android.content.ClipboardManager ?: return@runCatching false
+            manager.setPrimaryClip(android.content.ClipData.newPlainText("hardlyseek", text))
+            true
+        }.getOrDefault(false)
+    },
+    /**
+     * 我们自己的界面还在不在前台。
+     *
+     * 没有读屏能力时，这是**唯一能反证「分享页真的起来了」**的信号：
+     * 分享页是另一个 Activity，它一出现我们就会 onPause。
+     * 由界面在启动时注入（[bindUiProbe]），因为这里拿不到 Activity 的状态。
+     */
+    private var uiForeground: () -> Boolean = { false }
 ) {
 
+    /** 界面启动时把「我还在前台吗」这个探针接进来 */
+    fun bindUiProbe(probe: () -> Boolean) {
+        uiForeground = probe
+    }
+
+    /**
+     * 一次发送的结果。
+     *
+     * 刻意不带「要不要去开权限」这种字段：无障碍是内部实现细节，
+     * 用户既没有入口也管不了它，把这件事抛给界面只会变成一句让人困惑的提示。
+     */
     sealed class Outcome {
-        /**
-         * @param needsAccess 这次是因为「没开无障碍」才降级的——界面据此问一句要不要去开。
-         *   设置页里那一行已经删了，权限引导改成用到时才出现。
-         */
-        data class Done(val message: String, val needsAccess: Boolean = false) : Outcome()
-        data class Failed(val message: String, val needsAccess: Boolean = false) : Outcome()
+        data class Done(val message: String) : Outcome()
+        data class Failed(val message: String) : Outcome()
     }
 
     /**
@@ -114,6 +147,29 @@ class ImAutomator(
      */
     private enum class Fail { CONTACT, PAGE, FILL }
 
+    /**
+     * 并发控制：**后来的请求赢**。
+     *
+     * 用户连着说两遍「发消息给老王」，第一遍可能正卡在等微信启动。
+     * 以前两条会在同一个线程池里排队，第二遍要等第一遍十几秒——用户看到的就是「卡住」。
+     * 现在后一条把 `generation` 加一，正在跑的那条在下一个检查点自己退出，
+     * 锁立刻让出来，新的一条按当时的真实界面重新走一遍。
+     */
+    private val lock = Any()
+
+    @Volatile
+    private var generation = 0
+
+    @Volatile
+    private var activeGen = 0
+
+    /** 这一次的总预算；超了就当作失败，不再无限等 */
+    @Volatile
+    private var budgetEnd = 0L
+
+    private fun aborted(): Boolean =
+        activeGen != generation || System.currentTimeMillis() > budgetEnd
+
     // ------------------------------------------------------------------ 能力检查
 
     /**
@@ -123,37 +179,28 @@ class ImAutomator(
     private fun autoBlocked(): String? {
         if (driver.available()) return null
         return if (ImAccessibilityService.enabledInSystem(context)) {
-            "无障碍权限是开着的，但服务还没连上（到系统设置里把「HardlySeek」关一下再打开）"
+            "读屏服务还没连上（系统设置里关掉再打开一次就好）"
         } else {
-            "还没开无障碍权限"
+            "这台机器没有开启读屏能力"
         }
     }
 
     /**
-     * 给用户看的分步自检：装没装、能不能自动填字、分享通不通。
-     * 「为什么发不出去」这类问题，靠这句话就能定位，不用猜。
+     * 给用户看的分步自检：装没装、能不能自己填字、内容送到哪儿。
+     *
+     * 措辞里不出现「无障碍」「权限」这些词——用户改不了，也不该被要求去改。
      */
     fun diagnose(platform: ImPlatform): String {
         if (!platform.installed(context)) return "手机里没装${platform.label}，先装一个吧。"
-        val share = if (platform.shareable(context)) "能用" else "用不了"
-        val blocked = autoBlocked()
-        return if (blocked == null) {
-            "${platform.label}已安装，无障碍已连上：我可以自己进去找人、把话填进输入框，" +
-                "发送键留给你点。系统分享备用通路$share。"
+        val auto = autoBlocked()
+        return if (auto == null) {
+            "${platform.label}已安装：我能自己进聊天页、找到人、把话填进输入框，发送键留给你点。" +
+                "内容也会同步复制到剪贴板，万一没送过去可以直接粘贴。"
         } else {
-            "${platform.label}已安装，$blocked。系统分享通路$share，" +
-                "会把内容带过去由你选人、发送。"
+            "${platform.label}已安装：这次会把内容带进${platform.label}的分享页，你选人发送；" +
+                "同时内容已经复制到剪贴板，没跳过去也能粘贴。"
         }
     }
-
-    /** 打开系统的无障碍设置页，让用户自己勾选 */
-    fun openAccessibilitySettings(): Boolean = runCatching {
-        context.startActivity(
-            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-        true
-    }.getOrDefault(false)
 
     // ------------------------------------------------------------------ 主流程
 
@@ -167,20 +214,41 @@ class ImAutomator(
         if (to.isBlank()) return Outcome.Failed("要发给谁？")
         if (content.isBlank()) return Outcome.Failed("要发什么？")
 
+        // 先占住「最新」的位置：正在跑的上一条会尽快退出
+        val mine = ++generation
+        return synchronized(lock) {
+            if (mine != generation) {
+                return@synchronized Outcome.Failed("已经换成你新说的那条了。")
+            }
+            activeGen = mine
+            budgetEnd = System.currentTimeMillis() + BUDGET_MS
+            runCatching { deliverInner(platform, to, content) }
+                .getOrElse { error ->
+                    Log.w(TAG, "deliver 异常: ${error.message}")
+                    Outcome.Failed("这次没做成：${error.javaClass.simpleName}")
+                }
+        }
+    }
+
+    private fun deliverInner(platform: ImPlatform, to: String, content: String): Outcome {
+        // 内容先落剪贴板：无论后面走哪条路，用户手上都有一份
+        val copied = runCatching { clipboard(content) }.getOrDefault(false)
+
         val blocked = autoBlocked()
         if (blocked != null) {
-            Log.i(TAG, "deliver: 无障碍不可用（$blocked），改走系统分享")
-            return if (openShare(platform, content)) {
+            Log.i(TAG, "deliver: 自动填字不可用（$blocked），改走系统分享")
+            val share = openShare(platform, content)
+            return if (share.verified) {
                 Outcome.Done(
-                    "已经把内容带到${platform.label}了，选一下「$to」再点发送就好。" +
-                        "（$blocked，开了权限我就能自己找人、自己填字。）",
-                    needsAccess = true
+                    "已经把内容带到${platform.label}的分享页了，选一下「$to」再点发送就好。"
+                )
+            } else if (copied) {
+                // 跳没跳过去无法确认：不装作成功了，但内容确实到用户手上了
+                Outcome.Done(
+                    "内容已经复制到剪贴板了。打开${platform.label}，进「$to」的聊天，长按输入框粘贴就能发。"
                 )
             } else {
-                Outcome.Failed(
-                    "$blocked，${platform.label}的分享页也打不开，只能手动发了。",
-                    needsAccess = true
-                )
+                Outcome.Failed("没能把内容送进${platform.label}，你再说一次试试。")
             }
         }
 
@@ -201,7 +269,7 @@ class ImAutomator(
                 // 读不到输入框内容：不能替用户拍板说填好了，更不能说发出去了
                 Outcome.Done(
                     "已经打开${platform.label}里「${filled.matched}」的聊天页，也把内容填进去了，" +
-                        "但读不到输入框里的字，你低头看一眼再点发送。"
+                        "但读不到输入框里的字，你低头看一眼再点发送（内容也在剪贴板里）。"
                 )
             }
 
@@ -214,14 +282,19 @@ class ImAutomator(
                  */
                 if (filled.kind == Fail.CONTACT) {
                     Outcome.Failed(filled.reason)
-                } else if (openShare(platform, content)) {
-                    // 自动填字没成：能分享就把内容带过去，至少不让用户白说一遍
-                    Outcome.Done(
-                        "没能自己填进去（${filled.reason}），已经把内容带到${platform.label}了，" +
-                            "选「$to」再点发送就好。"
-                    )
                 } else {
-                    Outcome.Failed("${filled.reason}，分享页也打不开，只能手动发了。")
+                    val share = openShare(platform, content)
+                    when {
+                        share.verified -> Outcome.Done(
+                            "没能自己填进去（${filled.reason}），已经把内容带到${platform.label}了，" +
+                                "选「$to」再点发送就好。"
+                        )
+                        copied -> Outcome.Done(
+                            "没能自己填进去（${filled.reason}），内容已经复制到剪贴板。" +
+                                "打开${platform.label}，进「$to」的聊天，长按输入框粘贴。"
+                        )
+                        else -> Outcome.Failed("${filled.reason}，内容也没能送到${platform.label}。")
+                    }
                 }
             }
         }
@@ -245,10 +318,11 @@ class ImAutomator(
         if (!waitForApp(platform, LAUNCH_TIMEOUT_MS)) {
             // 有些 ROM 第一次拉起只是把任务提到后台，再试一次通常就上来了
             launch(platform)
-            if (!waitForApp(platform, 2_500)) {
+            if (!waitForApp(platform, LAUNCH_RETRY_MS)) {
                 return Filled.Error("${platform.label}没跳出来，系统可能拦了后台跳转")
             }
         }
+        if (aborted()) return Filled.Error("这一条被新的请求顶掉了")
 
         /*
          * 0) 已经停在这个人的聊天页（上一轮填完、用户没退出）。
@@ -268,6 +342,7 @@ class ImAutomator(
         if (driver.currentPackage() != platform.packageName) {
             return Filled.Error("从${platform.label}里被弹出来了")
         }
+        if (aborted()) return Filled.Error("这一条被新的请求顶掉了")
 
         // 2) 首页上直接点会话进聊天。
         //    比「搜索 → 等联想 → 点第一条」少两次跳页，也避开搜索框那个坑：
@@ -295,7 +370,7 @@ class ImAutomator(
             driver.tap(rect.exactCenterX(), rect.exactCenterY())
         }
 
-        val searchBox = findSearchBox(3_000)
+        val searchBox = findSearchBox(SEARCH_BOX_TIMEOUT_MS)
             ?: return Filled.Error("搜索框没弹出来")
         if (!driver.fillText(searchBox, to)) {
             driver.click(searchBox)
@@ -304,7 +379,7 @@ class ImAutomator(
                 return Filled.Error("联系人名字填不进搜索框")
             }
         }
-        Thread.sleep(1_100)
+        Thread.sleep(900)
 
         // 4) 点开联系人：完全同名优先，且排除「搜索 xxx」这类网络搜索行
         val searchBottom = driver.bounds(searchBox)?.bottom ?: 0
@@ -387,18 +462,21 @@ class ImAutomator(
     ): AccessibilityNodeInfo? {
         driver.click(firstContact)
         waitChatInput(CHAT_ENTER_TIMEOUT_MS)?.let { return it }
+        if (aborted()) return null
 
         // 还在搜索页：条目可能没响应这次点击，改用坐标再点一次
         if (findSearchBox(0) != null) {
             val below = driver.bounds(findSearchBox(0))?.bottom ?: 0
             tapOrClick(findContact(to, below) ?: firstContact)
             waitChatInput(2_500)?.let { return it }
+            if (aborted()) return null
         }
 
         // QQ 点搜索结果先进资料卡，要再点「发消息」
         driver.find(byText = "发消息", timeoutMs = 700)?.let { button ->
             driver.click(button)
             waitChatInput(2_500)?.let { chat -> return chat }
+            if (aborted()) return null
         }
 
         // 跑到别的应用了就别再折腾
@@ -501,15 +579,16 @@ class ImAutomator(
      * 唯一的例外是量不到屏幕高度（极老或特殊 ROM），那时没有几何可用。
      */
     private fun waitChatInput(timeoutMs: Long): AccessibilityNodeInfo? {
-        val deadline = System.currentTimeMillis() + timeoutMs
+        val end = System.currentTimeMillis() + timeoutMs
         do {
             val boxes = driver.findAll { node ->
                 driver.isEditable(node) && !looksLikeSearchBox(node)
             }
             boxes.firstOrNull { looksLikeChatInput(it) }?.let { return it }
             if (driver.screenHeight() <= 0) boxes.firstOrNull()?.let { return it }
+            if (aborted()) return null
             Thread.sleep(250)
-        } while (System.currentTimeMillis() < deadline)
+        } while (System.currentTimeMillis() < end)
         return null
     }
 
@@ -607,13 +686,25 @@ class ImAutomator(
 
     // ------------------------------------------------------------------ 系统分享通路
 
+    /** 一次分享的结果：只认「真的跳过去了」 */
+    private data class Share(val verified: Boolean)
+
     /**
      * 把文字交给微信 / QQ 的官方分享入口，联系人由用户自己选。
      *
-     * 只在**没开无障碍**或自动填字失败时用。不需要任何权限，也不怕对方改版，
-     * 代价是最后一步要人点——反正发送键本来也留给用户。
+     * ## 为什么一定要「验证」
+     * `startActivity` 在后台启动被系统拦住时**不会抛异常**：调用成功、界面没动。
+     * 以前的代码在没有读屏能力时直接 `return true`，于是回一句「已经把内容带到微信了」，
+     * 用户抬头一看还在原地——这就是「他说发了，其实没跳转」的来源。
+     *
+     * 现在两条验证路径，都必须看见变化才算成功：
+     * - 有读屏：前台包名从我们变成别人；
+     * - 没有读屏：我们自己的 Activity 被盖住（分享页是另一个 Activity，一定会让我们 onPause）。
+     * 都看不见变化就返回 false，由调用方改说「已复制到剪贴板」——至少那句话是真的。
      */
-    private fun openShare(platform: ImPlatform, content: String): Boolean {
+    private fun openShare(platform: ImPlatform, content: String): Share {
+        val wasForeground = uiForeground()
+
         val started = runCatching {
             val base = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -636,19 +727,33 @@ class ImAutomator(
             true
         }.getOrDefault(false)
 
-        if (!started) return false
+        if (!started) return Share(false)
 
-        // 没有读屏能力就只能相信系统；有的话一定要看见界面真的换了再算成功。
-        // 后台被系统拦住时 startActivity 不会报错，界面却没动——那时说「已经带过去了」就是骗人。
-        if (!driver.available()) return true
-        val deadline = System.currentTimeMillis() + SHARE_TIMEOUT_MS
-        do {
-            val pkg = driver.currentPackage()
-            if (pkg != null && pkg != context.packageName) return true
-            Thread.sleep(250)
-        } while (System.currentTimeMillis() < deadline)
-        Log.w(TAG, "openShare: 分享页没起来（后台启动可能被系统拦了）")
-        return false
+        val until = System.currentTimeMillis() + SHARE_TIMEOUT_MS
+
+        // 有读屏：前台包名变了就是真跳过去了
+        if (driver.available()) {
+            while (System.currentTimeMillis() < until) {
+                val pkg = driver.currentPackage()
+                if (pkg != null && pkg != context.packageName) return Share(true)
+                Thread.sleep(200)
+            }
+            Log.w(TAG, "openShare: 包名没变，分享页可能没起来")
+            return Share(false)
+        }
+
+        /*
+         * 没有读屏：只能反证。
+         * 本来就不在前台时（比如用户在别的应用里触发），我们没有可观察的信号，
+         * 于是如实返回「没验证」——宁可说「已复制到剪贴板」，也不谎报跳转成功。
+         */
+        if (!wasForeground) return Share(false)
+        while (System.currentTimeMillis() < until) {
+            if (!uiForeground()) return Share(true)
+            Thread.sleep(150)
+        }
+        Log.w(TAG, "openShare: 界面没被盖住，分享页可能没起来")
+        return Share(false)
     }
 
     // ------------------------------------------------------------------ 内部
@@ -662,11 +767,12 @@ class ImAutomator(
     }.getOrDefault(false)
 
     private fun waitForApp(platform: ImPlatform, timeoutMs: Long): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
+        val end = System.currentTimeMillis() + timeoutMs
         do {
             if (driver.currentPackage() == platform.packageName) return true
+            if (aborted()) return false
             Thread.sleep(250)
-        } while (System.currentTimeMillis() < deadline)
+        } while (System.currentTimeMillis() < end)
         return false
     }
 
@@ -684,8 +790,23 @@ class ImAutomator(
             shared ?: ImAutomator(context.applicationContext).also { shared = it }
         }
 
-        const val LAUNCH_TIMEOUT_MS = 6_000L
-        const val SEARCH_TIMEOUT_MS = 2_500L
+        const val LAUNCH_TIMEOUT_MS = 4_000L
+
+        /** 第一次没拉起来时再等这么久（有些 ROM 第一次只把任务提到后台） */
+        const val LAUNCH_RETRY_MS = 2_000L
+
+        const val SEARCH_TIMEOUT_MS = 2_000L
+
+        /** 点完搜索入口，等搜索框出现 */
+        const val SEARCH_BOX_TIMEOUT_MS = 2_500L
+
+        /**
+         * 一次发送的总预算。
+         *
+         * 每步都有超时，但叠起来仍可能十几秒；超过这个上限就当作失败收场，
+         * 不能让一条消息把整个助手卡在那里。
+         */
+        const val BUDGET_MS = 28_000L
 
         /** 点完联系人后，等聊天页出现的时间 */
         const val CHAT_ENTER_TIMEOUT_MS = 3_000L

@@ -125,7 +125,6 @@
     <string name="bubble_only_last">Only the latest message can be edited or deleted</string>
     <string name="settings_speak">Read answers aloud</string>
     <string name="settings_speak_desc">Speak replies; turn off for text only</string>
-    <string name="settings_access_failed">Couldn\'t open accessibility settings; find it in system settings</string>
 
 
     <string name="accessibility_label">HardlySeek voice actions</string>
@@ -139,12 +138,11 @@
     <string name="speech_preview">Hi, I\'m HardlySeek. You can hear me now.</string>
     <string name="speech_volume_raised">Media volume turned up</string>
     <string name="speech_settings_failed">Cannot open speech settings; look for Text-to-speech in system settings</string>
-    <string name="access_prompt_title">Grant the permission?</string>
-    <string name="access_prompt_message">With accessibility I can open WeChat / QQ, find the contact and fill in the text myself. Without it you can still send: the text goes to the share sheet and you pick the contact.</string>
-    <string name="access_prompt_go">Open</string>
 
     <!-- Phone permissions, asked only when actually needed -->
     <string name="phone_perm_message">Calling needs contacts (to turn a name into a number) and direct-dial permission. You can skip both: just say the number and I will put it in the dialer.</string>
     <string name="phone_perm_granted">Permissions granted. Say it again.</string>
     <string name="phone_perm_denied">That is fine. Say a number and I will still fill it into the dialer.</string>
+    <string name="phone_perm_title">Permission for calls</string>
+    <string name="phone_perm_go">Open settings</string>
 </resources>

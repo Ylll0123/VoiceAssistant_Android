@@ -73,9 +73,6 @@ class AiChat(
 
         val used = mutableListOf<String>()
 
-        // 工具执行时要用「用户原话」校对参数（见 PlatformHint），这里先把原话挂上
-        tools.userText = input
-
         repeat(maxRounds) { round ->
             val body = buildBody(cfg.model, messages, cfg.maxTokens, tools.schema)
             val (raw, code) = runCatching {
@@ -112,7 +109,7 @@ class AiChat(
             messages += assistantWithToolCalls(content, calls)
             calls.forEach { call ->
                 used += call.name
-                val result = tools.execute(call)
+                val result = tools.execute(call, input)
                 messages += toolMessage(call.id, result)
             }
 
@@ -167,7 +164,14 @@ class AiChat(
         val now = clock()
         val timeLine = "现在是 ${now.year} 年 ${now.monthValue} 月 ${now.dayOfMonth} 日 " +
             "${now.hour} 点 ${String.format("%02d", now.minute)} 分（${weekday(now)}）。"
-        return listOf(cfg.systemPrompt, VOICE_INPUT_RULES, timeLine, AssistantMode.hint(), styleHint)
+        return listOf(
+            cfg.systemPrompt,
+            VOICE_INPUT_RULES,
+            CAPABILITY_RULES,
+            timeLine,
+            AssistantMode.hint(),
+            styleHint
+        )
             .filter { it.isNotBlank() }
             .joinToString("\n")
     }
@@ -227,6 +231,34 @@ class AiChat(
                 "不能因为历史里刚才做过，就回一句「已经做过了」。\n" +
                 "工具返回的结果要照原样说给用户，不要把「已经填好、等你点发送」改写成「已发送」，" +
                 "也不要替工具保证它没报告过的事。"
+
+        /**
+         * 能力边界：**只讲现在真有的功能**。
+         *
+         * 为什么要单独一段、而且拼在人设后面：用户是可以自己改人设的，
+         * 改过的人设可能还写着早就删掉的功能（唤醒、悬浮窗、回答方式……），
+         * 模型照着说，用户就会问「在哪儿开」——然后发现根本没有。
+         *
+         * 这一段跟着版本走，人设怎么写都盖不掉它。
+         */
+        private const val CAPABILITY_RULES =
+            "【这台手机现在只有这些能力，别的一律当作不存在】\n" +
+                "- 手机：手电筒、屏幕亮度、媒体/铃声/闹钟音量、播放与切歌、打开任意已装应用、看电量\n" +
+                "- 通话与出行：打电话（姓名或号码）、导航到某地\n" +
+                "- 日程：建闹钟和提醒（直接建在系统时钟里）、记待办、查询、取消\n" +
+                "- 消息：把一句话送进微信或 QQ 里某个人的聊天框；内容会同时复制到剪贴板\n" +
+                "- 在线：翻译、天气、算数、查时间、查单词、解释概念、写一句话\n" +
+                "- 会话：清空当前对话的上下文\n" +
+                "【下面这些已经删掉了，永远不要提，也不要建议用户去哪里开】\n" +
+                "语音唤醒/唤醒词（叫不醒我）、悬浮窗/在别的应用上直接问我、回答方式（精简/详细）、\n" +
+                "后台保活、讯飞离线唤醒、发送前免确认、自动发消息权限（无障碍）。\n" +
+                "用户问起，就一句「没有这个功能」，不要说「已经去掉了」、不要解释原因，\n" +
+                "也不要让用户去设置里找。\n" +
+                "【发消息】\n" +
+                "用户说「发消息给某人说/问 X」时，X 就是要发出去的原文：哪怕它是「你吃饭了吗」\n" +
+                "这种问句，也照原样当 content 传给工具，不要回答它，也不要把「说」「问」写进 content。\n" +
+                "做完只能说「已经填好，点一下发送」或「内容已复制到剪贴板」。\n" +
+                "永远不要说「已发送」「已经发出去了」——点发送键的是用户，不是你。"
 
         /** 起名失败时的兜底：直接用用户问的那句话，最多 24 个字 */
         fun fallbackTitle(firstUser: String): String {

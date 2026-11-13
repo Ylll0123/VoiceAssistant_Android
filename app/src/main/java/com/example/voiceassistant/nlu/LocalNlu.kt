@@ -1,6 +1,7 @@
 package com.example.voiceassistant.nlu
 
 import com.example.voiceassistant.bus.BusArgs
+import com.example.voiceassistant.im.ImContent
 import com.example.voiceassistant.service.KnownApps
 import java.time.LocalDateTime
 
@@ -381,14 +382,22 @@ object LocalNlu {
             ?.groupValues?.get(1)?.trim().orEmpty()
         if (to.isEmpty() || to.length > 12) return null
 
-        val content = extractSendContent(text, to)
-        if (content.isEmpty() || content.length > 100) return null
+        // 内容统一交给 ImContent 洗：两条来路（本地/模型）必须是同一套规则
+        val content = ImContent.clean(extractSendContent(text, to))
+        if (content.isEmpty()) return null
 
-        val key = if (QQ_WORD.containsMatchIn(text)) "qq" else "wechat"
-        return Hit(
-            "msg/send_text",
-            BusArgs.of("platform" to key, "to" to to, "content" to content)
-        )
+        var args = BusArgs.of("to" to to, "content" to content)
+        /*
+         * 只在用户**真的说了平台**时才传 platform。
+         *
+         * 以前一律填 wechat，等于把「没说」当成「说微信」，常用 QQ 的人每次都被带错应用。
+         * 现在留空，由 msg/send_text 用上一次真正用过的平台兜底。
+         */
+        if (PLATFORM_WORD.containsMatchIn(text)) {
+            val key = if (QQ_WORD.containsMatchIn(text)) "qq" else "wechat"
+            args = args.plus("platform", key)
+        }
+        return Hit("msg/send_text", args)
     }
 
     /** 像发消息吗：要么带平台词/消息词且能抽出收件人，要么是明确的托话句式 */
@@ -405,7 +414,15 @@ object LocalNlu {
      * 把平台词、量词、收件人、句首标点一层层剥掉。
      */
     private fun extractSendContent(text: String, to: String): String {
-        val cued = SEND_CONTENT_CUE.find(text)?.groupValues?.get(1)
+        /*
+         * 「给妈妈发微信问她吃饭了吗」——问句也是要发出去的正文。
+         *
+         * 以前只认「说 / 讲 / 告诉」，遇到「问」就整个漏掉，内容退化成
+         * 「微信给妈妈问她吃饭了吗」这种残句，模型还会把它当成一个要回答的问题。
+         * 现在「问」自成一档，连「问她 / 问他」一起吃掉，只留下真正要说的话。
+         */
+        val cued = SEND_CONTENT_ASK.find(text)?.groupValues?.get(1)
+            ?: SEND_CONTENT_CUE.find(text)?.groupValues?.get(1)
             ?: SEND_CONTENT_COLON.find(text)?.groupValues?.get(1)
         val raw = cued ?: run {
             // 「跟妈妈说一声晚点到」：内容从托话标记之后开始
@@ -432,7 +449,8 @@ object LocalNlu {
                 .trim()
             if (body == before) return@repeat
         }
-        return body.trim().trim('。', '！', '!', '？', '?', '，', ',', ' ', '~', '～')
+        // 只去掉句末的口语拖音，**问号保留**——「你吃饭了吗？」原样发出去才对
+        return body.trim().trim('，', ',', ' ', '~', '～')
     }
 
     // ------------------------------------------------------------------ 打电话与导航
@@ -626,6 +644,11 @@ object LocalNlu {
     private val CLEAR_WORDS = listOf(
         "清空对话", "清空聊天", "清除对话", "清除聊天",
         "删掉对话", "删掉聊天", "忘掉之前", "忘掉上面", "重新开始"
+    )
+
+    /** 「问她吃饭了吗」——问句也是正文，「问她/问他」一起吃掉 */
+    private val SEND_CONTENT_ASK = Regex(
+        "(?:问(?:一下|一声|她|他|它)?)[：:]?\\s*(.+)$"
     )
 
     /** 「说我晚点到」「告诉他十分钟后到」「内容是xxx」 */

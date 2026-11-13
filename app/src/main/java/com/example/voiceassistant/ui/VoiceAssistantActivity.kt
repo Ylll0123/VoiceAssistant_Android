@@ -38,6 +38,7 @@ import com.example.voiceassistant.core.CloudLlmBridge
 import com.example.voiceassistant.core.Dispatcher
 import com.example.voiceassistant.core.LlmSwitch
 import com.example.voiceassistant.im.ImAutomator
+import com.example.voiceassistant.im.ImPlatform
 import com.example.voiceassistant.provider.AudioSupply
 import com.example.voiceassistant.provider.ContextSupply
 import com.example.voiceassistant.provider.DeviceSupply
@@ -128,7 +129,14 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private lateinit var msgSupply: MsgSupply
 
     /** 单线程：同一时刻只有一个请求在飞，回来按顺序上屏 */
-    private val executor = Executors.newSingleThreadExecutor {
+    /**
+     * 后台线程池。
+     *
+     * 以前是**单线程**：一次发消息要打开应用、等界面、找人、填字，动辄十几秒，
+     * 这段时间里用户再说一句就只能排队——表现就是「卡住」。
+     * 现在至少三条并行：发消息在跑的时候，别的指令和问答仍然能立刻处理。
+     */
+    private val executor = Executors.newFixedThreadPool(3) {
         Thread(it, "assistant-net").apply { isDaemon = true }
     }
 
@@ -159,6 +167,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private var settingsOpen = false
     private var online = true
     private var drawerOpen = false
+    @Volatile
     private var isForeground = false
 
     private val networkListener = NetworkState.Listener { isOnline ->
@@ -292,15 +301,20 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         val device = AndroidDeviceController(applicationContext)
         val audioCtl = AndroidAudioController(applicationContext)
         val bridge = CloudLlmBridge { cloudConfig }
-        // 进程级单例：待确认的发送不能随 Activity 重建丢失
+        // 进程级单例：无障碍只有一只手，两条入口各建一个实例只会互相抢节点
         val automator = ImAutomator.of(applicationContext)
+        // 没有读屏能力时，靠「我们自己的界面有没有被盖住」反证分享页真的起来了
+        automator.bindUiProbe { isForeground && !isFinishing && !isDestroyed }
 
         // 「我上一条跟他说的什么」：读当前会话里助手说过的话
         msgSupply = MsgSupply(
             automator = automator,
             recentMessages = {
                 session.messages.filter { !it.isUser }.map { it.text }.takeLast(5)
-            }
+            },
+            // 用户没说发微信还是 QQ 时，沿用上一次真正用过的那个
+            lastPlatform = { ImPlatform.of(settings.lastImPlatform) },
+            onPlatformUsed = { settings.lastImPlatform = it.key }
         )
 
         bus = ServiceBus().apply {
@@ -696,9 +710,7 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 setThinking(null)
                 session.addAssistant(result.reply.speech)
                 if (speakEnabled) tts.speak(result.reply.speech)
-                // 发消息因为没开无障碍而走了分享通路：用到时才问，比藏在设置里有效
-                if (result.reply.data["need_access"] == "true") promptAccessibility()
-                // 打电话缺通讯录/拨号权限：同样是用到时才问
+                // 打电话缺通讯录/拨号权限：用到时才问（这是用户真能给的东西）
                 result.reply.data["need_permission"]?.let { promptPhonePermission(it) }
                 maybeNameConversation()
             }
@@ -965,28 +977,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     }
 
     /**
-     * 「自动发消息权限」：跳到系统的无障碍设置页。
-     *
-     * 设置页里那一行删掉了，改成**用到时再提示**——第一次说「发微信给…」发现没权限，
-     * 当场问一句要不要去开，比藏在设置里等人自己找有效得多。
-     */
-    fun openAccessibilitySettings() {
-        if (!msgSupply.openAccessibilitySettings()) {
-            toast(getString(R.string.settings_access_failed))
-        }
-    }
-
-    /** 消息功能缺无障碍权限时的引导 */
-    private fun promptAccessibility() {
-        appDialog()
-            .setTitle(R.string.access_prompt_title)
-            .setMessage(R.string.access_prompt_message)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.access_prompt_go) { _, _ -> openAccessibilitySettings() }
-            .showWhite()
-    }
-
-    /**
      * 打电话缺权限时的引导。
      *
      * @param kind `phone_call` 只缺拨号；`phone` 还缺通讯录
@@ -1005,10 +995,10 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         if (missing.isEmpty()) return
 
         appDialog()
-            .setTitle(R.string.access_prompt_title)
+            .setTitle(R.string.phone_perm_title)
             .setMessage(R.string.phone_perm_message)
             .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.access_prompt_go) { _, _ ->
+            .setPositiveButton(R.string.phone_perm_go) { _, _ ->
                 phonePermissionLauncher.launch(missing.toTypedArray())
             }
             .showWhite()

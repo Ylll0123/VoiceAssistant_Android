@@ -125,7 +125,6 @@
     <string name="bubble_only_last">마지막 메시지만 수정하거나 삭제할 수 있습니다</string>
     <string name="settings_speak">음성 읽기</string>
     <string name="settings_speak_desc">답변을 읽어 줍니다. 끄면 텍스트만 표시</string>
-    <string name="settings_access_failed">접근성 설정을 열 수 없습니다. 시스템 설정에서 열어 주세요</string>
 
 
     <string name="accessibility_label">HardlySeek 음성 조작</string>
@@ -139,12 +138,11 @@
     <string name="speech_preview">안녕하세요, HardlySeek 입니다. 이제 소리가 납니다.</string>
     <string name="speech_volume_raised">미디어 볼륨을 올렸습니다</string>
     <string name="speech_settings_failed">음성 설정을 열 수 없습니다. 시스템 설정의 \'텍스트 음성 변환\'에서 열어 주세요</string>
-    <string name="access_prompt_title">권한을 허용할까요</string>
-    <string name="access_prompt_message">접근성을 허용하면 위챗 / QQ를 열어 상대를 찾고 내용을 입력할 수 있습니다. 허용하지 않아도 공유 시트로 보낼 수 있습니다.</string>
-    <string name="access_prompt_go">열기</string>
 
     <!-- 전화 권한: 실제로 필요할 때만 요청 -->
     <string name="phone_perm_message">전화를 걸려면 연락처(이름을 번호로 바꾸기 위해)와 발신 권한이 필요합니다. 허용하지 않아도 번호를 말하면 다이얼에 입력해 드립니다.</string>
     <string name="phone_perm_granted">권한이 허용되었습니다. 다시 말씀해 주세요.</string>
     <string name="phone_perm_denied">허용하지 않아도 괜찮습니다. 번호를 말하면 다이얼에 입력해 드립니다.</string>
+    <string name="phone_perm_title">전화에 필요한 권한</string>
+    <string name="phone_perm_go">허용</string>
 </resources>

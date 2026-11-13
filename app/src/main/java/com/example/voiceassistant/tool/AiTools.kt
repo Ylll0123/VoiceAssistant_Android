@@ -31,14 +31,6 @@ class AiTools(private val bus: ServiceBus) {
     /** 一次工具调用（从模型响应里解析出来的） */
     data class Call(val id: String, val name: String, val arguments: String)
 
-    /**
-     * 用户这一轮的**原话**。
-     *
-     * 只用来给模型偷懒的参数兜底：模型漏填 `platform` 时按原话补，
-     * 说得不对时按原话改（见 [PlatformHint]）。空串表示没有上下文可用。
-     */
-    var userText: String = ""
-
     /** 工具清单（OpenAI function calling 的 `tools` 字段） */
     val schema: String get() = SCHEMA
 
@@ -50,11 +42,12 @@ class AiTools(private val bus: ServiceBus) {
      *
      * 不抛异常：任何失败都转成「失败了，原因是…」，让模型自己决定怎么向用户解释。
      */
-    fun execute(call: Call): String {
+    fun execute(call: Call, userText: String = ""): String {
         val service = serviceOf(call.name)
         if (!bus.has(service)) return "没有这个工具：${call.name}"
 
-        // 先拿用户原话校对平台：模型漏填「说 QQ 却发微信」就是这里补回来的
+        // 先拿用户原话校对平台：模型漏填「说 QQ 却发微信」就是这里补回来的。
+        // 原话走参数而不是成员变量——界面可能同时有两条请求在跑，共享字段会串。
         val raw = PlatformHint.fill(call.name, JsonArgs.flatMap(call.arguments), userText)
         val args = BusArgs.from(raw)
         val reply = bus.call(service, args)
@@ -235,15 +228,15 @@ class AiTools(private val bus: ServiceBus) {
     },"required":["scene"]}}},
   {"type":"function","function":{
     "name":"msg_send_text",
-    "description":"把消息送到微信/QQ 的聊天框。调用后会打开对应应用、进入和这个人的聊天页、把内容填进输入框，然后停下来——**发送键留给用户自己点**，程序不点。回话时要说「已经给你填好了，点一下发送」，绝不能说「已经发出去了」。找不到同名联系人会失败，这时别自己换人，也不要改成发给别人。",
+    "description":"把消息送到微信/QQ 的聊天框。调用后会打开对应应用、进入和这个人的聊天页、把内容填进输入框，然后停下来——**发送键留给用户自己点**，程序不点。回话时只能说「已经填好了，点一下发送」或「内容已复制到剪贴板」，绝不能说「已发送」「已经发出去了」。找不到同名联系人会失败，这时别自己换人，也不要改成发给别人。",
     "parameters":{"type":"object","properties":{
-      "platform":{"type":"string","enum":["wechat","qq"],"description":"用户说 QQ/企鹅 就必须填 qq，说微信/不指定才用 wechat。别漏填"},
+      "platform":{"type":"string","enum":["wechat","qq"],"description":"用户提了 QQ/企鹅 就必须填 qq，提了微信才填 wechat；完全没提就别填，系统会沿用上次用过的应用"},
       "to":{"type":"string","description":"联系人的名字，要和通讯录里一致"},
-      "content":{"type":"string","description":"要发的话"}
+      "content":{"type":"string","description":"要发出去的原文，原样照抄用户的话。哪怕是「你吃饭了吗」这种问句也照抄，不要回答它；不要带「说」「问」「告诉他」这类引导词，也不要加引号"}
     },"required":["to","content"]}}},
   {"type":"function","function":{
     "name":"msg_query_can_send",
-    "description":"诊断发消息能力：应用装没装、无障碍连没连上、系统分享通路能不能用。用户问「为什么发不出去」「能发微信吗」「检查一下发消息」时调用，把原因原样转述给用户。",
+    "description":"诊断发消息能力：应用装没装、我能不能自己找人填字、内容会送到聊天框还是分享页。用户问「为什么发不出去」「能发微信吗」「检查一下发消息」时调用，把原因原样转述给用户。",
     "parameters":{"type":"object","properties":{
       "platform":{"type":"string","enum":["wechat","qq"],"description":"用户说 QQ/企鹅 就填 qq，否则 wechat"}
     }}}},
