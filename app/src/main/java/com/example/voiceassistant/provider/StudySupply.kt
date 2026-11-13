@@ -18,7 +18,7 @@ import com.example.voiceassistant.core.LlmBridge
  */
 class StudySupply(private val llm: LlmBridge) {
 
-    val all: List<Supply> = listOf(wordQuery(), wordReview(), explain())
+    val all: List<Supply> = listOf(wordQuery(), wordReview())
 
     // ------------------------------------------------------------------ 查词
 
@@ -63,32 +63,6 @@ class StudySupply(private val llm: LlmBridge) {
             ) ?: return BusReply.fail("复习需要联网，现在没连上。")
 
             return BusReply.ok(answer, "word" to word)
-        }
-    }
-
-    // ------------------------------------------------------------------ 讲知识点
-
-    private fun explain(): Supply = object : Supply {
-        override val name = "study/explain"
-        override val summary = "解释概念、原理、实验。参数 topic 是要讲的内容。"
-
-        override fun invoke(args: BusArgs): BusReply {
-            val topic = args.str("topic")?.take(200)
-                ?: return BusReply.fail("要讲什么？")
-            val simple = args.bool("simple", false)
-
-            val answer = llm.complete(
-                prompt = if (simple) {
-                    "用尽量大白话解释「$topic」，打一个生活里的比方，三四句话说完。"
-                } else {
-                    "解释「$topic」：先说一句话结论，再分两三点讲清关键，" +
-                        "最后补一个常见误区。整体不超过 8 行。"
-                },
-                systemHint = "你讲东西习惯先给结论再展开，不铺垫、不客套。",
-                maxTokens = 600
-            ) ?: return BusReply.fail("讲这个需要联网，现在没连上。")
-
-            return BusReply.ok(answer)
         }
     }
 

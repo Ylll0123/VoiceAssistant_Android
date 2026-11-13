@@ -76,8 +76,12 @@ class AiTools(private val bus: ServiceBus) {
          * 暴露给模型的工具清单。
          *
          * 只放「模型自己做不到」的事：动手机、（真正）联网、算准数。
-         * 写文案、解释概念、翻译句子这些它张嘴就来，不必包成工具——
-         * 工具越多，每次请求的 token 越多，模型选错的概率也越大。
+         * 翻译、解释概念这些它张嘴就来，不必包成工具——工具越多，
+         * 每次请求的 token 越多，模型选错的概率也越大。
+         *
+         * 唯一的例外是 `gen_short_sentence`：它要的不是「一段解释」，
+         * 而是「一句能原样粘进聊天框的话」。混在问答里时模型习惯给
+         * 「你可以这样说：……」这种带壳的答案，粘过去还得再删一遍。
          */
         val SCHEMA: String = """
 [
@@ -144,6 +148,19 @@ class AiTools(private val bus: ServiceBus) {
       "action":{"type":"string","enum":["on","off","connect"],"description":"开、关，或去配对"}
     },"required":["action"]}}},
   {"type":"function","function":{
+    "name":"phone_call",
+    "description":"打电话。用户说「打电话给妈妈」「拨 138…」时调用。姓名会去通讯录查；重名会失败并给出候选，这时要问用户是哪一位，绝不能自己挑一个打过去。没给通讯录权限时也会失败，照实说。",
+    "parameters":{"type":"object","properties":{
+      "to":{"type":"string","description":"联系人的名字，或要拨的号码"}
+    },"required":["to"]}}},
+  {"type":"function","function":{
+    "name":"phone_navigate",
+    "description":"打开地图导航去某个地方。用户说「导航到公司」「带我去机场」「怎么去高铁站」时调用。",
+    "parameters":{"type":"object","properties":{
+      "to":{"type":"string","description":"目的地，地名或地址，按用户原话传"},
+      "mode":{"type":"string","enum":["drive","walk","bike","transit"],"description":"出行方式，默认 drive"}
+    },"required":["to"]}}},
+  {"type":"function","function":{
     "name":"audio_volume_ctrl",
     "description":"调手机音量、静音。用户说「大声点」「静音」「音量 30%」「铃声小一点」时调用。用户没说哪一路就用 music。",
     "parameters":{"type":"object","properties":{
@@ -160,6 +177,16 @@ class AiTools(private val bus: ServiceBus) {
   {"type":"function","function":{
     "name":"audio_tts_stop",
     "description":"立刻停止朗读。用户说「别念了」时调用。",
+    "parameters":{"type":"object","properties":{}}}},
+  {"type":"function","function":{
+    "name":"audio_tts_speak",
+    "description":"把一段文字念出来。用户说「念一下」「读给我听」时调用，text 是要念的原文。",
+    "parameters":{"type":"object","properties":{
+      "text":{"type":"string","description":"要朗读的内容"}
+    },"required":["text"]}}},
+  {"type":"function","function":{
+    "name":"context_clear",
+    "description":"清空当前这段对话的上下文。用户说「清空对话」「忘掉之前的」「重新开始」时调用。只影响本轮对话，不删会话记录。",
     "parameters":{"type":"object","properties":{}}}},
   {"type":"function","function":{
     "name":"tool_calc",
@@ -187,6 +214,26 @@ class AiTools(private val bus: ServiceBus) {
       "city":{"type":"string","description":"城市名，例如「杭州」"}
     }}}},
   {"type":"function","function":{
+    "name":"study_word_query",
+    "description":"查一个英语单词：中文意思、词性、搭配、例句。用户问「XX 是什么意思」「XX 用英语怎么说」时调用。",
+    "parameters":{"type":"object","properties":{
+      "word":{"type":"string","description":"要查的词"}
+    },"required":["word"]}}},
+  {"type":"function","function":{
+    "name":"study_word_review",
+    "description":"抽查单词：从最近查过的词里挑一个，给例句让用户回忆意思。用户说「考我个单词」「复习一下单词」时调用。",
+    "parameters":{"type":"object","properties":{
+      "word":{"type":"string","description":"指定要复习的词，不填就随机挑一个"}
+    }}}},
+  {"type":"function","function":{
+    "name":"gen_short_sentence",
+    "description":"生成一句能直接发出去的话。用户说「帮我发微信给妈妈说我晚点到」但没说具体怎么说，或说「帮我想句祝福」时用这个，拿到成品再调 msg_send_text。只输出成品，不要带「你可以这样说」这类前缀。",
+    "parameters":{"type":"object","properties":{
+      "scene":{"type":"string","description":"要说什么事，例如「今天晚点到家」"},
+      "tone":{"type":"string","description":"语气，例如「随便」「客气」「正式」，默认自然"},
+      "to":{"type":"string","description":"发给谁，能填就填"}
+    },"required":["scene"]}}},
+  {"type":"function","function":{
     "name":"msg_send_text",
     "description":"把消息送到微信/QQ 的聊天框。调用后会打开对应应用、进入和这个人的聊天页、把内容填进输入框，然后停下来——**发送键留给用户自己点**，程序不点。回话时要说「已经给你填好了，点一下发送」，绝不能说「已经发出去了」。找不到同名联系人会失败，这时别自己换人，也不要改成发给别人。",
     "parameters":{"type":"object","properties":{
@@ -199,6 +246,12 @@ class AiTools(private val bus: ServiceBus) {
     "description":"诊断发消息能力：应用装没装、无障碍连没连上、系统分享通路能不能用。用户问「为什么发不出去」「能发微信吗」「检查一下发消息」时调用，把原因原样转述给用户。",
     "parameters":{"type":"object","properties":{
       "platform":{"type":"string","enum":["wechat","qq"],"description":"用户说 QQ/企鹅 就填 qq，否则 wechat"}
+    }}}},
+  {"type":"function","function":{
+    "name":"msg_query_history",
+    "description":"查我们最近的对话。用户问「我上一条跟你说的什么」时调用。只能读本应用里的对话，读不到微信/QQ 的聊天记录。",
+    "parameters":{"type":"object","properties":{
+      "count":{"type":"number","description":"要几条，默认 5"}
     }}}}
 ]
 """.trimIndent()

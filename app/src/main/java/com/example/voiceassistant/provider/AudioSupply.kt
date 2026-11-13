@@ -13,27 +13,25 @@ import com.example.voiceassistant.service.TtsManager
 /**
  * 音频域：`audio/…`
  *
- * ## 为什么 TTS 和 ASR 也算「服务」
- * 它们不是「用户要的功能」，而是**别的服务要用的出口**：
- * 提醒响了要播报、发完消息要回一句「已发送」
- * 全都通过 `audio/tts_speak` 出声。这样「怎么念」只有一处实现。
+ * ## 为什么 TTS 也算「服务」
+ * 它不是「用户要的功能」，而是**别的服务要用的出口**：
+ * 提醒响了要播报、念一段文字都得通过 `audio/tts_speak` 出声。
+ * 这样「怎么念」只有一处实现。
  *
- * ## ASR 为什么只能「触发」不能「返回文本」
- * 语音识别是异步的：调用瞬间麦克风才刚打开，结果要等用户说完。
- * 所以 `audio/asr_recognize` 的语义是「开始听」，识别结果从原来的回调链回界面，
- * 不在这里阻塞等待——阻塞会让整条总线上所有调用一起卡住。
+ * ## 为什么没有 ASR 服务
+ * 曾经有个 `audio/asr_recognize`（语义是「开始听」），但两条入口都用不上它：
+ * 用户已经在说话了，不需要助手再主动开麦；识别结果本来就是异步回调回界面，
+ * 挂在总线上只会多一层「谁该等谁」的歧义。现在开麦只有一条路：长按说话。
  */
 class AudioSupply(
     private val tts: TtsManager?,
     private val audio: AudioController,
-    private val music: MusicPlayer? = null,
-    /** 开始一次收音；返回 false 表示当前环境听不了（没权限 / 正在播报） */
-    private val startListening: () -> Boolean = { false }
+    private val music: MusicPlayer? = null
 ) {
 
     private val main = Handler(Looper.getMainLooper())
 
-    val all: List<Supply> = listOf(speak(), stop(), volume(), musicCtrl(), recognize())
+    val all: List<Supply> = listOf(speak(), stop(), volume(), musicCtrl())
 
     // ------------------------------------------------------------------ TTS
 
@@ -140,21 +138,6 @@ class AudioSupply(
             val action = MusicPlayer.Action.of(args.str("action")) ?: MusicPlayer.Action.PLAY
             val outcome = player.handle(action)
             return if (outcome.ok) BusReply.ok(outcome.message) else BusReply.fail(outcome.message)
-        }
-    }
-
-    // ------------------------------------------------------------------ ASR
-
-    private fun recognize(): Supply = object : Supply {
-        override val name = "audio/asr_recognize"
-        override val summary = "开始语音识别（打开麦克风听一句）。结果会直接发给助手。"
-        override fun invoke(args: BusArgs): BusReply {
-            val started = runCatching { startListening() }.getOrDefault(false)
-            return if (started) {
-                BusReply.ok("我在听，说吧。")
-            } else {
-                BusReply.fail("现在没法开麦克风，检查一下录音权限。")
-            }
         }
     }
 

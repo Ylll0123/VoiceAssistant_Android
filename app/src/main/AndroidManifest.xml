@@ -55,6 +55,20 @@
         android:name="android.permission.BLUETOOTH_CONNECT"
         tools:ignore="MissingPermission" />
 
+    <!--
+        打电话：读通讯录是为了把「打给妈妈」翻成号码，直接拨号是为了不用再点一下。
+        两个都是危险权限，在**第一次真要用时**才申请（见 VoiceAssistantActivity）。
+        拒绝也不影响用：没有 CALL_PHONE 就走 ACTION_DIAL（拨号盘，零权限），
+        没有 READ_CONTACTS 就提示用户直接说号码。
+    -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+
+    <!-- 没有拨号 / 地图应用的设备（平板、车机）也别装不上 -->
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+
     <!-- Android 11+ 需要声明可见性，否则找不到系统的识别 / 播报服务 -->
     <queries>
         <intent>
@@ -86,6 +100,18 @@
         <!-- 「播放音乐」要先看本机有哪些音乐应用 -->
         <intent>
             <action android:name="android.intent.action.MUSIC_PLAYER" />
+        </intent>
+        <!--
+            拨号与地图：Android 11+ 不声明就 resolveActivity 返回 null，
+            表现是「明明有电话/地图应用，助手却说没有」。
+        -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
         </intent>
     </queries>
 

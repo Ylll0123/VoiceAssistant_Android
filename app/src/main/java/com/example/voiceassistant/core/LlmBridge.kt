@@ -8,7 +8,7 @@ import com.example.voiceassistant.network.LlmMessage
  * 「一次纯文本补全」的极简接口。
  *
  * ## 为什么单独抽出来
- * `study/explain`、`gen/draft`、`tool/translate` 这些服务的本质是
+ * `study/word_query`、`gen/short_sentence`、`tool/translate` 这些服务的本质是
  * 「拼一段提示词 → 拿一段文字 → 返回」，它们不该自己去管 URL、鉴权、JSON。
  *
  * 更要紧的是**避免循环依赖**：这些服务挂在总线上，总线被 `AiChat` 用；

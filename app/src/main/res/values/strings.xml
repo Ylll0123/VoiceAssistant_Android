@@ -144,4 +144,9 @@
     <string name="accessibility_label">HardlySeek 语音操作</string>
     <string name="accessibility_description">把「给谁发什么」这类语音指令变成实际操作：打开微信/QQ、搜索联系人、把内容填进聊天框；节点点不动时会派发一次轻点手势。发送键始终留给你自己点，不会在后台静默发送。没连上无障碍时改用系统分享，由你自己选联系人并点发送。</string>
 
+
+    <!-- 打电话：权限按需申请时的那句话 -->
+    <string name="phone_perm_message">打电话要用到通讯录（把「妈妈」翻成号码）和拨号权限。不开也能用：把号码说给我，我帮你填进拨号盘。</string>
+    <string name="phone_perm_granted">权限开好了，再说一次就行。</string>
+    <string name="phone_perm_denied">没给权限也没关系，说号码我一样能帮你填进拨号盘。</string>
 </resources>

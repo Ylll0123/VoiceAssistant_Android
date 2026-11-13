@@ -61,11 +61,15 @@ object LocalNlu {
 
         val hit = sendMessage(text)
             ?: messageDiagnostic(text)
+            ?: clearContext(text)
+            ?: cloudToggle(text)
             ?: torch(text)
             ?: brightness(text)
             ?: volume(text)
             ?: music(text)
             ?: radio(text)
+            ?: call(text)
+            ?: navigate(text)
             ?: openApp(text, appMatcher)
             ?: clock(text)
             ?: timer(text)
@@ -353,19 +357,28 @@ object LocalNlu {
     // ------------------------------------------------------------------ 消息
 
     /**
-     * 发消息：「给妈妈发微信说我晚点到」以及一大堆换语序的说法。
+     * 发消息：「给妈妈发微信说我晚点到」，以及换了语序的一大堆说法。
      *
-     * 以前只认 `给X发微信说Y` 一个正则，用户说「发微信给妈妈说我晚点到」
-     * 「帮我发条消息给妈妈：我晚点到」就会漏给大模型；离线时模型不可用，
-     * 用户只会看到「没联网」，消息压根发不出去。现在改成：
-     * **先确认这像发消息 → 抽联系人 → 抽内容 → 抽平台**，语序无关。
+     * ## 为什么又放宽了一次
+     * 上一版要求「有『发/回』+ 有『给』+ 有平台词」三条同时成立，于是
+     * 「跟妈妈说一声晚点到」「微信告诉妈妈我晚点到」这类最自然的话全漏给大模型；
+     * 离线时模型不可用，用户只会看到「没联网」，消息根本发不出去。
      *
-     * 内容为空（「给妈妈发个微信」）仍然不认领——那需要先让模型写一句话。
+     * 现在分两条路进：
+     * 1. **带平台词/消息词**：只要还能抽出收件人，就认领——动词是什么不重要；
+     * 2. **不带平台词**：「跟/和/对 X 说一声…」这种**明确托话**的说法，默认发微信。
+     *
+     * 第二条刻意只认「说一声 / 说一下 / 说一句 / 带个话 / 转告」这几个明确的托话标记：
+     * 「跟我说说天气」里也有「跟…说」，但它不是托话，不能让它落到发消息上。
+     *
+     * 内容为空（「给妈妈发个微信」）仍然不认领——那需要先让模型拟一句，
+     * 正好接 `gen/short_sentence`。
      */
     private fun sendMessage(text: String): Hit? {
         if (!looksLikeSendMessage(text)) return null
 
-        val to = SEND_TO.find(text)?.groupValues?.get(1)?.trim().orEmpty()
+        val to = (SEND_TO.find(text) ?: TALK_TO.find(text))
+            ?.groupValues?.get(1)?.trim().orEmpty()
         if (to.isEmpty() || to.length > 12) return null
 
         val content = extractSendContent(text, to)
@@ -378,12 +391,12 @@ object LocalNlu {
         )
     }
 
-    /** 像发消息吗：要有「发/回」+ 收件人 + 平台或「消息」字样，三者缺一不可 */
+    /** 像发消息吗：要么带平台词/消息词且能抽出收件人，要么是明确的托话句式 */
     private fun looksLikeSendMessage(text: String): Boolean {
-        if (!text.contains("发") && !text.contains("回")) return false
-        if (!text.contains("给") && !text.contains("发给")) return false
-        return PLATFORM_WORD.containsMatchIn(text) ||
-            text.contains("消息") || text.contains("信息") || text.contains("短信")
+        val platform = PLATFORM_WORD.containsMatchIn(text)
+        val messageWord = text.contains("消息") || text.contains("信息") || text.contains("短信")
+        if (platform || messageWord) return SEND_TO.containsMatchIn(text)
+        return TALK_TO.containsMatchIn(text)
     }
 
     /**
@@ -395,17 +408,24 @@ object LocalNlu {
         val cued = SEND_CONTENT_CUE.find(text)?.groupValues?.get(1)
             ?: SEND_CONTENT_COLON.find(text)?.groupValues?.get(1)
         val raw = cued ?: run {
-            val idx = maxOf(text.lastIndexOf('发'), text.lastIndexOf('回'))
-            if (idx < 0 || idx == text.length - 1) return ""
-            text.substring(idx + 1)
+            // 「跟妈妈说一声晚点到」：内容从托话标记之后开始
+            val talk = TALK_MARKERS.map { text.lastIndexOf(it) }.maxOrNull() ?: -1
+            val verb = maxOf(text.lastIndexOf('发'), text.lastIndexOf('回'))
+            if (talk > verb) {
+                text.substring(talk)
+            } else {
+                if (verb < 0 || verb == text.length - 1) return ""
+                text.substring(verb + 1)
+            }
         }
         var body = raw.trim()
-        // 剥掉「一条/个/送」等量词和平台词，可能叠着来（发一条微信给…）
+        // 剥掉「一条/个/送/说一声」等量词和平台词，可能叠着来（发一条微信给…）
         repeat(3) {
             val before = body
             body = body
                 .removePrefix("给$to").removePrefix("给 $to")
-                .replaceFirst(Regex("^(?:一?条|个|送|一句|一下)\\s*"), "")
+                .replaceFirst(Regex("^(?:一?条|个|送|一句|一下|一声|句|个话)\\s*"), "")
+                .replaceFirst(Regex("^(?:说一声|说一下|说一句|说句|转告|带个话|捎句话?)\\s*"), "")
                 .replaceFirst(Regex("^(?:微信|QQ|qq|消息|信息|短信|发给)\\s*", RegexOption.IGNORE_CASE), "")
                 .trim()
                 .trimStart('，', ',', '：', ':', '、')
@@ -413,6 +433,98 @@ object LocalNlu {
             if (body == before) return@repeat
         }
         return body.trim().trim('。', '！', '!', '？', '?', '，', ',', ' ', '~', '～')
+    }
+
+    // ------------------------------------------------------------------ 打电话与导航
+
+    /**
+     * 「打电话给妈妈」「给妈妈打个电话」「拨打 13800000000」。
+     *
+     * 抽不出人就**不认领**——「帮我打个电话」这种得先问一句打给谁，
+     * 本地没有提问能力，交给大模型更合适。
+     */
+    private fun call(text: String): Hit? {
+        /*
+         * 「打电话」「打个电话」「打 110」都要认。
+         *
+         * 只列「打电话」一个词是不够的：「给妈妈打个电话」里夹了个「个」，
+         * 于是整句掉给大模型，离线时又变成「打不出去」。
+         */
+        val dialVerb = text.contains("拨打") || text.contains("呼叫") ||
+            text.contains("打给") || text.contains("拨给")
+        val callPhrase = text.contains("电话") && (text.contains("打") || text.contains("拨"))
+        val shortDial = (text.startsWith("打") || text.startsWith("拨")) &&
+            PHONE_DIGITS.containsMatchIn(text)
+        if (!dialVerb && !callPhrase && !shortDial) return null
+        // 「别打电话」「电话静音」不是要拨号
+        if (text.contains("别打") || text.contains("不用打") || text.contains("静音")) return null
+
+        val name = CALL_NAME.find(text)?.groupValues?.get(1)?.trim()
+            ?.trim('。', '！', '!', '，', ',', '吧', '呗')
+            ?.takeIf { it.isNotEmpty() }
+        if (name != null) return Hit("phone/call", BusArgs.of("to" to name))
+
+        val number = PHONE_DIGITS.find(text)?.value?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return null
+        /*
+         * 「打 100 分」「打 8 折」里也有数字和「打」。
+         * 号码后面紧跟量词，说明这句在说别的事，不是拨号。
+         */
+        val tail = text.substringAfter(number).trimStart()
+        if (NOT_A_NUMBER_TAIL.any { tail.startsWith(it) }) return null
+        return Hit("phone/call", BusArgs.of("to" to number))
+    }
+
+    /** 「导航到公司」「带我去机场」「怎么去高铁站」 */
+    private fun navigate(text: String): Hit? {
+        if (NAV_WORDS.none { text.contains(it) }) return null
+        // 「导航怎么用」「为什么导航不动」是问句，不是要出发
+        if (text.contains("怎么用") || text.contains("为什么") || text.contains("用不了")) return null
+
+        val dest = NAV_TO.find(text)?.groupValues?.get(1)?.trim()
+            ?.trim('。', '！', '!', '，', ',', '吧', '呗', '呢')
+        if (dest.isNullOrEmpty() || dest.length > 20) return null
+
+        val mode = when {
+            text.contains("步行") || text.contains("走路") || text.contains("走过去") -> "walk"
+            text.contains("骑行") || text.contains("骑车") || text.contains("自行车") -> "bike"
+            text.contains("公交") || text.contains("地铁") || text.contains("坐车") -> "transit"
+            else -> "drive"
+        }
+        return Hit("phone/navigate", BusArgs.of("to" to dest, "mode" to mode))
+    }
+
+    // ------------------------------------------------------------------ 上下文与开关
+
+    /** 「清空对话」「忘掉之前说的」「重新开始」 */
+    private fun clearContext(text: String): Hit? {
+        if (CLEAR_WORDS.none { text.contains(it) }) return null
+        // 「清空闹钟」是删数据、「重新开始计时」是计时器，都不是清上下文
+        if (text.contains("闹钟") || text.contains("提醒") || text.contains("待办") ||
+            text.contains("计时") || text.contains("倒计时")
+        ) {
+            return null
+        }
+        return Hit("context/clear", BusArgs.EMPTY)
+    }
+
+    /**
+     * 「关掉云端」「别联网了」「打开 AI」。
+     *
+     * 只在**明确开关措辞 + 明确对象**同时出现时认领：
+     * 「网络不好」里也有「网络」，不能因为这两个字就把云端关掉。
+     */
+    private fun cloudToggle(text: String): Hit? {
+        val target = text.contains("云端") || text.contains("大模型") ||
+            text.contains("联网") || text.contains("智能")
+        if (!target) return null
+        val off = listOf("关掉", "关闭", "别用", "不用", "停掉", "禁用")
+        val on = listOf("打开", "开启", "启用", "恢复")
+        return when {
+            off.any { text.contains(it) } -> Hit("llm/toggle", BusArgs.of("on" to "false"))
+            on.any { text.contains(it) } -> Hit("llm/toggle", BusArgs.of("on" to "true"))
+            else -> null
+        }
     }
 
     /**
@@ -465,8 +577,55 @@ object LocalNlu {
 
     /** 收件人：「给X」「发给X」「给X发」都行；在动词/标点/平台词前收住，不把内容吞进来 */
     private val SEND_TO = Regex(
-        "(?:给|发给|跟|和)\\s*([^，,。\\s：:发回说讲]{1,12}?)\\s*" +
+        "(?:给|发给|跟|和|对)\\s*([^，,。\\s：:发回说讲]{1,12}?)\\s*" +
             "(?=发|回|说|讲|告诉|，|,|：|:|$|微信|QQ|qq|消息|信息)"
+    )
+
+    /** 「跟妈妈说一声…」——没有平台词时靠这个认出「托话」 */
+    private val TALK_TO = Regex(
+        "(?:跟|和|对)\\s*([^，,。\\s：:]{1,12}?)\\s*" +
+            "(?=说一声|说一下|说一句|说句|转告|带个话|捎句话?)"
+    )
+
+    /** 托话标记本身：抽内容时从这里开始，而不是从「发」 */
+    private val TALK_MARKERS = listOf("说一声", "说一下", "说一句", "说句", "转告", "带个话", "捎句话")
+
+    /**
+     * 打电话的收件人。
+     *
+     * 收在拨号动词/标点前：「给妈妈打个电话」里名字只到「妈妈」，
+     * 不把「打个电话」一起吞进去。
+     */
+    private val CALL_NAME = Regex(
+        "(?:给|打给|拨给|找|联系)\\s*([^，,。\\s]{1,12}?)\\s*" +
+            "(?=打|拨|电话|吧|呗|，|,|$|一下)"
+    )
+
+    /**
+     * 直接说的号码：「拨打 138 0000 0000」。
+     *
+     * 允许 3 位以上就收：10086、95588、110、119 这些短号也要能拨，
+     * 一开始写成「至少 6 位」，结果「拨打10086」掉给大模型，模型嘴上说帮你拨、
+     * 实际什么都没发生——正是要避免的那种假成功。
+     */
+    private val PHONE_DIGITS = Regex("[+]?\\d[\\d\\s\\-]{1,18}\\d")
+
+    /** 号码后面跟这些量词，说明是在说分数/折扣/价钱，不是拨号 */
+    private val NOT_A_NUMBER_TAIL = listOf("分", "折", "块", "元", "人", "次", "个", "秒", "分钟", "小时")
+
+    /** 导航的触发词 */
+    private val NAV_WORDS = listOf("导航", "带我去", "怎么去", "怎么走", "去往")
+
+    /** 导航的目的地：从触发词后面收，到「吧/呢/怎么走/句末」为止 */
+    private val NAV_TO = Regex(
+        "(?:导航到|导航去|导航|带我去|怎么去|怎么走到|去往)\\s*([^，,。\\s]{1,20}?)\\s*" +
+            "(?:吧|呗|呢|怎么走|的路线|$)"
+    )
+
+    /** 清空上下文的口语说法 */
+    private val CLEAR_WORDS = listOf(
+        "清空对话", "清空聊天", "清除对话", "清除聊天",
+        "删掉对话", "删掉聊天", "忘掉之前", "忘掉上面", "重新开始"
     )
 
     /** 「说我晚点到」「告诉他十分钟后到」「内容是xxx」 */

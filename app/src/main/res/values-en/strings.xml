@@ -142,4 +142,9 @@
     <string name="access_prompt_title">Grant the permission?</string>
     <string name="access_prompt_message">With accessibility I can open WeChat / QQ, find the contact and fill in the text myself. Without it you can still send: the text goes to the share sheet and you pick the contact.</string>
     <string name="access_prompt_go">Open</string>
+
+    <!-- Phone permissions, asked only when actually needed -->
+    <string name="phone_perm_message">Calling needs contacts (to turn a name into a number) and direct-dial permission. You can skip both: just say the number and I will put it in the dialer.</string>
+    <string name="phone_perm_granted">Permissions granted. Say it again.</string>
+    <string name="phone_perm_denied">That is fine. Say a number and I will still fill it into the dialer.</string>
 </resources>

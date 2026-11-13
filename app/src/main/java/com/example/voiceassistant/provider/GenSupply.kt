@@ -12,13 +12,18 @@ import com.example.voiceassistant.core.LlmBridge
  * 问答要的是一段解释，生成要的是「一句能直接发出去的话」。
  * 混在一起时模型经常给「你可以这样说：……」这种带壳的答案，粘到聊天框里还得再删一遍。
  *
- * 所以这三个服务的提示词都咬死一条：**只输出成品，不要解释**。
+ * 所以这里的提示词咬死一条：**只输出成品，不要解释**。
  *
  * 典型串法：`gen/short_sentence` 拿到一句话 → `msg/send_text` 发出去 → `audio/tts_speak` 确认。
+ *
+ * ## 为什么只留这一个
+ * 之前还有 `gen/draft`（起草通知/申请）和 `gen/summarize`（做摘要），
+ * 但它们和「问答」的差别只是提示词，模型自己就能写，包成工具只占 token、还容易选错。
+ * 真正需要单独一个服务的只有「一句能原样粘进聊天框的话」——它要的是**成品形状**。
  */
 class GenSupply(private val llm: LlmBridge) {
 
-    val all: List<Supply> = listOf(shortSentence(), draft(), summarize())
+    val all: List<Supply> = listOf(shortSentence())
 
     // ------------------------------------------------------------------ 短句
 
@@ -44,49 +49,6 @@ class GenSupply(private val llm: LlmBridge) {
             ) ?: return BusReply.fail("写这句话需要联网，现在没连上。")
 
             return BusReply.ok(cleanOutput(answer))
-        }
-    }
-
-    // ------------------------------------------------------------------ 起草
-
-    private fun draft(): Supply = object : Supply {
-        override val name = "gen/draft"
-        override val summary =
-            "起草一段短文本（通知、请假、申请、自我介绍）。参数 topic 是要写什么，length 是大概字数。"
-
-        override fun invoke(args: BusArgs): BusReply {
-            val topic = args.str("topic") ?: return BusReply.fail("要起草什么？")
-            val length = args.int("length")?.coerceIn(50, 800) ?: 200
-
-            val answer = llm.complete(
-                prompt = "帮我写一段$topic，大约 $length 字。\n" +
-                    "要求：结构清楚、语气得体、不要用「首先其次最后」这种模板腔，" +
-                    "不要写标题，直接给正文。",
-                maxTokens = 900
-            ) ?: return BusReply.fail("起草需要联网，现在没连上。")
-
-            return BusReply.ok(answer.trim())
-        }
-    }
-
-    // ------------------------------------------------------------------ 摘要
-
-    private fun summarize(): Supply = object : Supply {
-        override val name = "gen/summarize"
-        override val summary = "给一段文字做摘要。参数 text 是原文，points 是要几条（默认 3）。"
-
-        override fun invoke(args: BusArgs): BusReply {
-            val text = args.str("text") ?: return BusReply.fail("要总结哪段内容？")
-            if (text.length > 4_000) return BusReply.fail("这段太长了，分两段发给我吧。")
-            val points = args.int("points")?.coerceIn(1, 8) ?: 3
-
-            val answer = llm.complete(
-                prompt = "把下面这段压缩成 $points 条要点，每条一行、不超过 25 字，" +
-                    "不要编号以外的修饰，不要开头结尾的客套话。\n\n$text",
-                maxTokens = 500
-            ) ?: return BusReply.fail("做摘要需要联网，现在没连上。")
-
-            return BusReply.ok(answer.trim())
         }
     }
 

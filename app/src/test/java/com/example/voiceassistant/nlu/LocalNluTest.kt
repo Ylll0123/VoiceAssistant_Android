@@ -192,6 +192,78 @@ class LocalNluTest {
         assertNull(service("给妈妈发个微信"))
     }
 
+    @Test
+    fun `换语序也要认得出发消息`() {
+        // 平台在前
+        assertEquals("msg/send_text", service("微信发消息给妈妈说晚点到"))
+        assertEquals("妈妈", args("微信发消息给妈妈说晚点到", "to"))
+        // 平台+冒号
+        assertEquals("msg/send_text", service("帮我发条消息给妈妈：我晚点到"))
+        assertEquals("我晚点到", args("帮我发条消息给妈妈：我晚点到", "content"))
+        // 没有平台词，但「说一声」是明确的托话
+        assertEquals("msg/send_text", service("跟妈妈说一声晚点到"))
+        assertEquals("妈妈", args("跟妈妈说一声晚点到", "to"))
+        assertEquals("晚点到", args("跟妈妈说一声晚点到", "content"))
+        // QQ 要说对平台
+        assertEquals("qq", args("发QQ给老王说明天见", "platform"))
+    }
+
+    @Test
+    fun `不是托话的跟他说说不能当发消息`() {
+        assertNull(service("跟我说说天气"))
+        assertNull(service("跟我说说这个字怎么读"))
+    }
+
+    // ------------------------------------------------------------ 打电话与导航
+
+    @Test
+    fun `打电话要抽出人或者号码`() {
+        assertEquals("phone/call", service("打电话给妈妈"))
+        assertEquals("妈妈", args("打电话给妈妈", "to"))
+        assertEquals("妈妈", args("给妈妈打个电话", "to"))
+        assertEquals("妈妈", args("打给妈妈", "to"))
+        assertEquals("13800000000", args("拨打13800000000", "to"))
+        // 短号也要能拨：10086 / 110 / 119
+        assertEquals("10086", args("拨打10086", "to"))
+        assertEquals("110", args("打110", "to"))
+        // 没说打给谁，本地不猜，交给大模型问一句
+        assertNull(service("帮我打个电话"))
+        // 「别打电话」不是要拨号
+        assertNull(service("别打电话了"))
+        // 打 100 分不是拨 100
+        assertNull(service("打100分"))
+    }
+
+    @Test
+    fun `导航要抽出目的地和方式`() {
+        assertEquals("phone/navigate", service("导航到公司"))
+        assertEquals("公司", args("导航到公司", "to"))
+        assertEquals("首都机场", args("带我去首都机场", "to"))
+        assertEquals("高铁站", args("怎么去高铁站", "to"))
+        assertEquals("walk", args("步行导航到食堂", "mode"))
+        assertEquals("drive", args("导航到公司", "mode"))
+        // 问句不当成出发
+        assertNull(service("导航怎么用"))
+    }
+
+    // ------------------------------------------------------------ 上下文
+
+    @Test
+    fun `清空上下文和云端开关`() {
+        assertEquals("context/clear", service("清空对话"))
+        assertEquals("context/clear", service("忘掉之前说的"))
+        // 清闹钟不是清上下文
+        assertNull(service("清空闹钟"))
+        // 「重新开始计时」是计时器，不是清上下文
+        assertEquals("schedule/add_alarm", service("重新开始计时十分钟"))
+
+        assertEquals("llm/toggle", service("关掉云端"))
+        assertEquals("false", args("关掉云端", "on"))
+        assertEquals("true", args("打开云端AI", "on"))
+        // 只是抱怨网络，不能把云端关了
+        assertNull(service("网络不好"))
+    }
+
     // ------------------------------------------------------------ 该放行的
 
     @Test

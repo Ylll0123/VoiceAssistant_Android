@@ -142,4 +142,9 @@
     <string name="access_prompt_title">権限を許可しますか</string>
     <string name="access_prompt_message">ユーザー補助を許可すると、WeChat / QQ を開いて相手を探し、本文を入力できます。許可しなくても共有シート経由で送れます。</string>
     <string name="access_prompt_go">開く</string>
+
+    <!-- 電話の権限：必要になったときだけ確認する -->
+    <string name="phone_perm_message">電話をかけるには連絡先（名前を番号に変えるため）と発信の権限が必要です。許可しなくても、番号を言えばダイヤルに入力します。</string>
+    <string name="phone_perm_granted">権限を許可しました。もう一度言ってください。</string>
+    <string name="phone_perm_denied">許可しなくても大丈夫です。番号を言えばダイヤルに入力します。</string>
 </resources>

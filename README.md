@@ -14,6 +14,9 @@ v5.4 发消息改成**只填不发**：程序进去找人、把话填进输入�
 v5.5 修「只能发一次」和「没发出去却说发了」；唤醒接入**讯飞 AIUI 离线唤醒**（系统识别继续做兜底）。
 v5.6 **整块删掉语音唤醒**（连同灵敏度/提示音/引擎/保活那套设置），设置页只剩三项；
 长按说话**松手就发**；语音播报重做（没声音能说出为什么）；闹钟改设**系统时钟**，音量分媒体/铃声/闹钟，新增「播放音乐」。
+v5.7 补齐语音助手最缺的两件事：**打电话**（姓名→通讯录→拨号，没权限退拨号盘）和**导航**；
+发消息的本地句式放宽（「跟妈妈说一声…」也认）；把 12 个「注册了但调不到」的服务
+要么接上、要么删掉，工具从 19 个变成 27 个。
 
 - **主课题**：C3 本地智能语音助手
 - **伴生模块**：P3 通知提醒中心（AlarmManager 精确闹钟 + 通知操作）
@@ -102,20 +105,20 @@ v5.0 加了**供需总线**：每个能力只实现一次，挂成 `域/动作`�
 |---|---|---|
 | `schedule/` | add_alarm、add_todo、query、cancel | 提醒我八点交作业 / 10 分钟后叫我 |
 | `device/` | flashlight、brightness、wifi_ctrl、bluetooth_ctrl、open_app、battery | 开手电筒 / 亮度调到 60% / 打开设置页面 / 打开原神 |
-| `audio/` | tts_speak、tts_stop、asr_recognize、volume_ctrl | 大声点 / 静音 / 别念了 |
+| `phone/` | call、navigate | 打电话给妈妈 / 打 110 / 导航到公司 / 带我去机场 |
+| `audio/` | tts_speak、tts_stop、volume_ctrl、music_ctrl | 大声点 / 静音 / 别念了 / 放首歌 / 下一首 |
 | `tool/` | calc、time、translate、weather | 帮我算 12 乘 8 / 现在几点 |
-| `msg/` | send_text、confirm_send、query_can_send、query_history | 给妈妈发微信说我晚点到 |
-| `study/` | word_query、word_review、explain | （交给大模型，本地不猜） |
-| `gen/` | short_sentence、draft、summarize | （交给大模型） |
-| `context/` | clear、switch_prompt | 清空上下文 / 切到消息模式 |
-| `kws/` | start、stop、set_wake_word、set_sensitivity、set_session_timeout | （设置页开关，也能被模型调） |
-| `llm/` | toggle | 关掉云端 AI |
+| `msg/` | send_text、query_can_send、query_history | 给妈妈发微信说我晚点到 / 跟妈妈说一声晚点到 |
+| `study/` | word_query、word_review | （查词、抽查，交给模型） |
+| `gen/` | short_sentence | 「帮我想句祝福」——只出成品，接 `msg/send_text` |
+| `context/` | clear、switch_prompt | 清空对话 / 忘掉之前说的 |
+| `llm/` | toggle | 关掉云端 / 打开云端 |
 
 `open_app` 不再只认一张手写的常用表：先从系统拉**全部有启动入口的应用**（`QUERY_ALL_PACKAGES`，
 缓存 30 秒），常用名走内置表归一，其余按应用名模糊匹配，所以「打开学习通」「打开 YouTube」
 也能开；找不到就明说找不到，不猜。打开成功会回一句「已经打开 XXX。」，不会闷头跳走。
 
-模型那头只暴露 19 个工具（`schedule_add_alarm` 这种下划线写法，网关切 `/` 会 400），
+模型那头只暴露 27 个工具（`schedule_add_alarm` 这种下划线写法，网关切 `/` 会 400），
 `AiTools` 负责在两种命名之间来回翻译。
 
 ### 四、发消息：微信 / QQ（只填好，发送键留给你）
@@ -278,14 +281,13 @@ adb shell am start -n com.example.voiceassistant/.ui.VoiceAssistantActivity --es
    │
    ▼
 Dispatcher.dispatch(text, history, online)
-   ├─ ① 有待确认的发送？──「确认」→ msg/confirm_send
-   │                    └「算了」→ 丢掉待发内容
+   ├─ ① 有待确认的发送？（方案 B 之后恒为「没有」，接口留着以便单测）
    ├─ ② LocalNlu.route() 命中？ → ServiceBus.call(服务名, 参数) → 立刻有结果
    ├─ ③ LlmSwitch 关了？      → Blocked「只能做本机操作」
    ├─ ④ 没网？                → Blocked「问答用不了」
    └─ ⑤ 都不是                → AiChat.ask()
                                    ├─ system = 人设 + 当前时间 + 模式
-                                   ├─ POST /chat/completions（带 19 个工具）
+                                   ├─ POST /chat/completions（带 27 个工具）
                                    ├─ tool_calls → AiTools → ServiceBus
                                    │              → 结果作为 role=tool 再发一轮（≤4 轮）
                                    └─ 文字答案
@@ -302,15 +304,16 @@ app/src/main/java/com/example/voiceassistant/
 ├── core/LlmBridge.kt       给供给方用的「问一句模型」：翻译、解释、写文案
 ├── bus/ServiceBus.kt       供需总线：Supply / BusArgs / BusReply / 服务注册表
 ├── nlu/                    本地识别：LocalNlu（规则）、Calc（算式）、TimeWords/TimeParse（时间）
-├── provider/               各域供给方：schedule / device / audio / tool / study / gen / context / msg
+├── provider/               各域供给方：schedule / device / phone / audio / tool / study / gen / context / msg
 ├── im/                     微信 QQ 发消息：无障碍服务 + 送到输入框 + 页面几何判定 + 分享降级
-├── tool/AiTools.kt         协议适配：19 个工具的声明 + 名字/参数双向转换
+├── tool/AiTools.kt         协议适配：27 个工具的声明 + 名字/参数双向转换
 ├── tool/PlatformHint.kt    用用户原话校对 platform（说 QQ 不能发到微信）
 ├── handler/llm/            云端配置、协议解析、人设、连通性测试
 ├── network/                网络状态感知 + HTTP
 ├── data/                   账号 / 会话 / 会话存储 / 设置 / 消息模型
 ├── reminder/               提醒中心（P3）：模型、SQLite、状态机、闹钟、广播
-├── service/                ASR（含 AsrPick 候选择优）/ TTS / 设备与音频控制 / 系统时钟 / 音乐 / AppCatalog
+├── service/                ASR（含 AsrPick 候选择优）/ TTS / 设备与音频控制 / 系统时钟 / 音乐 /
+│                           通讯录（PhoneBook）/ 号码与地图链接（PhoneFormats）/ AppCatalog
 ├── installer/              装完清理安装包
 └── ui/                     只做接线：Activity / ChatFragment / 两个 Adapter / 登录 / 设置 / Dialogs / CursorMath
 ```
@@ -349,6 +352,16 @@ v4.0 时「本地工具」和「模型工具」是两套代码，加一个能力
 **为什么只有最后一条能改**
 改了中间那句，它后面那串回答就全部失义。只允许改最后一条，
 改完顺手作废旧答案重新问一次，上下文永远是自洽的。
+
+**为什么打电话不替用户在重名里挑一个**
+通讯录里两个「王伟」是很常见的事。挑错了不是「功能没做成」，是**给别人打了一个电话**——
+这种错没有回退键。所以重名时一律失败并把候选说清楚，宁可多问一句。
+同理，没有通讯录权限时不猜、不模糊匹配到名字相近的人，直接说「给我权限，或者说号码」。
+
+**为什么发消息的本地规则放宽了，打电话的却收紧**
+发消息错判的代价是「填错内容」，用户低头就能看见，还能改；打电话错判的代价是
+「已经拨出去了」。所以发消息只要认出「平台词 + 收件人」就敢认领，
+打电话却必须同时认出拨号动词和明确的对象，抽不出来就交给大模型问一句。
 
 **为什么闹钟交给系统时钟**
 自己排闹钟要同时押中三件事：进程还活着、AlarmManager 准点、通知没被关。
@@ -404,7 +417,7 @@ v4.0 时「本地工具」和「模型工具」是两套代码，加一个能力
 - `ServiceBusTest`：注册覆盖、找不到服务、供给方抛异常、名字双向转换
 - `DispatcherTest`：确认优先、本地优先（断网也能用）、关了 AI / 没网怎么回、
   以及「带着后续指令的好」不能被当成确认
-- `AiToolsTest`：19 个工具是合法 JSON 且与总线服务一一对得上、名字只换第一个下划线
+- `AiToolsTest`：27 个工具是合法 JSON 且与总线服务一一对得上、名字只换第一个下划线
 - `SendMessageTest`：发消息的各种语序、平台别名、长内容、不能误伤的问句
 - `WholeSentenceTest`：复合句/长句在线时必须让给大模型，离线仍能本地执行；
   发消息的内容不被当成复合句
@@ -646,6 +659,27 @@ v4.0 时「本地工具」和「模型工具」是两套代码，加一个能力
         再用 `isMusicActive` 确认是否真的在响，没响就说「打开了，你点一下播放」
       + 单测 230 个全绿（删 15 条唤醒相关、新增 4 条音量/音乐）、Lint 0 error / 61 warning、
         四语言各 103 条、versionCode 30，APK 14.5 MB
+- [x] **v5.7：通话与导航、发消息句式放宽、孤儿服务清零**
+      - **新增 `phone/call`**（`provider/PhoneSupply` + `service/PhoneBook`）：
+        姓名先精确匹配显示名，没命中再 `LIKE` 模糊；同号码去重后仍多人就**失败并给候选**，
+        绝不替用户挑。有 `CALL_PHONE` 直接拨，没有就 `ACTION_DIAL` 把号码填进拨号盘（零权限）。
+        号码支持 `+86 138-0000-0000` 归一，短号 10086 / 110 也认
+      - **新增 `phone/navigate`**：`geo:0,0?q=…&mode=` 交默认地图；没有地图应用退回高德网页，
+        再不行如实说。`PhoneFormats` 自己做百分号编码，地名里的 `&` 不会把链接截断
+      - **权限按需申请**：`READ_CONTACTS` / `CALL_PHONE` 在第一次真要用时才弹
+        （`BusReply.data["need_permission"]` → 白底弹窗 → 系统授权页），拒绝也能用号码拨
+      - **发消息识别放宽**：不再要求「发/回 + 给 + 平台词」三条同时成立，
+        「微信发消息给妈妈说晚点到」「跟妈妈说一声晚点到」都本地认领；
+        但「跟我说说天气」不算托话（只认说一声/一下/一句/转告那几个标记）
+      - **孤儿服务清零**：接上 `gen/short_sentence`、`audio/tts_speak`、`context/clear`、
+        `msg/query_history`、`study/word_query`、`study/word_review`、`llm/toggle`（本地 NLU）；
+        删掉与问答重复的 `gen/draft`、`gen/summarize`、`study/explain` 和用不上的
+        `audio/asr_recognize`。工具 19 → 27，服务 31 → 29，**没有一个是调不到的**
+      - **顺手的加固**：`拨打10086` 一开始掉给大模型（号码正则要求 ≥6 位），
+        模型嘴上说帮你拨、实际什么都没发生——这正是要避免的假成功；
+        改成 3 位起，并用「后面跟分/折/块」排除「打100分」
+      - 单测 241 全绿（新增 11 条：打电话/导航/上下文/号码格式）、Lint 0 error / 63 warning、
+        四语言各 106 条、versionCode 31
 - [ ] 第 4 周：TTS 与 UI 打磨、异常处理、文档与演示视频
 
 ## 环境要求

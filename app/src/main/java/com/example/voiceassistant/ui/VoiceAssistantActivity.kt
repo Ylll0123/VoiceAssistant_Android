@@ -43,6 +43,7 @@ import com.example.voiceassistant.provider.ContextSupply
 import com.example.voiceassistant.provider.DeviceSupply
 import com.example.voiceassistant.provider.GenSupply
 import com.example.voiceassistant.provider.MsgSupply
+import com.example.voiceassistant.provider.PhoneSupply
 import com.example.voiceassistant.provider.ScheduleSupply
 import com.example.voiceassistant.provider.StudySupply
 import com.example.voiceassistant.provider.ToolSupply
@@ -179,6 +180,21 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             if (!granted) toast(getString(R.string.status_notify_denied))
         }
 
+    /**
+     * 打电话相关权限：通讯录（查号码）和直接拨号。
+     *
+     * 两者都是「用的时候才问」：设置页里没有入口，第一次说「打电话给妈妈」才弹。
+     * 拒绝了也不影响说号码——`ACTION_DIAL` 不需要任何权限。
+     */
+    private val phonePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+            if (granted.values.any { it }) {
+                toast(getString(R.string.phone_perm_granted))
+            } else {
+                toast(getString(R.string.phone_perm_denied))
+            }
+        }
+
     private val apkCleanLauncher =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             val deleted = result.resultCode == Activity.RESULT_OK
@@ -298,8 +314,9 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                     tts = tts,
                     audio = audioCtl,
                     music = MusicPlayer(applicationContext)
-                ) { beginVoiceFromBus() }.all.toTypedArray()
+                ).all.toTypedArray()
             )
+            registerAll(*PhoneSupply(this@VoiceAssistantActivity).all.toTypedArray())
             registerAll(*ToolSupply(bridge).all.toTypedArray())
             registerAll(*StudySupply(bridge).all.toTypedArray())
             registerAll(*GenSupply(bridge).all.toTypedArray())
@@ -338,17 +355,6 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
         session.load(listOf(greeting))
         chatView?.refresh()
         return count
-    }
-
-    /**
-     * 模型说「开始听」时开麦（`audio/asr_recognize`）。
-     *
-     * 返回是否真的开始——总线拿这个值决定回「我在听」还是「没法开麦」。
-     */
-    private fun beginVoiceFromBus(): Boolean {
-        if (!hasMicPermission() || !asr.isAvailable()) return false
-        main.post { if (!isFinishing && !isDestroyed) startVoiceInput() }
-        return true
     }
 
     /** 外部传入的一句话（「发送到 HardlySeek」/ 自动化测试） */
@@ -692,6 +698,8 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 if (speakEnabled) tts.speak(result.reply.speech)
                 // 发消息因为没开无障碍而走了分享通路：用到时才问，比藏在设置里有效
                 if (result.reply.data["need_access"] == "true") promptAccessibility()
+                // 打电话缺通讯录/拨号权限：同样是用到时才问
+                result.reply.data["need_permission"]?.let { promptPhonePermission(it) }
                 maybeNameConversation()
             }
 
@@ -975,6 +983,34 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
             .setMessage(R.string.access_prompt_message)
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(R.string.access_prompt_go) { _, _ -> openAccessibilitySettings() }
+            .showWhite()
+    }
+
+    /**
+     * 打电话缺权限时的引导。
+     *
+     * @param kind `phone_call` 只缺拨号；`phone` 还缺通讯录
+     */
+    private fun promptPhonePermission(kind: String) {
+        val needed = if (kind == "phone_call") {
+            arrayOf(Manifest.permission.CALL_PHONE)
+        } else {
+            arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE)
+        }
+        // 已经给过了就不弹（reply 可能因为别的原因带上这个键）
+        val missing = needed.filter {
+            androidx.core.content.ContextCompat.checkSelfPermission(this, it) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) return
+
+        appDialog()
+            .setTitle(R.string.access_prompt_title)
+            .setMessage(R.string.phone_perm_message)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.access_prompt_go) { _, _ ->
+                phonePermissionLauncher.launch(missing.toTypedArray())
+            }
             .showWhite()
     }
 

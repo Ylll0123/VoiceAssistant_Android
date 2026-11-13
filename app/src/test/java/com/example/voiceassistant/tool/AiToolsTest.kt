@@ -44,9 +44,13 @@ class AiToolsTest {
                 "schedule_add_alarm", "schedule_add_todo", "schedule_query", "schedule_cancel",
                 "device_flashlight", "device_brightness", "device_open_app", "device_battery",
                 "device_wifi_ctrl", "device_bluetooth_ctrl",
-                "audio_volume_ctrl", "audio_music_ctrl", "audio_tts_stop",
+                "phone_call", "phone_navigate",
+                "audio_volume_ctrl", "audio_music_ctrl", "audio_tts_stop", "audio_tts_speak",
+                "context_clear",
                 "tool_calc", "tool_time", "tool_translate", "tool_weather",
-                "msg_send_text", "msg_query_can_send"
+                "study_word_query", "study_word_review",
+                "gen_short_sentence",
+                "msg_send_text", "msg_query_can_send", "msg_query_history"
             ),
             toolNames()
         )
