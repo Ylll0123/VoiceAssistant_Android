@@ -26,6 +26,16 @@ class ToolSupply(
     private val now: () -> LocalDateTime = { LocalDateTime.now() }
 ) {
 
+    /**
+     * 上次查过的城市。
+     *
+     * 以前它是伴生对象里的 `var`：所有实例共享、多线程同时写会互相覆盖——
+     * 两个人同时问「北京天气」「杭州天气」，后一个会把前一个的城市改掉，
+     * 于是「那明天呢」查到了别人说的城市。现在跟着实例走，并用 volatile 保证可见性。
+     */
+    @Volatile
+    private var lastCity: String? = null
+
     val all: List<Supply> = listOf(calc(), time(), translate(), weather())
 
     // ------------------------------------------------------------------ 计算
@@ -97,12 +107,12 @@ class ToolSupply(
 
         override fun invoke(args: BusArgs): BusReply {
             val city = args.str("city")?.trim()?.takeIf { it.isNotEmpty() }
-                ?: LAST_CITY
+                ?: lastCity
                 ?: return BusReply.fail("要查哪个城市的天气？")
 
             val live = fetchWeather(city)
             if (live != null) {
-                LAST_CITY = city
+                lastCity = city
                 return BusReply.ok(live)
             }
 
@@ -113,7 +123,7 @@ class ToolSupply(
                 maxTokens = 200
             ) ?: return BusReply.fail("查天气要联网，现在没连上。")
 
-            LAST_CITY = city
+            lastCity = city
             return BusReply.ok(fallback)
         }
     }
@@ -190,8 +200,4 @@ class ToolSupply(
     private fun hm(moment: LocalDateTime): String =
         String.format("%d 点 %02d 分", moment.hour, moment.minute)
 
-    private companion object {
-        /** 上次查过的城市：用户接着问「那明天呢」时不用再报一遍地名 */
-        var LAST_CITY: String? = null
-    }
 }

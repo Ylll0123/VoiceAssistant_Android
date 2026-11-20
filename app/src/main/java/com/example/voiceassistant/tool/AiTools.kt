@@ -173,13 +173,18 @@ class AiTools(private val bus: ServiceBus) {
     "parameters":{"type":"object","properties":{}}}},
   {"type":"function","function":{
     "name":"audio_tts_speak",
-    "description":"把一段文字念出来。用户说「念一下」「读给我听」时调用，text 是要念的原文。",
+    "description":"把一段文字念出来。用户说「念一下」「读给我听」时调用，text 是要念的原文；用户说「再说一遍」「没听清」时不要填 text，改成 repeat=true，念上一条回答。",
     "parameters":{"type":"object","properties":{
-      "text":{"type":"string","description":"要朗读的内容"}
-    },"required":["text"]}}},
+      "text":{"type":"string","description":"要朗读的内容；只说「再说一遍」时留空"},
+      "repeat":{"type":"boolean","description":"true 表示重念上一条回答"}
+    }}}},
   {"type":"function","function":{
     "name":"context_clear",
     "description":"清空当前这段对话的上下文。用户说「清空对话」「忘掉之前的」「重新开始」时调用。只影响本轮对话，不删会话记录。",
+    "parameters":{"type":"object","properties":{}}}},
+  {"type":"function","function":{
+    "name":"context_retry",
+    "description":"把上一条指令重新执行一遍。用户说「再试一次」「重来一遍」「刚才没成功」时调用。没有上一条可重试的指令就如实说没有。",
     "parameters":{"type":"object","properties":{}}}},
   {"type":"function","function":{
     "name":"tool_calc",
@@ -240,6 +245,28 @@ class AiTools(private val bus: ServiceBus) {
     "parameters":{"type":"object","properties":{
       "platform":{"type":"string","enum":["wechat","qq"],"description":"用户说 QQ/企鹅 就填 qq，否则 wechat"}
     }}}},
+  {"type":"function","function":{
+    "name":"system_screenshot",
+    "description":"截一张当前屏幕存进相册。用户说「截个屏」「截图」时调用。不需要额外授权，但需要读屏能力在线；没在线会失败，照实说。",
+    "parameters":{"type":"object","properties":{}}}},
+  {"type":"function","function":{
+    "name":"system_clipboard",
+    "description":"剪贴板。action=write 时把 text 复制进去（用户说「复制刚才那段」就传 source=last_answer）；action=read 时读出现在剪贴板里的文字（用户问「我刚复制的是什么」）。",
+    "parameters":{"type":"object","properties":{
+      "action":{"type":"string","enum":["write","read"],"description":"复制还是读取"},
+      "text":{"type":"string","description":"要复制的文字"},
+      "source":{"type":"string","enum":["last_answer"],"description":"要复制上一条回答时填这个，不用再填 text"}
+    }}}},
+  {"type":"function","function":{
+    "name":"system_dnd",
+    "description":"免打扰（勿扰模式）。用户说「开勿扰」「关掉免打扰」「现在是不是勿扰」时调用。注意这跟「静音」不是一回事：静音是调音量，勿扰是系统级通知拦截。",
+    "parameters":{"type":"object","properties":{
+      "action":{"type":"string","enum":["on","off","query"],"description":"打开 / 关闭 / 查询"}
+    },"required":["action"]}}},
+  {"type":"function","function":{
+    "name":"system_camera",
+    "description":"打开相机拍照。用户说「拍张照」「照相」时调用。快门要用户自己按，你不能代替他拍，也别声称已经拍好了。",
+    "parameters":{"type":"object","properties":{}}}},
   {"type":"function","function":{
     "name":"msg_query_history",
     "description":"查我们最近的对话。用户问「我上一条跟你说的什么」时调用。只能读本应用里的对话，读不到微信/QQ 的聊天记录。",

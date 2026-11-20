@@ -64,6 +64,12 @@ object LocalNlu {
             ?: messageDiagnostic(text)
             ?: clearContext(text)
             ?: cloudToggle(text)
+            ?: screenshot(text)
+            ?: camera(text)
+            ?: clipboardRule(text)
+            ?: dnd(text)
+            ?: repeatAnswer(text)
+            ?: retryLast(text)
             ?: torch(text)
             ?: brightness(text)
             ?: volume(text)
@@ -101,6 +107,93 @@ object LocalNlu {
      * 只认明确的连接词，不做语义猜测：宁可多交给大模型一次，也不要少做一半。
      */
     private fun looksComposite(text: String): Boolean = COMPOSITE.containsMatchIn(text)
+
+    // ------------------------------------------------------------------ 系统能力
+
+    /** 「截个屏」「截图」——不认「截屏设置」「怎么截图」这类问法 */
+    private fun screenshot(text: String): Hit? {
+        if (SCREENSHOT_WORDS.none { text.contains(it) }) return null
+        if (text.contains("怎么") || text.contains("设置") || text.contains("权限")) return null
+        return Hit("system/screenshot", BusArgs.EMPTY)
+    }
+
+    /** 「拍张照」「照相」——「拍照翻译」这种是另一件事，先摘出去 */
+    private fun camera(text: String): Hit? {
+        if (text.contains("翻译")) return null
+        if (CAMERA_WORDS.none { text.contains(it) }) return null
+        return Hit("system/camera", BusArgs.EMPTY)
+    }
+
+    /**
+     * 剪贴板。
+     *
+     * 三种说法分开处理：
+     * - 「复制刚才那句」→ 把上一条回答存进剪贴板（`source=last_answer`）
+     * - 「复制 XXX」→ 把 XXX 存进去
+     * - 「我刚复制的是什么」→ 读出来
+     *
+     * `source=last_answer` 而不是在这里去找文本：本地规则拿不到对话内容，
+     * 让供给方去问界面要，职责才对。
+     */
+    private fun clipboardRule(text: String): Hit? {
+        val readFirst = listOf("复制的是什么", "复制了什么", "剪贴板里", "剪贴板是", "读一下剪贴板")
+        if (readFirst.any { text.contains(it) }) {
+            return Hit("system/clipboard", BusArgs.of("action" to "read"))
+        }
+
+        if (!text.contains("复制") && !text.contains("拷贝")) return null
+        // 「怎么复制」是在问方法，不是要我们复制
+        if (text.contains("怎么") || text.contains("如何")) return null
+
+        val body = text
+            .replace("帮我", "")
+            .replace("给我", "")
+            .let { it.substringAfter("复制", "") }
+            .trim()
+            .trimStart('一', '下', '这', '段', '句', '个', '：', ':', '，', ',', ' ')
+            .trim()
+
+        if (body.isEmpty() || body in LAST_ANSWER_WORDS) {
+            // 「复制一下」「复制刚才那段」：要的就是上一条回答
+            return Hit(
+                "system/clipboard",
+                BusArgs.of("action" to "write", "source" to "last_answer")
+            )
+        }
+        return Hit("system/clipboard", BusArgs.of("action" to "write", "text" to body))
+    }
+
+    /**
+     * 勿扰模式。
+     *
+     * 跟「静音」要分开：「静音」是媒体/铃声音量归零，「勿扰」是系统级的通知拦截。
+     * 以前两者都走 `audio/volume_ctrl`，于是「打开勿扰」只会把音量调成 0，
+     * 通知照样哔哔响——用户当然觉得没生效。
+     */
+    private fun dnd(text: String): Hit? {
+        if (DND_WORDS.none { text.contains(it) }) return null
+        // 「勿扰设置」是在找设置页，交给大模型或者 openApp
+        if (text.contains("设置") && text.contains("打开")) return null
+
+        val query = text.contains("是不是") || text.contains("有没有") ||
+            (text.contains("吗") && (text.contains("开") || text.contains("关")))
+        if (query) return Hit("system/dnd", BusArgs.of("action" to "query"))
+
+        val off = listOf("关", "取消", "退出", "解除", "停止", "结束").any { text.contains(it) }
+        return Hit("system/dnd", BusArgs.of("action" to if (off) "off" else "on"))
+    }
+
+    /** 「再说一遍」：把上一条回答重念一次，不重新问一遍模型 */
+    private fun repeatAnswer(text: String): Hit? {
+        if (REPEAT_WORDS.none { text.contains(it) }) return null
+        return Hit("audio/tts_speak", BusArgs.of("repeat" to "true"))
+    }
+
+    /** 「再试一次」：把上一条指令重新执行一遍 */
+    private fun retryLast(text: String): Hit? {
+        if (RETRY_WORDS.none { text.contains(it) }) return null
+        return Hit("context/retry", BusArgs.EMPTY)
+    }
 
     // ------------------------------------------------------------------ 设备
 
@@ -148,7 +241,7 @@ object LocalNlu {
 
         val mentions = text.contains("音量") || text.contains("声音") ||
             text.contains("大声") || text.contains("小声") || text.contains("静音") ||
-            text.contains("免打扰") || text.contains("出声") ||
+            text.contains("出声") ||
             // 「把铃声调小」里没有「音量」两个字，但确实是调音量
             text.contains("铃声") || text.contains("来电")
         if (!mentions) return null
@@ -161,12 +254,10 @@ object LocalNlu {
         }
 
         // 「取消静音」必须排在「静音」前面判，否则一个字都还没说完就被当成静音了
-        if (text.contains("取消静音") || text.contains("解除静音") ||
-            text.contains("取消免打扰") || text.contains("打开声音")
-        ) {
+        if (text.contains("取消静音") || text.contains("解除静音") || text.contains("打开声音")) {
             return Hit("audio/volume_ctrl", BusArgs.of("action" to "unmute", "stream" to stream))
         }
-        if (text.contains("静音") || text.contains("免打扰")) {
+        if (text.contains("静音")) {
             return Hit("audio/volume_ctrl", BusArgs.of("action" to "mute", "stream" to stream))
         }
 
@@ -575,6 +666,39 @@ object LocalNlu {
 
     /** 整句模式下，短于这个长度才允许本地直接拍板；再长就交给大模型通读 */
     private const val QUICK_CAP = 24
+
+    /** 「截个屏」「截图」 */
+    private val SCREENSHOT_WORDS = listOf(
+        "截屏", "截图", "屏幕截图", "截个屏", "截一下屏", "截个图", "截一张"
+    )
+
+    /** 「拍张照」「照相」 */
+    private val CAMERA_WORDS = listOf("拍照", "照相", "拍张照", "拍个照", "拍一张")
+
+    /** 「勿扰」「免打扰」——注意这是系统通知拦截，不是静音 */
+    private val DND_WORDS = listOf("勿扰", "免打扰", "打扰模式")
+
+    /** 「复制一下」「复制刚才那段」要的就是上一条回答 */
+    private val LAST_ANSWER_WORDS = listOf(
+        "刚才那段", "刚才那句", "刚才的", "上一句", "上面那段", "上面那句", "回答", "你刚说的"
+    )
+
+    /** 「再说一遍」：重念，不重新回答 */
+    private val REPEAT_WORDS = listOf("再说一遍", "再说一次", "再念一遍", "重复一遍", "没听清")
+
+    /** 「再试一次」：重做上一条指令 */
+    private val RETRY_WORDS = listOf(
+        "再试一次", "重试", "重新试", "重来一遍", "再做一次", "重新执行", "刚才没成功"
+    )
+
+    /**
+     * 这句话是不是「再试一次」。
+     *
+     * 界面要用它决定**要不要把它记成"上一条指令"**：如果记了，
+     * 重试就会一直重试「再试一次」这句话本身，永远在原地打转。
+     * 判断逻辑放在这里，是因为规则只有一份，界面不该另抄一份词表。
+     */
+    fun isRetryPhrase(text: String): Boolean = RETRY_WORDS.any { text.contains(it) }
 
     private val PERCENT = Regex("(\\d{1,3})\\s*%")
 

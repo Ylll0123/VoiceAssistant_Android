@@ -26,10 +26,18 @@ class ContextSupply(
     /** 切换模式后要做的持久化/界面刷新；返回生效的模式名 */
     private val onModeChanged: (String) -> Unit = {},
     /** 开关变化后要做的持久化/界面刷新 */
-    private val onLlmToggled: (Boolean) -> Unit = {}
+    private val onLlmToggled: (Boolean) -> Unit = {},
+    /**
+     * 把上一条指令重新执行一遍，返回被执行的那句话（没有则 null）。
+     *
+     * 为什么要这个：「再试一次」是语音里最常见的补救动作。
+     * 以前只能让用户把整句话重新说一遍——说错了还得先想清楚哪里错了。
+     * 这里只负责「再发一次」，怎么发由界面决定（它才拿得到输入框和消息列表）。
+     */
+    private val retryLast: () -> String? = { null }
 ) {
 
-    val all: List<Supply> = listOf(clear(), switchPrompt(), toggle())
+    val all: List<Supply> = listOf(clear(), switchPrompt(), toggle(), retry())
 
     private fun clear(): Supply = object : Supply {
         override val name = "context/clear"
@@ -55,6 +63,20 @@ class ContextSupply(
             }
             runCatching { onModeChanged(after) }
             return BusReply.ok("切到${AssistantMode.label(after)}了。", "mode" to after)
+        }
+    }
+
+    // ------------------------------------------------------------------ 重试
+
+    private fun retry(): Supply = object : Supply {
+        override val name = "context/retry"
+        override val summary =
+            "把上一条指令重新执行一遍。用户说「再试一次」「重来一遍」「刚才没成功」时用。"
+
+        override fun invoke(args: BusArgs): BusReply {
+            val text = runCatching { retryLast() }.getOrNull()
+                ?: return BusReply.fail("还没有可以重来的指令，先说一句要做什么。")
+            return BusReply.ok("好，我再用刚才那句试一次。", "retried" to text)
         }
     }
 

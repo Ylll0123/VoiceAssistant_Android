@@ -19,6 +19,8 @@ v5.7 补齐语音助手最缺的两件事：**打电话**（姓名→通讯录�
 要么接上、要么删掉，工具从 19 个变成 27 个。
 v5.8 修「连发两次就卡住」「说发了其实没跳转」：后台不再单线程、分享结果要**验证**、
 内容先落剪贴板；QQ/微信按「上次用的那个」区分；发出去的内容按原文处理（问句不回答）。
+v5.9 补四件系统能力（**截屏 / 剪贴板 / 勿扰 / 拍照**）和两个补救动作（**再试一次、再念一遍**），
+同时把「跳转类指令」的假成功一并修掉：面板、相机都要**看见界面真的换了**才算成功。
 
 - **主课题**：C3 本地智能语音助手
 - **伴生模块**：P3 通知提醒中心（AlarmManager 精确闹钟 + 通知操作）
@@ -58,7 +60,7 @@ v5.0 再把「本地优先」以另一种方式加回来：不是拿本地规则
 - 不按的时候**不会录任何声音**——这是和以前「连续对话」最大的区别
 - **单击输入框能正常定位光标、选中文字**：短按交给 `EditText` 自己处理，
   只有长按（超过 380ms）才起语音，滑动/抬手只在真的录音时才拦
-- 识别结果只**填进输入框**，还要点一下发送：说错了还有机会改
+- 识别结果**松手就发**，不用再点一次发送；说错了长按气泡改，改完自动重新回答
 - 播报用系统 TTS，可在设置里关掉「语音播报」
 
 **整句识别**：以前停顿阈值只有 1.2 秒，一句话说到一半换口气就被判「说完了」，
@@ -113,14 +115,15 @@ v5.0 加了**供需总线**：每个能力只实现一次，挂成 `域/动作`�
 | `msg/` | send_text、query_can_send、query_history | 给妈妈发微信说我晚点到 / 跟妈妈说一声晚点到 |
 | `study/` | word_query、word_review | （查词、抽查，交给模型） |
 | `gen/` | short_sentence | 「帮我想句祝福」——只出成品，接 `msg/send_text` |
-| `context/` | clear、switch_prompt | 清空对话 / 忘掉之前说的 |
+| `system/` | screenshot、clipboard、dnd、camera | 截个屏 / 复制刚才那段 / 打开勿扰 / 拍张照 |
+| `context/` | clear、switch_prompt、retry | 清空对话 / 忘掉之前说的 / 再试一次 |
 | `llm/` | toggle | 关掉云端 / 打开云端 |
 
 `open_app` 不再只认一张手写的常用表：先从系统拉**全部有启动入口的应用**（`QUERY_ALL_PACKAGES`，
 缓存 30 秒），常用名走内置表归一，其余按应用名模糊匹配，所以「打开学习通」「打开 YouTube」
 也能开；找不到就明说找不到，不猜。打开成功会回一句「已经打开 XXX。」，不会闷头跳走。
 
-模型那头只暴露 27 个工具（`schedule_add_alarm` 这种下划线写法，网关切 `/` 会 400），
+模型那头只暴露 32 个工具（`schedule_add_alarm` 这种下划线写法，网关切 `/` 会 400），
 `AiTools` 负责在两种命名之间来回翻译。
 
 ### 四、发消息：微信 / QQ（只填好，发送键留给你）
@@ -301,7 +304,7 @@ Dispatcher.dispatch(text, history, online)
    ├─ ④ 没网？                → Blocked「问答用不了」
    └─ ⑤ 都不是                → AiChat.ask()
                                    ├─ system = 人设 + 当前时间 + 模式
-                                   ├─ POST /chat/completions（带 27 个工具）
+                                   ├─ POST /chat/completions（带 32 个工具）
                                    ├─ tool_calls → AiTools → ServiceBus
                                    │              → 结果作为 role=tool 再发一轮（≤4 轮）
                                    └─ 文字答案
@@ -318,15 +321,16 @@ app/src/main/java/com/example/voiceassistant/
 ├── core/LlmBridge.kt       给供给方用的「问一句模型」：翻译、解释、写文案
 ├── bus/ServiceBus.kt       供需总线：Supply / BusArgs / BusReply / 服务注册表
 ├── nlu/                    本地识别：LocalNlu（规则）、Calc（算式）、TimeWords/TimeParse（时间）
-├── provider/               各域供给方：schedule / device / phone / audio / tool / study / gen / context / msg
+├── provider/               各域供给方：schedule / device / phone / audio / system / tool / study / gen / context / msg
 ├── im/                     微信 QQ 发消息：无障碍服务 + 送到输入框 + 页面几何判定 + 分享降级
-├── tool/AiTools.kt         协议适配：27 个工具的声明 + 名字/参数双向转换
+├── tool/AiTools.kt         协议适配：32 个工具的声明 + 名字/参数双向转换
 ├── tool/PlatformHint.kt    用用户原话校对 platform（说 QQ 不能发到微信）
 ├── handler/llm/            云端配置、协议解析、人设、连通性测试
 ├── network/                网络状态感知 + HTTP
 ├── data/                   账号 / 会话 / 会话存储 / 设置 / 消息模型
 ├── reminder/               提醒中心（P3）：模型、SQLite、状态机、闹钟、广播
 ├── service/                ASR（含 AsrPick 候选择优）/ TTS / 设备与音频控制 / 系统时钟 / 音乐 /
+│                           截屏（ScreenCapture）/ 界面跳转验证（UiLaunch） /
 │                           通讯录（PhoneBook）/ 号码与地图链接（PhoneFormats）/ AppCatalog
 ├── installer/              装完清理安装包
 └── ui/                     只做接线：Activity / ChatFragment / 两个 Adapter / 登录 / 设置 / Dialogs / CursorMath
@@ -372,6 +376,14 @@ v4.0 时「本地工具」和「模型工具」是两套代码，加一个能力
 模型很容易把问句当成人问自己的问题，于是答一句「她吃没吃我不知道」——
 这正是「我发的消息被识别成提问词」。所以从抽取到工具描述都写死一条：X 原样发，
 不回答、不加壳、不改语气。发出去的应该是用户的话，不是我们改写过的版本。
+
+**为什么连打开设置面板也要验证**
+`startActivity` 在后台被拦时不抛异常，所以「调用成功」根本不能当成功。
+WiFi 和蓝牙在 Android 10+ 只能拉起系统面板让用户自己切，这条路径以前写的是
+`startActivity` 就 `return true`——面板没起来也回「已经打开了，在上面点一下」，
+用户抬头还在原地。现在统一走 `service/UiLaunch`：从 Activity 启动，
+再用**本页有没有被盖住**做判据；看不见变化就如实说「系统拦了这次跳转」。
+相机同理。
 
 **为什么分享也要验证**
 `startActivity` 在后台启动被拦时**不抛异常**：调用成功、界面没动。
@@ -443,7 +455,7 @@ v4.0 时「本地工具」和「模型工具」是两套代码，加一个能力
 - `ServiceBusTest`：注册覆盖、找不到服务、供给方抛异常、名字双向转换
 - `DispatcherTest`：确认优先、本地优先（断网也能用）、关了 AI / 没网怎么回、
   以及「带着后续指令的好」不能被当成确认
-- `AiToolsTest`：27 个工具是合法 JSON 且与总线服务一一对得上、名字只换第一个下划线
+- `AiToolsTest`：32 个工具是合法 JSON 且与总线服务一一对得上、名字只换第一个下划线
 - `SendMessageTest`：发消息的各种语序、平台别名、长内容、不能误伤的问句
 - `WholeSentenceTest`：复合句/长句在线时必须让给大模型，离线仍能本地执行；
   发消息的内容不被当成复合句
@@ -726,6 +738,28 @@ v4.0 时「本地工具」和「模型工具」是两套代码，加一个能力
       - 并发安全：`AiTools.userText` 从可变字段改成 `execute(call, userText)` 入参，
         两条请求同时跑不会互相串平台
       + 单测 250 全绿、Lint 0 error / 64 warning、四语言各 104 条、versionCode 32
+- [x] **v5.9：截屏 / 剪贴板 / 勿扰 / 拍照 + 两个补救动作，顺手修掉跳转类假成功**
+      - **`system/screenshot`**：走 `AccessibilityService.takeScreenshot`（API 30+），
+        不用 MediaProjection 那套投屏授权，也不常驻录制通知；图存 `Pictures/HardlySeek`，
+        不需要存储权限。没连读屏就直说截不了
+      - **`system/clipboard`**：`action=write` 复制（`source=last_answer` 直接复制上一条回答），
+        `action=read` 读剪贴板。读不到时说明「可能被后台挡住」，不谎称剪贴板是空的
+      - **`system/dnd`**：免打扰开关 + 查询。没给「勿扰权限」时打开授权页并**明说没开成**；
+        开了之后写完读回 `currentInterruptionFilter` 确认。**和「静音」彻底分开**——
+        以前「打开勿扰」只是把音量调成 0，通知照样响
+      - **`system/camera`**：`ACTION_IMAGE_CAPTURE` 拉起相机，快门留给人按
+      - **`context/retry`**：把上一条指令重新执行（`LocalNlu.isRetryPhrase` 保证
+        不会把「再试一次」记成上一条，避免无限套娃）
+      - **`audio/tts_speak` 支持 `repeat`**：「再说一遍」重念上一条回答，
+        不重新问一遍模型；太长只念开头 260 字
+      - **修跳转假成功**：`DeviceSupply.openPanel` 以前恒返回 true，现在走 `service/UiLaunch`，
+        从 Activity 启动并等「本页被盖住」才认成功；相机同样
+      - **修并发状态**：手电筒状态改 `AtomicBoolean`、天气城市改实例字段——
+        它们原来是伴生对象的普通 `var`，3 条后台线程会互相覆盖
+      - **亮度读回**：写完 `Settings.System` 再读一次，没到目标就说「系统只到 X%」
+      - **能力清单同步**：`CAPABILITY_RULES` 加上这四项，并明确「静音」和「勿扰」不是一回事
+      + 单测 255 全绿（新增 5 条：截屏拍照 / 剪贴板 / 勿扰与静音 / 重念与重试）、
+        Lint 0 error / 64 warning、versionCode 33
 - [ ] 第 4 周：TTS 与 UI 打磨、异常处理、文档与演示视频
 
 ## 环境要求

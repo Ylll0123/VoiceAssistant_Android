@@ -12,6 +12,7 @@ import com.example.voiceassistant.bus.BusArgs
 import com.example.voiceassistant.bus.BusReply
 import com.example.voiceassistant.bus.Supply
 import com.example.voiceassistant.service.DeviceController
+import com.example.voiceassistant.service.UiLaunch
 
 /**
  * 设备控制域：`device/…`
@@ -39,6 +40,18 @@ class DeviceSupply(
 
     private val app: Context = context.applicationContext
 
+    /**
+     * 手电筒现在开着没有。
+     *
+     * 以前它是伴生对象里的普通 `var`：后台有 3 条线程，"切换手电筒" 并发进来时
+     * 两条会读到同一个旧值、朝同一个方向翻，结果就是按了两次还是一次。
+     * 现在用原子量，翻转方向由它保证。
+     *
+     * 局限也说清楚：应用重启后这里是 false，而手电筒可能还亮着。
+     * 所以 `toggle` 只在用户明说「切换」时用，说「打开/关闭」永远是对的。
+     */
+    private val torchOn = java.util.concurrent.atomic.AtomicBoolean(false)
+
     val all: List<Supply> = listOf(
         flashlight(), brightness(), openApp(), battery(), wifi(), bluetooth()
     )
@@ -53,12 +66,12 @@ class DeviceSupply(
             val on = when (args.str("action")) {
                 "on", "开", "打开" -> true
                 "off", "关", "关闭" -> false
-                "toggle" -> !TORCH_STATE
+                "toggle" -> !torchOn.get()
                 else -> return BusReply.fail("要开还是关？")
             }
             val done = device.setTorch(on)
             if (!done) return BusReply.fail("这台设备没有可用的闪光灯。")
-            TORCH_STATE = on
+            torchOn.set(on)
             return BusReply.ok(if (on) "手电筒已打开。" else "手电筒已关闭。")
         }
     }
@@ -96,8 +109,13 @@ class DeviceSupply(
                         Settings.System.SCREEN_BRIGHTNESS,
                         value
                     )
-                }.onSuccess {
-                    return BusReply.ok("亮度调到 $target% 了。")
+                }
+                // 写完读回：Settings 写失败也不抛异常，只能自己再看一眼
+                val actual = currentPercent()
+                return if (kotlin.math.abs(actual - target) <= 2) {
+                    BusReply.ok("亮度调到 $target% 了。")
+                } else {
+                    BusReply.fail("试着调到 $target%，但系统只到 $actual%，可能被自动亮度改回去了。")
                 }
             }
 
@@ -222,19 +240,18 @@ class DeviceSupply(
 
     // ------------------------------------------------------------------ 工具
 
-    /** 打开某个系统设置页；能打开返回 true。面板动作打不开就退回总设置页 */
-    private fun openPanel(action: String): Boolean = runCatching {
-        app.startActivity(
-            Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-        true
-    }.getOrElse {
-        runCatching {
-            app.startActivity(
-                Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-            true
-        }.getOrDefault(false)
+    /**
+     * 打开某个系统设置页，并**确认界面真的被盖住了**。
+     *
+     * 以前这里是 `startActivity` + `true`：Android 10 起后台启动会被拦，
+     * 而 `startActivity` 被拦下时**不抛异常**，于是这个函数恒返回 true——
+     * WiFi / 蓝牙就会回「面板已经开好了」，用户抬头还在原地。
+     * 现在交给 [UiLaunch]，只有看见界面变化才算成功。
+     * 面板动作本身不被支持时，退回总设置页再试一次。
+     */
+    private fun openPanel(action: String): Boolean {
+        if (UiLaunch.open(app, Intent(action))) return true
+        return UiLaunch.open(app, Intent(Settings.ACTION_SETTINGS))
     }
 
     private fun currentPercent(): Int {
@@ -245,9 +262,6 @@ class DeviceSupply(
     }
 
     private companion object {
-        /** 手电筒当前状态：决定 toggle 往哪边翻。进程内记一份就够 */
-        var TORCH_STATE: Boolean = false
-
         /** Settings.Panel.ACTION_WIFI 的字面值（常量本身 API 29 才有） */
         const val PANEL_WIFI = "android.settings.panel.action.WIFI"
     }

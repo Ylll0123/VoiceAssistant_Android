@@ -50,6 +50,13 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!--
+        勿扰模式：改系统拦截策略要「勿扰权限」（特殊权限，用户手动授予）。
+        声明本身不授权，只是让 isNotificationPolicyAccessGranted 有资格变 true；
+        没授予时我们会打开授权页并如实说「还没开成」。
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
     <!-- 蓝牙开关状态查询 / 连接（Android 12+ 必需） -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT"

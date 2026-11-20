@@ -39,12 +39,14 @@ import com.example.voiceassistant.core.Dispatcher
 import com.example.voiceassistant.core.LlmSwitch
 import com.example.voiceassistant.im.ImAutomator
 import com.example.voiceassistant.im.ImPlatform
+import com.example.voiceassistant.nlu.LocalNlu
 import com.example.voiceassistant.provider.AudioSupply
 import com.example.voiceassistant.provider.ContextSupply
 import com.example.voiceassistant.provider.DeviceSupply
 import com.example.voiceassistant.provider.GenSupply
 import com.example.voiceassistant.provider.MsgSupply
 import com.example.voiceassistant.provider.PhoneSupply
+import com.example.voiceassistant.provider.SystemSupply
 import com.example.voiceassistant.provider.ScheduleSupply
 import com.example.voiceassistant.provider.StudySupply
 import com.example.voiceassistant.provider.ToolSupply
@@ -66,6 +68,7 @@ import com.example.voiceassistant.service.AndroidAudioController
 import com.example.voiceassistant.service.AndroidDeviceController
 import com.example.voiceassistant.service.AppCatalog
 import com.example.voiceassistant.service.AsrManager
+import com.example.voiceassistant.service.UiLaunch
 import com.example.voiceassistant.service.MusicPlayer
 import com.example.voiceassistant.service.TtsManager
 import com.example.voiceassistant.tool.AiTools
@@ -169,6 +172,15 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     private var drawerOpen = false
     @Volatile
     private var isForeground = false
+
+    /**
+     * 上一条**真正要执行的**指令。
+     *
+     * 「再试一次」要重跑的是它。注意不能把「再试一次」这句本身记进来，
+     * 否则重试会无限套娃——所以 [sendText] 里用 [LocalNlu.isRetryPhrase] 挡一下。
+     */
+    @Volatile
+    private var lastInstruction: String? = null
 
     private val networkListener = NetworkState.Listener { isOnline ->
         online = isOnline
@@ -327,10 +339,16 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 *AudioSupply(
                     tts = tts,
                     audio = audioCtl,
-                    music = MusicPlayer(applicationContext)
+                    music = MusicPlayer(applicationContext),
+                    // 「再说一遍」：把上一条回答原样重念，不重新问模型
+                    lastAnswer = { lastAssistantText() }
                 ).all.toTypedArray()
             )
             registerAll(*PhoneSupply(this@VoiceAssistantActivity).all.toTypedArray())
+            registerAll(
+                *SystemSupply(this@VoiceAssistantActivity, lastAnswer = { lastAssistantText() })
+                    .all.toTypedArray()
+            )
             registerAll(*ToolSupply(bridge).all.toTypedArray())
             registerAll(*StudySupply(bridge).all.toTypedArray())
             registerAll(*GenSupply(bridge).all.toTypedArray())
@@ -338,7 +356,16 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
                 *ContextSupply(
                     clearTurns = { clearCurrentTurns() },
                     onModeChanged = { mode -> settings.assistantMode = mode },
-                    onLlmToggled = { enabled -> settings.cloudEnabled = enabled }
+                    onLlmToggled = { enabled -> settings.cloudEnabled = enabled },
+                    // 「再试一次」：只负责把上一条重新发出去，怎么发交给下面的 sendText
+                    retryLast = {
+                        lastInstruction?.also { text ->
+                            // 留一点时间让「好，我再用刚才那句」先上屏
+                            main.postDelayed({
+                                if (!isFinishing && !isDestroyed) sendText(text)
+                            }, 420)
+                        }
+                    }
                 ).all.toTypedArray()
             )
             registerAll(*msgSupply.all.toTypedArray())
@@ -656,6 +683,10 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
     // ------------------------------------------------------------------ 发送
 
+    /** 上一条助手回答的原文；回答都还没有时返回 null */
+    private fun lastAssistantText(): String? =
+        if (::session.isInitialized) session.messages.lastOrNull { !it.isUser }?.text else null
+
     fun bindChatUi(ui: ChatFragment) {
         chatView = ui
     }
@@ -674,6 +705,9 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
 
         // 删空之后的第一句：这时候才建会话，保证消息有地方落
         ensureConversation()
+
+        // 「再试一次」不覆盖上一条指令，否则重试会变成重试「再试一次」
+        if (!LocalNlu.isRetryPhrase(trimmed)) lastInstruction = trimmed
 
         // 上下文要在「这句进列表之前」取，否则它自己会被当成上一轮
         val history = session.recentTurns(HISTORY_TURNS)
@@ -1089,6 +1123,24 @@ class VoiceAssistantActivity : AppCompatActivity(), AsrManager.Listener, TtsMana
     override fun onResume() {
         super.onResume()
         isForeground = true
+        /*
+         * 把「谁来启动界面」交给 Activity。
+         *
+         * 从应用上下文 startActivity 在后台会被系统拦住，而且**不抛异常**——
+         * WiFi/蓝牙面板、相机就会变成「说开好了其实没动」。
+         * 从 Activity 启动不受这个限制，而且它一离开前台我们就能观察到，
+         * 于是「跳转到底成没成」第一次有了判据。
+         */
+        UiLaunch.bind(
+            start = { intent ->
+                // 从 Activity 起不必带 NEW_TASK，带上反而会另起一个任务栈
+                val clean = Intent(intent).apply {
+                    flags = flags and Intent.FLAG_ACTIVITY_NEW_TASK.inv()
+                }
+                runCatching { startActivity(clean) }.isSuccess
+            },
+            isForeground = { isForeground && !isFinishing && !isDestroyed }
+        )
         if (::session.isInitialized) chatView?.refresh()
         // 用户可能刚从系统设置里换过语音引擎 / 装了语音包，回来重探一次
         if (::tts.isInitialized) tts.refreshIfNeeded()

@@ -11,14 +11,19 @@
     - notificationTimeout=100：事件合并窗口，100ms 足够，太小反而频繁唤醒；
     - canPerformGestures：节点整条链都不可点时，按矩形中心派发一次轻点手势，
       微信/QQ 的联系人条目和发送按钮常需要这一招；
+    - canTakeScreenshot：截屏（API 30+）。这样「截个屏」不用再走 MediaProjection
+      那套投屏授权，也不用常驻一条录制通知；
     - description：系统设置页里给用户看的用途说明，必须如实写「辅助语音操作」。
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:targetApi="r"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows"
     android:canPerformGestures="true"
     android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
     android:description="@string/accessibility_description"
     android:notificationTimeout="100"
     android:settingsActivity="com.example.voiceassistant.ui.VoiceAssistantActivity" />

@@ -46,11 +46,13 @@ class AiToolsTest {
                 "device_wifi_ctrl", "device_bluetooth_ctrl",
                 "phone_call", "phone_navigate",
                 "audio_volume_ctrl", "audio_music_ctrl", "audio_tts_stop", "audio_tts_speak",
-                "context_clear",
+                "context_clear", "context_retry",
                 "tool_calc", "tool_time", "tool_translate", "tool_weather",
                 "study_word_query", "study_word_review",
                 "gen_short_sentence",
-                "msg_send_text", "msg_query_can_send", "msg_query_history"
+                "msg_send_text", "msg_query_can_send",
+                "system_screenshot", "system_clipboard", "system_dnd", "system_camera",
+                "msg_query_history"
             ),
             toolNames()
         )

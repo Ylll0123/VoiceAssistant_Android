@@ -29,6 +29,60 @@ class LocalNluTest {
     private fun hitWithApps(text: String, installed: Set<String>): LocalNlu.Hit? =
         LocalNlu.route(text, now, appMatcher = { it in installed })
 
+    // ------------------------------------------------------------ 系统能力
+
+    @Test
+    fun `截屏和拍照`() {
+        assertEquals("system/screenshot", service("截个屏"))
+        assertEquals("system/screenshot", service("截图"))
+        // 问怎么截屏不是让我们截
+        assertNull(service("怎么截图"))
+        assertEquals("system/camera", service("拍张照"))
+        // 拍照翻译是要翻译，不是拍照
+        assertNull(service("拍照翻译"))
+    }
+
+    @Test
+    fun `复制刚才那段是复制上一条回答`() {
+        assertEquals("system/clipboard", service("复制刚才那段"))
+        assertEquals("write", args("复制刚才那段", "action"))
+        assertEquals("last_answer", args("复制刚才那段", "source"))
+
+        assertEquals("sessionid-abc", args("复制 sessionid-abc", "text"))
+        // 问方法不算指令
+        assertNull(service("怎么复制"))
+    }
+
+    @Test
+    fun `读剪贴板`() {
+        assertEquals("system/clipboard", service("我刚复制的是什么"))
+        assertEquals("read", args("我刚复制的是什么", "action"))
+        assertEquals("read", args("剪贴板里现在是什么", "action"))
+    }
+
+    @Test
+    fun `勿扰和静音是两件事`() {
+        // 勿扰走系统通知拦截
+        assertEquals("system/dnd", service("打开勿扰"))
+        assertEquals("on", args("打开勿扰", "action"))
+        assertEquals("off", args("关掉免打扰", "action"))
+        assertEquals("query", args("现在是不是勿扰", "action"))
+
+        // 静音仍然只是把音量归零
+        assertEquals("audio/volume_ctrl", service("静音"))
+        assertEquals("mute", args("静音", "action"))
+    }
+
+    @Test
+    fun `再说一遍只重念 再试一次才重做`() {
+        assertEquals("audio/tts_speak", service("再说一遍"))
+        assertEquals("true", args("再说一遍", "repeat"))
+        assertEquals("context/retry", service("再试一次"))
+        // 界面靠这个判断「别把重试句记成上一条指令」
+        assertEquals(true, LocalNlu.isRetryPhrase("再试一次"))
+        assertEquals(false, LocalNlu.isRetryPhrase("打开手电筒"))
+    }
+
     // ------------------------------------------------------------ 设备
 
     @Test

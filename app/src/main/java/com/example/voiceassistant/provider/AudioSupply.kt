@@ -26,10 +26,23 @@ import com.example.voiceassistant.service.TtsManager
 class AudioSupply(
     private val tts: TtsManager?,
     private val audio: AudioController,
-    private val music: MusicPlayer? = null
+    private val music: MusicPlayer? = null,
+    /**
+     * 上一条回答的原文。
+     *
+     * 给「再说一遍」用：用户没听清时最自然的一句就是「再说一遍」，
+     * 这时候不该让他重新组织一遍问题，也不该让模型重新答一遍——
+     * 直接把刚才那句话再念一次，快且一字不差。由界面注入。
+     */
+    private val lastAnswer: () -> String? = { null }
 ) {
 
     private val main = Handler(Looper.getMainLooper())
+
+    private companion object {
+        /** 「再说一遍」最多念这么多字 */
+        const val REPEAT_MAX = 260
+    }
 
     val all: List<Supply> = listOf(speak(), stop(), volume(), musicCtrl())
 
@@ -37,11 +50,23 @@ class AudioSupply(
 
     private fun speak(): Supply = object : Supply {
         override val name = "audio/tts_speak"
-        override val summary = "把一段文字念出来（语音播报）。参数 text 是要念的内容。"
+        override val summary =
+            "把一段文字念出来（语音播报）。参数 text 是要念的内容；" +
+                "用户说「再说一遍」时传 repeat=true，念上一条回答。"
 
         override fun invoke(args: BusArgs): BusReply {
-            val text = args.str("text") ?: return BusReply.fail("没有要念的内容。")
             val engine = tts ?: return BusReply.fail("这台设备没有语音播报功能。")
+
+            val repeat = args.bool("repeat")
+            // 明写了 text 就念 text；只说「再说一遍」才回头找上一条
+            val text = args.str("text") ?: run {
+                val last = if (repeat) lastAnswer()?.takeIf { it.isNotBlank() } else null
+                last?.let { clip(it) } ?: return if (repeat) {
+                    BusReply.fail("上一条我没有可以念的文字。")
+                } else {
+                    BusReply.fail("没有要念的内容。")
+                }
+            }
             // TextToSpeech 只能在主线程调用，总线可能在后台线程
             main.post { engine.preview(text) }
             return BusReply.ok("好的，我念一下。")
@@ -56,6 +81,12 @@ class AudioSupply(
             tts?.let { main.post { it.stop() } }
             return BusReply.ok("好，不念了。")
         }
+    }
+
+    /** 「再说一遍」时不要整段重念：太长的回答截到两句，快一点 */
+    private fun clip(text: String): String {
+        val flat = text.replace(Regex("\\s+"), " ").trim()
+        return if (flat.length <= REPEAT_MAX) flat else flat.take(REPEAT_MAX) + "……"
     }
 
     // ------------------------------------------------------------------ 音量
